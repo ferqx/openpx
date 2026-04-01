@@ -28,8 +28,16 @@ function buildDefaultTools(): ToolDefinition[] {
   ];
 }
 
-function summarizeRequest(request: ToolExecuteRequest): string {
-  const target = request.path ? ` ${request.path}` : "";
+function summarizeRequest(request: ToolExecuteRequest, workspaceRoot?: string): string {
+  let targetPath = request.path;
+  if (workspaceRoot && request.path) {
+    const relativePath = relative(workspaceRoot, request.path);
+    if (relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath)) {
+      targetPath = relativePath;
+    }
+  }
+
+  const target = targetPath ? ` ${targetPath}` : "";
   const action = request.action ?? "execute";
   return `${request.toolName} ${action}${target}`;
 }
@@ -40,7 +48,7 @@ export function createToolRegistry(input: {
   tools?: ToolDefinition[];
 }) {
   const tools = new Map((input.tools ?? buildDefaultTools()).map((tool) => [tool.name, tool]));
-  const workspaceRootPromise = realpath(input.policy.workspaceRoot);
+  const workspaceRootPromise = realpath(input.policy.workspaceRoot).catch(() => resolve(input.policy.workspaceRoot));
 
   async function pathExists(path: string): Promise<boolean> {
     return Bun.file(path).exists();
@@ -152,11 +160,12 @@ export function createToolRegistry(input: {
       }
 
       if (decision.kind === "needs_approval") {
+        const workspaceRoot = await workspaceRootPromise;
         const approvalRequest = await input.approvals.createPending({
           toolCallId: normalizedRequest.toolCallId,
           threadId: normalizedRequest.threadId,
           taskId: normalizedRequest.taskId,
-          summary: summarizeRequest(normalizedRequest),
+          summary: summarizeRequest(normalizedRequest, workspaceRoot),
           risk: decision.risk.key,
         });
 

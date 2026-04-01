@@ -13,7 +13,7 @@ export async function createRootGraph(context: RootGraphContext) {
   const executorGraph = await createExecutorWorkerGraph(context.executor);
   const verifierGraph = await createVerifierWorkerGraph(context.verifier);
 
-  return new StateGraph(RootState)
+  const graph = new StateGraph(RootState)
     .addNode("intake", intakeNode)
     .addNode("route", routeNode)
     .addNode("planner", async (state, config) =>
@@ -41,8 +41,9 @@ export async function createRootGraph(context: RootGraphContext) {
     .addEdge("planner", END)
     .addEdge("verifier", END)
     .addEdge("executor", "post-turn-guard")
-    .addEdge("post-turn-guard", END)
-    .compile({
-      checkpointer: context.checkpointer,
-    });
+    .addEdge("post-turn-guard", END);
+
+  return graph.compile({
+    checkpointer: context.checkpointer,
+  });
 }

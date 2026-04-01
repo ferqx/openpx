@@ -1,8 +1,8 @@
 import { createAppContext } from "./bootstrap";
 
-export async function main() {
+export async function main(input?: { workspaceRoot?: string; dataDir?: string }) {
   return createAppContext({
-    workspaceRoot: process.cwd(),
-    dataDir: ":memory:",
+    workspaceRoot: input?.workspaceRoot ?? process.cwd(),
+    dataDir: input?.dataDir ?? ":memory:",
   });
 }
