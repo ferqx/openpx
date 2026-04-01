@@ -7,6 +7,16 @@ import { App } from "../../src/interface/tui/app";
 describe("TUI App", () => {
   test("renders the core task shell regions and submits composer input", async () => {
     const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    async function waitFor(check: () => boolean, attempts = 20) {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        if (check()) {
+          return;
+        }
+
+        await tick();
+      }
+    }
+
     let receivedCommand:
       | {
           type: string;
@@ -31,8 +41,9 @@ describe("TUI App", () => {
       stdin.write(char);
       await tick();
     }
+    await waitFor(() => (lastFrame() ?? "").includes("plan the repo"));
     stdin.write("\r");
-    await tick();
+    await waitFor(() => receivedCommand?.payload.text === "plan the repo");
 
     const frame = lastFrame();
 

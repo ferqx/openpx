@@ -82,4 +82,45 @@ describe("root graph interrupt/resume", () => {
 
     expect(checkpointCount).toBeGreaterThan(0);
   });
+
+  test("persists distinct approval ids across separate app boots", async () => {
+    const workspaceRoot = await createWorkspace();
+    const dataDir = join(workspaceRoot, "agent.sqlite");
+    await mkdir(join(workspaceRoot, "src"), { recursive: true });
+    await Bun.write(join(workspaceRoot, "src/old-a.ts"), "export const a = true;\n");
+    await Bun.write(join(workspaceRoot, "src/old-b.ts"), "export const b = true;\n");
+
+    const firstCtx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+    });
+    const firstResult = await firstCtx.kernel.handleCommand({
+      type: "submit_input",
+      payload: { text: "delete src/old-a.ts" },
+    });
+
+    const secondCtx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+    });
+    const secondResult = await secondCtx.kernel.handleCommand({
+      type: "submit_input",
+      payload: { text: "delete src/old-b.ts" },
+    });
+
+    const db = createSqlite(dataDir);
+    const approvals = db
+      .query<{ approval_request_id: string; summary: string }, []>(
+        `SELECT approval_request_id, summary
+         FROM approvals
+         ORDER BY rowid ASC`,
+      )
+      .all();
+    db.close();
+
+    expect(firstResult.approvals).toHaveLength(1);
+    expect(secondResult.approvals).toHaveLength(1);
+    expect(approvals).toHaveLength(2);
+    expect(new Set(approvals.map((approval) => approval.approval_request_id)).size).toBe(2);
+  });
 });

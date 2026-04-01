@@ -9,14 +9,10 @@ export type CreateApprovalInput = {
 };
 
 export function createApprovalService(input?: { idGenerator?: () => string }) {
-  let counter = 0;
   const requests = new Map<string, ApprovalRequest>();
   const idGenerator =
     input?.idGenerator ??
-    (() => {
-      counter += 1;
-      return `approval_${counter}`;
-    });
+    (() => `approval_${crypto.randomUUID()}`);
 
   return {
     async createPending(request: CreateApprovalInput): Promise<ApprovalRequest> {
