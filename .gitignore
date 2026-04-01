@@ -4,6 +4,9 @@ node_modules
 # output
 out
 dist
+.openwenpx/
+*.sqlite
+*.sqlite3
 *.tgz
 
 # code coverage
