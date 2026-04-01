@@ -1,3 +1,5 @@
+import type { CheckpointPort } from "../../../persistence/ports/checkpoint-port";
+
 export type RootMode = "plan" | "execute" | "verify" | "done";
 
 export type WorkerMode = Exclude<RootMode, "done">;
@@ -7,11 +9,19 @@ export type WorkerResult<TMode extends WorkerMode = WorkerMode> = {
   mode: TMode;
 };
 
-export type WorkerHandler<TMode extends WorkerMode = WorkerMode> = (input: {
+export type WorkerExecutionContext = {
   input: string;
-}) => Promise<WorkerResult<TMode>> | WorkerResult<TMode>;
+  threadId?: string;
+  taskId?: string;
+  configurable?: Record<string, unknown>;
+};
+
+export type WorkerHandler<TMode extends WorkerMode = WorkerMode> = (
+  input: WorkerExecutionContext,
+) => Promise<WorkerResult<TMode>> | WorkerResult<TMode>;
 
 export type RootGraphContext = {
+  checkpointer: CheckpointPort;
   planner: WorkerHandler<"plan">;
   executor: WorkerHandler<"execute">;
   verifier: WorkerHandler<"verify">;

@@ -1,4 +1,4 @@
-import { END, MemorySaver, START, StateGraph } from "@langchain/langgraph";
+import { END, START, StateGraph } from "@langchain/langgraph";
 import type { RootGraphContext } from "./context";
 import { RootState } from "./state";
 import { intakeNode } from "./nodes/intake";
@@ -43,6 +43,6 @@ export async function createRootGraph(context: RootGraphContext) {
     .addEdge("executor", "post-turn-guard")
     .addEdge("post-turn-guard", END)
     .compile({
-      checkpointer: new MemorySaver(),
+      checkpointer: context.checkpointer,
     });
 }

@@ -9,7 +9,14 @@ const MemoryMaintainerWorkerState = Annotation.Root({
 
 export async function createMemoryMaintainerWorkerGraph(handler: WorkerHandler<"execute">) {
   return new StateGraph(MemoryMaintainerWorkerState)
-    .addNode("run", async (state) => handler({ input: state.input }))
+    .addNode("run", async (state, config) =>
+      handler({
+        input: state.input,
+        threadId: config.configurable?.thread_id as string | undefined,
+        taskId: config.configurable?.task_id as string | undefined,
+        configurable: config.configurable,
+      }),
+    )
     .addEdge(START, "run")
     .addEdge("run", END)
     .compile();
