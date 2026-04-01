@@ -1,3 +1,4 @@
+import { isAbsolute, relative, resolve } from "node:path";
 import { classifyRisk, type PatchAction, type RiskClassification, type ToolEffect } from "./risk-model";
 
 export type PolicyRequest = {
@@ -26,6 +27,14 @@ export type PolicyDecision =
     };
 
 export function createPolicyEngine(input: { workspaceRoot: string }) {
+  const workspaceRoot = resolve(input.workspaceRoot);
+
+  function isWithinWorkspace(path: string): boolean {
+    const resolvedPath = resolve(path);
+    const workspaceRelativePath = relative(workspaceRoot, resolvedPath);
+    return workspaceRelativePath === "" || (!workspaceRelativePath.startsWith("..") && !isAbsolute(workspaceRelativePath));
+  }
+
   return {
     evaluate(request: PolicyRequest): PolicyDecision {
       const risk = classifyRisk(request);
@@ -39,7 +48,7 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
       }
 
       if ((request.effect === "apply_patch" || request.effect === "sensitive_write") && request.path) {
-        if (!request.path.startsWith(input.workspaceRoot)) {
+        if (!isWithinWorkspace(request.path)) {
           return {
             kind: "deny",
             reason: "writes outside the workspace are denied",
@@ -63,7 +72,7 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
       }
 
       if (request.effect === "read") {
-        if (request.path && request.path.startsWith(input.workspaceRoot)) {
+        if (request.path && isWithinWorkspace(request.path)) {
           return {
             kind: "allow",
             reason: "workspace reads are allowed",

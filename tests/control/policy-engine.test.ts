@@ -27,4 +27,17 @@ describe("PolicyEngine", () => {
 
     expect(decision.kind).toBe("needs_approval");
   });
+
+  test("denies sibling paths that only share the workspace prefix", () => {
+    const policy = createPolicyEngine({ workspaceRoot: "/repo" });
+    const decision = policy.evaluate({
+      toolName: "apply_patch",
+      effect: "apply_patch",
+      action: "modify_file",
+      path: "/repo-evil/src/app/main.ts",
+      changedFiles: 1,
+    });
+
+    expect(decision.kind).toBe("deny");
+  });
 });
