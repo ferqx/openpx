@@ -36,6 +36,8 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
   }
 
   return {
+    workspaceRoot,
+
     evaluate(request: PolicyRequest): PolicyDecision {
       const risk = classifyRisk(request);
 

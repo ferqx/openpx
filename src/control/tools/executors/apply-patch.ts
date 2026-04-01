@@ -21,6 +21,10 @@ export const applyPatchExecutor: ToolExecutor = async ({ args, path, action }) =
       throw domainError("modify_file requires an existing file");
     }
 
+    if (requestedAction === "create_file" && (await Bun.file(path).exists())) {
+      throw domainError("create_file requires a new file path");
+    }
+
     await mkdir(dirname(path), { recursive: true });
     await Bun.write(path, content);
   }

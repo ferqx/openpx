@@ -52,3 +52,11 @@ export function toPolicyRequest(tool: ToolDefinition, request: ToolExecuteReques
     changedFiles: request.changedFiles,
   };
 }
+
+export function normalizeToolRequest(request: ToolExecuteRequest): ToolExecuteRequest {
+  const path = request.path ?? (typeof request.args.path === "string" ? request.args.path : undefined);
+  return {
+    ...request,
+    path,
+  };
+}

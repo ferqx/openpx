@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, unlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApprovalService } from "../../src/control/policy/approval-service";
@@ -109,6 +109,60 @@ describe("ToolRegistry", () => {
     expect(result.kind).toBe("denied");
     expect(await Bun.file(outsideFile).exists()).toBe(false);
   });
+
+  test("denies symlink escapes that resolve outside the workspace", async () => {
+    const workspaceRoot = await createWorkspace();
+    const outsideRoot = await createWorkspace();
+    const outsideFile = join(outsideRoot, "escaped.ts");
+    const symlinkPath = join(workspaceRoot, "src/escaped.ts");
+    await Bun.write(outsideFile, "before\n");
+    await mkdir(dirname(symlinkPath), { recursive: true });
+    await symlink(outsideFile, symlinkPath);
+
+    const policy = createPolicyEngine({ workspaceRoot });
+    const approvals = createApprovalService();
+    const registry = createToolRegistry({ policy, approvals });
+
+    const result = await registry.execute({
+      toolCallId: "tool_symlink",
+      threadId: "thread_1",
+      taskId: "task_1",
+      toolName: "apply_patch",
+      action: "modify_file",
+      path: symlinkPath,
+      changedFiles: 1,
+      args: { content: "after\n" },
+    });
+
+    expect(result.kind).toBe("denied");
+    expect(await Bun.file(outsideFile).text()).toBe("before\n");
+  });
+
+  test("executes in-workspace read_file requests when the path is provided in args", async () => {
+    const workspaceRoot = await createWorkspace();
+    const filePath = join(workspaceRoot, "src/readme.ts");
+    await Bun.write(filePath, "console.log('ok');\n");
+
+    const policy = createPolicyEngine({ workspaceRoot });
+    const approvals = createApprovalService();
+    const registry = createToolRegistry({ policy, approvals });
+
+    const result = await registry.execute({
+      toolCallId: "tool_read",
+      threadId: "thread_1",
+      taskId: "task_1",
+      toolName: "read_file",
+      args: { path: filePath },
+    });
+
+    expect(result.kind).toBe("executed");
+    if (result.kind === "executed") {
+      expect(result.output).toEqual({
+        path: filePath,
+        content: "console.log('ok');\n",
+      });
+    }
+  });
 });
 
 describe("applyPatchExecutor", () => {
@@ -179,5 +233,37 @@ describe("applyPatchExecutor", () => {
     });
 
     await expect(unlink(filePath)).rejects.toThrow();
+  });
+
+  test("rejects create_file when the destination already exists", async () => {
+    const workspaceRoot = await createWorkspace();
+    const filePath = join(workspaceRoot, "src/existing.ts");
+    await mkdir(dirname(filePath), { recursive: true });
+    await Bun.write(filePath, "already here\n");
+
+    await expect(
+      applyPatchExecutor({
+        toolCallId: "tool_6",
+        threadId: "thread_1",
+        taskId: "task_1",
+        toolName: "apply_patch",
+        path: filePath,
+        action: "create_file",
+        changedFiles: 1,
+        args: { content: "new value\n" },
+        request: {
+          toolCallId: "tool_6",
+          threadId: "thread_1",
+          taskId: "task_1",
+          toolName: "apply_patch",
+          path: filePath,
+          action: "create_file",
+          changedFiles: 1,
+          args: { content: "new value\n" },
+        },
+      }),
+    ).rejects.toThrow();
+
+    expect(await Bun.file(filePath).text()).toBe("already here\n");
   });
 });

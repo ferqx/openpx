@@ -1,10 +1,12 @@
+import { realpath } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { ApprovalService } from "../policy/approval-service";
 import { createPolicyEngine, type PolicyDecision } from "../policy/policy-engine";
 import { applyPatchExecutor } from "./executors/apply-patch";
 import { execExecutor } from "./executors/exec";
 import { readFileExecutor } from "./executors/read-file";
 import type { ToolDefinition, ToolExecuteRequest, ToolExecutionOutcome } from "./tool-types";
-import { toPolicyRequest } from "./tool-types";
+import { normalizeToolRequest, toPolicyRequest } from "./tool-types";
 
 function buildDefaultTools(): ToolDefinition[] {
   return [
@@ -38,6 +40,59 @@ export function createToolRegistry(input: {
   tools?: ToolDefinition[];
 }) {
   const tools = new Map((input.tools ?? buildDefaultTools()).map((tool) => [tool.name, tool]));
+  const workspaceRootPromise = realpath(input.policy.workspaceRoot);
+
+  async function pathExists(path: string): Promise<boolean> {
+    return Bun.file(path).exists();
+  }
+
+  function isContained(workspaceRoot: string, path: string): boolean {
+    const relativePath = relative(workspaceRoot, path);
+    return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+  }
+
+  async function resolveRealTargetPath(path: string, action?: ToolExecuteRequest["action"]): Promise<string | undefined> {
+    const resolvedPath = resolve(path);
+
+    if (action === "create_file") {
+      if (await pathExists(resolvedPath)) {
+        return realpath(resolvedPath);
+      }
+
+      let ancestorPath = dirname(resolvedPath);
+      while (!(await pathExists(ancestorPath))) {
+        const parentPath = dirname(ancestorPath);
+        if (parentPath === ancestorPath) {
+          return undefined;
+        }
+
+        ancestorPath = parentPath;
+      }
+
+      const realAncestorPath = await realpath(ancestorPath);
+      return resolve(realAncestorPath, relative(ancestorPath, resolvedPath));
+    }
+
+    if (await pathExists(resolvedPath)) {
+      return realpath(resolvedPath);
+    }
+
+    return undefined;
+  }
+
+  async function isFilesystemPathAllowed(request: ToolExecuteRequest, effect: ToolDefinition["effect"]): Promise<boolean> {
+    if (!request.path || (effect !== "read" && effect !== "apply_patch" && effect !== "sensitive_write")) {
+      return true;
+    }
+
+    const workspaceRoot = await workspaceRootPromise;
+    const targetPath = await resolveRealTargetPath(request.path, request.action);
+    if (!targetPath) {
+      return true;
+    }
+
+    return isContained(workspaceRoot, targetPath);
+  }
 
   return {
     getTool(toolName: string): ToolDefinition | undefined {
@@ -49,13 +104,14 @@ export function createToolRegistry(input: {
     },
 
     async execute(request: ToolExecuteRequest): Promise<ToolExecutionOutcome> {
-      const tool = tools.get(request.toolName);
+      const normalizedRequest = normalizeToolRequest(request);
+      const tool = tools.get(normalizedRequest.toolName);
       if (!tool) {
         const decision: Extract<PolicyDecision, { kind: "deny" }> = {
           kind: "deny",
           reason: "unsupported tool request",
           risk: {
-            key: `${request.toolName}.unknown`,
+            key: `${normalizedRequest.toolName}.unknown`,
             level: "high",
             reason: "tool is not registered",
           },
@@ -68,7 +124,25 @@ export function createToolRegistry(input: {
         };
       }
 
-      const decision = input.policy.evaluate(toPolicyRequest(tool, request));
+      if (!(await isFilesystemPathAllowed(normalizedRequest, tool.effect))) {
+        const decision: Extract<PolicyDecision, { kind: "deny" }> = {
+          kind: "deny",
+          reason: "resolved filesystem target is outside the workspace",
+          risk: {
+            key: `${normalizedRequest.toolName}.path_escape`,
+            level: "high",
+            reason: "real filesystem target escapes the workspace",
+          },
+        };
+
+        return {
+          kind: "denied",
+          decision,
+          reason: decision.reason,
+        };
+      }
+
+      const decision = input.policy.evaluate(toPolicyRequest(tool, normalizedRequest));
       if (decision.kind === "deny") {
         return {
           kind: "denied",
@@ -79,10 +153,10 @@ export function createToolRegistry(input: {
 
       if (decision.kind === "needs_approval") {
         const approvalRequest = await input.approvals.createPending({
-          toolCallId: request.toolCallId,
-          threadId: request.threadId,
-          taskId: request.taskId,
-          summary: summarizeRequest(request),
+          toolCallId: normalizedRequest.toolCallId,
+          threadId: normalizedRequest.threadId,
+          taskId: normalizedRequest.taskId,
+          summary: summarizeRequest(normalizedRequest),
           risk: decision.risk.key,
         });
 
@@ -95,8 +169,8 @@ export function createToolRegistry(input: {
       }
 
       const output = await tool.execute({
-        ...request,
-        request,
+        ...normalizedRequest,
+        request: normalizedRequest,
       });
       return {
         kind: "executed",
