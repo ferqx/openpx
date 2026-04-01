@@ -21,8 +21,7 @@ export class SqliteThreadStore {
       `INSERT INTO threads (thread_id, status)
        VALUES (?, ?)
        ON CONFLICT(thread_id) DO UPDATE SET status = excluded.status`,
-      thread.threadId,
-      thread.status,
+      [thread.threadId, thread.status],
     );
   }
 

@@ -25,12 +25,14 @@ export class SqliteEventLog implements EventLogPort {
     this.db.run(
       `INSERT INTO events (event_id, thread_id, task_id, type, payload_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      event.eventId,
-      event.threadId,
-      event.taskId ?? null,
-      event.type,
-      event.payload ? JSON.stringify(event.payload) : null,
-      event.createdAt ?? null,
+      [
+        event.eventId,
+        event.threadId,
+        event.taskId ?? null,
+        event.type,
+        event.payload ? JSON.stringify(event.payload) : null,
+        event.createdAt ?? null,
+      ],
     );
   }
 

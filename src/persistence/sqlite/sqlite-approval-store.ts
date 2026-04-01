@@ -32,13 +32,15 @@ export class SqliteApprovalStore {
          summary = excluded.summary,
          risk = excluded.risk,
          status = excluded.status`,
-      request.approvalRequestId,
-      request.threadId,
-      request.taskId,
-      request.toolCallId,
-      request.summary,
-      request.risk,
-      request.status,
+      [
+        request.approvalRequestId,
+        request.threadId,
+        request.taskId,
+        request.toolCallId,
+        request.summary,
+        request.risk,
+        request.status,
+      ],
     );
   }
 

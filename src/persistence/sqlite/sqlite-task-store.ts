@@ -25,9 +25,7 @@ export class SqliteTaskStore implements TaskStorePort {
        ON CONFLICT(task_id) DO UPDATE SET
          thread_id = excluded.thread_id,
          status = excluded.status`,
-      task.taskId,
-      task.threadId,
-      task.status,
+      [task.taskId, task.threadId, task.status],
     );
   }
 

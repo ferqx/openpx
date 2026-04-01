@@ -2,19 +2,34 @@ import { describe, expect, test } from "bun:test";
 import { SqliteMemoryStore } from "../../src/persistence/sqlite/sqlite-memory-store";
 
 describe("SqliteMemoryStore", () => {
-  test("scopes durable memory by namespace", async () => {
+  test("persists and searches durable memory records using the domain shape", async () => {
     const store = new SqliteMemoryStore(":memory:");
 
-    await store.put(["project", "demo"], "decision_1", { kind: "decision", value: "Use Ink" });
-    await store.put(["project", "other"], "decision_2", { kind: "decision", value: "Use React" });
+    await store.save({
+      memoryId: "memory_1",
+      namespace: "durable",
+      key: "decision_1",
+      value: "Use Ink",
+      threadId: "thread_1",
+    });
+    await store.save({
+      memoryId: "memory_2",
+      namespace: "thread",
+      key: "decision_2",
+      value: "Use React",
+      threadId: "thread_1",
+    });
 
-    const results = await store.search(["project", "demo"], { query: "Ink", limit: 5 });
+    const results = await store.search("durable", { query: "Ink", limit: 5 });
 
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual({
+      memoryId: "memory_1",
       key: "decision_1",
-      namespace: ["project", "demo"],
-      value: { kind: "decision", value: "Use Ink" },
+      namespace: "durable",
+      value: "Use Ink",
+      threadId: "thread_1",
+      createdAt: expect.any(String),
     });
   });
 });

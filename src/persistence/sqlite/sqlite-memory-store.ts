@@ -1,12 +1,16 @@
 import type { Database } from "bun:sqlite";
-import type { MemoryEntry, MemoryNamespace, MemorySearchInput, MemoryStorePort } from "../ports/memory-store-port";
+import type { MemoryNamespace, MemoryRecord } from "../../domain/memory";
+import type { MemorySearchInput, MemoryStorePort } from "../ports/memory-store-port";
 import { createSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 type MemoryRow = {
-  namespace_json: string;
+  memory_id: string;
+  namespace: MemoryNamespace;
   entry_key: string;
-  value_json: string;
+  value: string;
+  thread_id: string;
+  created_at: string;
 };
 
 export class SqliteMemoryStore implements MemoryStorePort {
@@ -17,53 +21,46 @@ export class SqliteMemoryStore implements MemoryStorePort {
     migrateSqlite(this.db);
   }
 
-  async put(namespace: MemoryNamespace, key: string, value: unknown): Promise<void> {
-    const namespaceKey = encodeNamespace(namespace);
-    const namespaceJson = JSON.stringify([...namespace]);
-    const valueJson = JSON.stringify(value);
-    const searchText = valueJson.toLowerCase();
+  async save(record: MemoryRecord): Promise<void> {
+    const createdAt = record.createdAt ?? new Date().toISOString();
 
     this.db.run(
-      `INSERT INTO memories (namespace_key, namespace_json, entry_key, value_json, search_text)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(namespace_key, entry_key) DO UPDATE SET
-         namespace_json = excluded.namespace_json,
-         value_json = excluded.value_json,
-         search_text = excluded.search_text`,
-      namespaceKey,
-      namespaceJson,
-      key,
-      valueJson,
-      searchText,
+      `INSERT INTO memories (memory_id, namespace, entry_key, value, thread_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(memory_id) DO UPDATE SET
+         namespace = excluded.namespace,
+         entry_key = excluded.entry_key,
+         value = excluded.value,
+         thread_id = excluded.thread_id,
+         created_at = excluded.created_at`,
+      [record.memoryId, record.namespace, record.key, record.value, record.threadId, createdAt],
     );
   }
 
-  async get(namespace: MemoryNamespace, key: string): Promise<MemoryEntry | undefined> {
+  async get(memoryId: string): Promise<MemoryRecord | undefined> {
     const row = this.db
-      .query<MemoryRow, [string, string]>(
-        "SELECT namespace_json, entry_key, value_json FROM memories WHERE namespace_key = ? AND entry_key = ?",
+      .query<MemoryRow, [string]>(
+        "SELECT memory_id, namespace, entry_key, value, thread_id, created_at FROM memories WHERE memory_id = ?",
       )
-      .get(encodeNamespace(namespace), key);
+      .get(memoryId);
 
     return row ? mapMemoryRow(row) : undefined;
   }
 
-  async search(namespace: MemoryNamespace, input: MemorySearchInput): Promise<MemoryEntry[]> {
+  async search(namespace: MemoryNamespace, input: MemorySearchInput): Promise<MemoryRecord[]> {
+    const query = (input.query ?? "").trim().toLowerCase();
+    const threadId = input.threadId ?? "";
     const rows = this.db
-      .query<MemoryRow, [string, string, number]>(
-        `SELECT namespace_json, entry_key, value_json
+      .query<MemoryRow, [MemoryNamespace, string, string, string, string, number]>(
+        `SELECT memory_id, namespace, entry_key, value, thread_id, created_at
          FROM memories
-         WHERE namespace_key = ?
-           AND (? = '' OR search_text LIKE ?)
+         WHERE namespace = ?
+           AND (? = '' OR lower(value) LIKE ?)
+           AND (? = '' OR thread_id = ?)
          ORDER BY entry_key ASC
          LIMIT ?`,
       )
-      .all(
-        encodeNamespace(namespace),
-        (input.query ?? "").trim(),
-        `%${(input.query ?? "").trim().toLowerCase()}%`,
-        input.limit,
-      );
+      .all(namespace, query, `%${query}%`, threadId, threadId, input.limit);
 
     return rows.map(mapMemoryRow);
   }
@@ -73,14 +70,13 @@ export class SqliteMemoryStore implements MemoryStorePort {
   }
 }
 
-function encodeNamespace(namespace: MemoryNamespace): string {
-  return JSON.stringify([...namespace]);
-}
-
-function mapMemoryRow(row: MemoryRow): MemoryEntry {
+function mapMemoryRow(row: MemoryRow): MemoryRecord {
   return {
-    namespace: JSON.parse(row.namespace_json) as string[],
+    memoryId: row.memory_id,
+    namespace: row.namespace,
     key: row.entry_key,
-    value: JSON.parse(row.value_json) as unknown,
+    value: row.value,
+    threadId: row.thread_id,
+    createdAt: row.created_at,
   };
 }

@@ -14,12 +14,12 @@ export function migrateSqlite(db: Database): void {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS memories (
-      namespace_key TEXT NOT NULL,
-      namespace_json TEXT NOT NULL,
+      memory_id TEXT PRIMARY KEY,
+      namespace TEXT NOT NULL,
       entry_key TEXT NOT NULL,
-      value_json TEXT NOT NULL,
-      search_text TEXT NOT NULL,
-      PRIMARY KEY (namespace_key, entry_key)
+      value TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
     )
   `);
 
@@ -55,7 +55,8 @@ export function migrateSqlite(db: Database): void {
   `);
 
   db.run("CREATE INDEX IF NOT EXISTS idx_tasks_thread_id ON tasks (thread_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_memories_namespace_key ON memories (namespace_key)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories (namespace)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_memories_thread_id ON memories (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_events_thread_sequence ON events (thread_id, sequence)");
   db.run("CREATE INDEX IF NOT EXISTS idx_approvals_thread_id ON approvals (thread_id)");
 }
