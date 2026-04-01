@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { Thread } from "../../domain/thread";
+import type { ThreadStorePort } from "../ports/thread-store-port";
 import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
@@ -8,7 +9,7 @@ type ThreadRow = {
   status: Thread["status"];
 };
 
-export class SqliteThreadStore {
+export class SqliteThreadStore implements ThreadStorePort {
   private readonly db: Database;
   private readonly owned: boolean;
 

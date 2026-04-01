@@ -1,7 +1,8 @@
 import { createCommandBus } from "./command-bus";
 import { createEventBus, type KernelEvent } from "./event-bus";
 import { createInterruptService } from "./interrupt-service";
-import { createThreadService, type ThreadStore } from "./thread-service";
+import { createThreadService } from "./thread-service";
+import type { ThreadStorePort } from "../persistence/ports/thread-store-port";
 
 export type SubmitInputCommand = {
   type: "submit_input";
@@ -20,7 +21,7 @@ export type SessionKernel = {
 
 export function createSessionKernel(deps: {
   stores: {
-    threadStore: ThreadStore;
+    threadStore: ThreadStorePort;
   };
   controlPlane: {
     startRootTask: (threadId: string, text: string) => Promise<void>;
