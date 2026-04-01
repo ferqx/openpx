@@ -10,4 +10,10 @@ describe("task transitions", () => {
     expect(next.threadId).toBe("thread_1");
     expect(next.status).toBe("blocked");
   });
+
+  test("rejects an invalid transition from completed to running", () => {
+    const task = transitionTask(transitionTask(createTask("task_1", "thread_1"), "running"), "completed");
+
+    expect(() => transitionTask(task, "running")).toThrow("invalid task transition from completed to running");
+  });
 });

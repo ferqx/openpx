@@ -9,4 +9,10 @@ describe("thread transitions", () => {
     expect(next.threadId).toBe("thread_1");
     expect(next.status).toBe("waiting_approval");
   });
+
+  test("rejects an invalid transition from active to idle", () => {
+    const thread = createThread("thread_1");
+
+    expect(() => transitionThread(thread, "idle")).toThrow("invalid thread transition from active to idle");
+  });
 });
