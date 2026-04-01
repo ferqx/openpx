@@ -6,6 +6,34 @@ export type TaskManager = {
   createRootTask(threadId: string, summary: string): Promise<ControlTask>;
 };
 
+async function appendTaskCreatedEvent(deps: {
+  eventLog?: {
+    append(event: ReturnType<typeof createEvent>): Promise<void>;
+  };
+}, task: ControlTask): Promise<void> {
+  if (!deps.eventLog) {
+    return;
+  }
+
+  try {
+    await deps.eventLog.append(
+      createEvent({
+        eventId: `event_${Date.now()}`,
+        threadId: task.threadId,
+        taskId: task.taskId,
+        type: "task.created",
+        payload: {
+          taskId: task.taskId,
+          summary: task.summary,
+          status: task.status,
+        },
+      }),
+    );
+  } catch {
+    return;
+  }
+}
+
 export function createTaskManager(deps: {
   taskStore: TaskStoreContract;
   eventLog?: {
@@ -21,22 +49,7 @@ export function createTaskManager(deps: {
       });
 
       await deps.taskStore.save(task);
-
-      if (deps.eventLog) {
-        await deps.eventLog.append(
-          createEvent({
-            eventId: `event_${Date.now()}`,
-            threadId,
-            taskId: task.taskId,
-            type: "task.created",
-            payload: {
-              taskId: task.taskId,
-              summary: task.summary,
-              status: task.status,
-            },
-          }),
-        );
-      }
+      await appendTaskCreatedEvent(deps, task);
 
       return task;
     },

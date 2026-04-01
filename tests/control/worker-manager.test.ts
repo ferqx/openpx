@@ -3,7 +3,13 @@ import { createWorkerManager } from "../../src/control/workers/worker-manager";
 
 describe("WorkerManager", () => {
   test("spawns an executor worker for a task", async () => {
-    const starts: Array<{ role: string }> = [];
+    const starts: Array<{
+      workerId: string;
+      role: string;
+      taskId: string;
+      threadId: string;
+      spawnReason: string;
+    }> = [];
     const manager = createWorkerManager({
       runtimeFactory(input) {
         return {
@@ -27,6 +33,14 @@ describe("WorkerManager", () => {
     expect(worker.taskId).toBe("task_1");
     expect(worker.threadId).toBe("thread_1");
     expect(worker.spawnReason).toBe("execute patch");
-    expect(starts).toEqual([{ role: "executor" }]);
+    expect(starts).toEqual([
+      {
+        workerId: worker.workerId,
+        role: "executor",
+        taskId: "task_1",
+        threadId: "thread_1",
+        spawnReason: "execute patch",
+      },
+    ]);
   });
 });

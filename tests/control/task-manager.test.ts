@@ -66,4 +66,34 @@ describe("TaskManager", () => {
 
     db.close();
   });
+
+  test("still returns the created task when event logging fails after persistence", async () => {
+    const savedTasks: Array<{
+      taskId: string;
+      threadId: string;
+      summary: string;
+      status: string;
+    }> = [];
+    const manager = createTaskManager({
+      taskStore: {
+        async save(task) {
+          savedTasks.push(task);
+        },
+      },
+      eventLog: {
+        async append() {
+          throw new Error("event log unavailable");
+        },
+      },
+    });
+
+    const task = await manager.createRootTask("thread_1", "plan repo");
+
+    expect(task).toMatchObject({
+      threadId: "thread_1",
+      summary: "plan repo",
+      status: "queued",
+    });
+    expect(savedTasks).toEqual([task]);
+  });
 });

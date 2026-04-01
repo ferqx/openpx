@@ -11,11 +11,18 @@ export function createWorkerManager(deps: {
 }): WorkerManager {
   return {
     async spawn(input) {
-      const runtime = deps.runtimeFactory({ role: input.role });
+      const workerId = `worker_${Date.now()}`;
+      const runtime = deps.runtimeFactory({
+        workerId,
+        role: input.role,
+        taskId: input.taskId,
+        threadId: input.threadId,
+        spawnReason: input.spawnReason,
+      });
       await runtime.start();
 
       return createWorkerRecord({
-        workerId: `worker_${Date.now()}`,
+        workerId,
         taskId: input.taskId,
         threadId: input.threadId,
         role: input.role,
