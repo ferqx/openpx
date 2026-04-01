@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { ApprovalRequest } from "../../domain/approval";
-import { createSqlite } from "./sqlite-client";
+import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 type ApprovalRow = {
@@ -15,9 +15,12 @@ type ApprovalRow = {
 
 export class SqliteApprovalStore {
   private readonly db: Database;
+  private readonly owned: boolean;
 
   constructor(path: string | Database) {
-    this.db = typeof path === "string" ? createSqlite(path) : path;
+    const connection = resolveSqlite(path);
+    this.db = connection.db;
+    this.owned = connection.owned;
     migrateSqlite(this.db);
   }
 
@@ -88,6 +91,8 @@ export class SqliteApprovalStore {
   }
 
   async close(): Promise<void> {
-    this.db.close();
+    if (this.owned) {
+      this.db.close();
+    }
   }
 }

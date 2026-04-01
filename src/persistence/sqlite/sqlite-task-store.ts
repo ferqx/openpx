@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Task } from "../../domain/task";
 import type { TaskStorePort } from "../ports/task-store-port";
-import { createSqlite } from "./sqlite-client";
+import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 type TaskRow = {
@@ -12,9 +12,12 @@ type TaskRow = {
 
 export class SqliteTaskStore implements TaskStorePort {
   private readonly db: Database;
+  private readonly owned: boolean;
 
   constructor(path: string | Database) {
-    this.db = typeof path === "string" ? createSqlite(path) : path;
+    const connection = resolveSqlite(path);
+    this.db = connection.db;
+    this.owned = connection.owned;
     migrateSqlite(this.db);
   }
 
@@ -46,7 +49,9 @@ export class SqliteTaskStore implements TaskStorePort {
   }
 
   async close(): Promise<void> {
-    this.db.close();
+    if (this.owned) {
+      this.db.close();
+    }
   }
 }
 

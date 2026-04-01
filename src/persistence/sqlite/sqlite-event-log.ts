@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Event } from "../../domain/event";
 import type { EventLogPort } from "../ports/event-log-port";
-import { createSqlite } from "./sqlite-client";
+import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 type EventRow = {
@@ -15,9 +15,12 @@ type EventRow = {
 
 export class SqliteEventLog implements EventLogPort {
   private readonly db: Database;
+  private readonly owned: boolean;
 
   constructor(path: string | Database) {
-    this.db = typeof path === "string" ? createSqlite(path) : path;
+    const connection = resolveSqlite(path);
+    this.db = connection.db;
+    this.owned = connection.owned;
     migrateSqlite(this.db);
   }
 
@@ -50,7 +53,9 @@ export class SqliteEventLog implements EventLogPort {
   }
 
   async close(): Promise<void> {
-    this.db.close();
+    if (this.owned) {
+      this.db.close();
+    }
   }
 }
 

@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { MemoryNamespace, MemoryRecord } from "../../domain/memory";
 import type { MemorySearchInput, MemoryStorePort } from "../ports/memory-store-port";
-import { createSqlite } from "./sqlite-client";
+import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 type MemoryRow = {
@@ -15,9 +15,12 @@ type MemoryRow = {
 
 export class SqliteMemoryStore implements MemoryStorePort {
   private readonly db: Database;
+  private readonly owned: boolean;
 
   constructor(path: string | Database) {
-    this.db = typeof path === "string" ? createSqlite(path) : path;
+    const connection = resolveSqlite(path);
+    this.db = connection.db;
+    this.owned = connection.owned;
     migrateSqlite(this.db);
   }
 
@@ -32,7 +35,7 @@ export class SqliteMemoryStore implements MemoryStorePort {
          entry_key = excluded.entry_key,
          value = excluded.value,
          thread_id = excluded.thread_id,
-         created_at = excluded.created_at`,
+         created_at = memories.created_at`,
       [record.memoryId, record.namespace, record.key, record.value, record.threadId, createdAt],
     );
   }
@@ -66,7 +69,9 @@ export class SqliteMemoryStore implements MemoryStorePort {
   }
 
   async close(): Promise<void> {
-    this.db.close();
+    if (this.owned) {
+      this.db.close();
+    }
   }
 }
 

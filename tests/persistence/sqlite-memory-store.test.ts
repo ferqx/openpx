@@ -32,4 +32,35 @@ describe("SqliteMemoryStore", () => {
       createdAt: expect.any(String),
     });
   });
+
+  test("preserves createdAt when updating an existing memory record", async () => {
+    const store = new SqliteMemoryStore(":memory:");
+
+    await store.save({
+      memoryId: "memory_1",
+      namespace: "durable",
+      key: "decision_1",
+      value: "Use Ink",
+      threadId: "thread_1",
+      createdAt: "2026-04-01T00:00:00.000Z",
+    });
+    await store.save({
+      memoryId: "memory_1",
+      namespace: "durable",
+      key: "decision_1",
+      value: "Use Bun",
+      threadId: "thread_1",
+    });
+
+    const record = await store.get("memory_1");
+
+    expect(record).toEqual({
+      memoryId: "memory_1",
+      namespace: "durable",
+      key: "decision_1",
+      value: "Use Bun",
+      threadId: "thread_1",
+      createdAt: "2026-04-01T00:00:00.000Z",
+    });
+  });
 });
