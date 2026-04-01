@@ -1,10 +1,10 @@
-import { INTERRUPT, MemorySaver, isInterrupted } from "@langchain/langgraph";
+import { INTERRUPT, isInterrupted } from "@langchain/langgraph";
 import { resolve } from "node:path";
 import { createApprovalService, type ApprovalService, type CreateApprovalInput } from "../control/policy/approval-service";
 import { createPolicyEngine } from "../control/policy/policy-engine";
 import { createTaskManager } from "../control/tasks/task-manager";
+import type { ControlTask } from "../control/tasks/task-types";
 import { createToolRegistry } from "../control/tools/tool-registry";
-import { transitionTask, type Task } from "../domain/task";
 import { createSessionKernel, type SessionControlPlaneResult } from "../kernel/session-kernel";
 import { createSqliteCheckpointer } from "../persistence/sqlite/sqlite-checkpointer";
 import { createSqlite } from "../persistence/sqlite/sqlite-client";
@@ -68,8 +68,8 @@ function parseDeleteRequest(input: string, workspaceRoot: string) {
   };
 }
 
-async function saveTaskStatus(stores: AppStores, task: Task, status: Task["status"]): Promise<Task> {
-  const next = transitionTask(task, status);
+async function saveTaskStatus(stores: AppStores, task: ControlTask, status: ControlTask["status"]): Promise<ControlTask> {
+  const next = { ...task, status };
   await stores.taskStore.save(next);
   return next;
 }
@@ -77,7 +77,7 @@ async function saveTaskStatus(stores: AppStores, task: Task, status: Task["statu
 async function createControlPlane(input: {
   config: ReturnType<typeof resolveConfig>;
   stores: AppStores;
-  checkpointer: ReturnType<typeof createSqliteCheckpointer> | MemorySaver;
+  checkpointer: ReturnType<typeof createSqliteCheckpointer>;
 }): Promise<ControlPlane> {
   const taskManager = createTaskManager({
     taskStore: input.stores.taskStore,
@@ -156,9 +156,12 @@ async function createControlPlane(input: {
       const approvalsForThread = await input.stores.approvalStore.listPendingByThread(threadId);
       const status = approvalsForThread.length > 0 ? "waiting_approval" : "completed";
       const finalTask = await saveTaskStatus(input.stores, task, status === "waiting_approval" ? "blocked" : "completed");
+      const interruptValue = isInterrupted(graphResult)
+        ? (graphResult[INTERRUPT][0]?.value as { summary?: string } | undefined)
+        : undefined;
       const summary = isInterrupted(graphResult)
-        ? String(graphResult[INTERRUPT][0]?.value?.summary ?? text)
-        : graphResult.summary;
+        ? String(interruptValue?.summary ?? text)
+        : (graphResult as { summary: string }).summary;
 
       return {
         status,
@@ -176,10 +179,7 @@ export async function createAppContext(input: { workspaceRoot: string; dataDir: 
   migrateSqlite(sqlite);
 
   const stores = createStores(sqlite);
-  const checkpointer =
-    config.checkpointConnString === ":memory:"
-      ? new MemorySaver()
-      : createSqliteCheckpointer(config.checkpointConnString);
+  const checkpointer = createSqliteCheckpointer(config.checkpointConnString);
   const controlPlane = await createControlPlane({ config, stores, checkpointer });
   const kernel = createSessionKernel({ stores, controlPlane });
 

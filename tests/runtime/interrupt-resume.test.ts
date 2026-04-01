@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createAppContext } from "../../src/app/bootstrap";
+import { createSqlite } from "../../src/persistence/sqlite/sqlite-client";
 import { createRootGraph } from "../../src/runtime/graph/root/graph";
 
 const tempDirs: string[] = [];
@@ -55,12 +56,13 @@ describe("root graph interrupt/resume", () => {
 
   test("blocks delete_file patches until approved", async () => {
     const workspaceRoot = await createWorkspace();
+    const dataDir = join(workspaceRoot, "agent.sqlite");
     await mkdir(join(workspaceRoot, "src"), { recursive: true });
     await Bun.write(join(workspaceRoot, "src/old.ts"), "export const legacy = true;\n");
 
     const ctx = await createAppContext({
       workspaceRoot,
-      dataDir: ":memory:",
+      dataDir,
     });
 
     const result = await ctx.kernel.handleCommand({
@@ -71,5 +73,13 @@ describe("root graph interrupt/resume", () => {
     expect(result.status).toBe("waiting_approval");
     expect(result.approvals).toHaveLength(1);
     expect(result.approvals[0]?.summary).toContain("delete_file");
+
+    const db = createSqlite(dataDir);
+    const checkpointCount = db
+      .query<{ count: number }, []>("SELECT COUNT(*) as count FROM checkpoints")
+      .get()?.count;
+    db.close();
+
+    expect(checkpointCount).toBeGreaterThan(0);
   });
 });

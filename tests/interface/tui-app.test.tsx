@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
+import { main } from "../../src/app/main";
 import { App } from "../../src/interface/tui/app";
 
 describe("TUI App", () => {
@@ -89,5 +90,27 @@ describe("TUI App", () => {
     expect(frame).toContain("delete src/old.ts [blocked]");
     expect(frame).toContain("apply_patch delete_file src/old.ts [pending]");
     expect(frame).toContain("Approval required before deleting src/old.ts");
+  });
+
+  test("main mounts the Ink shell with the bootstrapped kernel", async () => {
+    const mounted: unknown[] = [];
+
+    await (main as (input: {
+      workspaceRoot: string;
+      dataDir: string;
+      mount: (tree: React.ReactElement) => unknown;
+    }) => Promise<unknown>)({
+      workspaceRoot: "/tmp/main-entrypoint-workspace",
+      dataDir: ":memory:",
+      mount(tree) {
+        mounted.push(tree);
+        return { unmount() {} };
+      },
+    });
+
+    expect(mounted).toHaveLength(1);
+    const appElement = mounted[0] as React.ReactElement<{ kernel?: { handleCommand?: unknown } }>;
+    expect(appElement.type).toBe(App);
+    expect(typeof appElement.props.kernel?.handleCommand).toBe("function");
   });
 });
