@@ -1,8 +1,9 @@
 import { threadId as sharedThreadId } from "../shared/ids";
 import { domainError } from "../shared/errors";
 import { threadStatusSchema } from "../shared/schemas";
+import { z } from "zod";
 
-export type ThreadStatus = typeof threadStatusSchema._type;
+export type ThreadStatus = z.infer<typeof threadStatusSchema>;
 
 export type Thread = {
   threadId: ReturnType<typeof sharedThreadId>;
@@ -23,7 +24,9 @@ export function createThread(threadId: string): Thread {
 }
 
 export function transitionThread(thread: Thread, status: ThreadStatus): Thread {
-  if (!allowedThreadTransitions[thread.status].includes(status)) {
+  const allowedStatuses = allowedThreadTransitions[thread.status] ?? [];
+
+  if (!allowedStatuses.includes(status)) {
     throw domainError(`invalid thread transition from ${thread.status} to ${status}`);
   }
 

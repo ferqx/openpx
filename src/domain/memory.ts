@@ -1,7 +1,8 @@
 import { memoryId as sharedMemoryId, threadId as sharedThreadId } from "../shared/ids";
 import { memoryNamespaceSchema } from "../shared/schemas";
+import { z } from "zod";
 
-export type MemoryNamespace = typeof memoryNamespaceSchema._type;
+export type MemoryNamespace = z.infer<typeof memoryNamespaceSchema>;
 
 export type MemoryRecord = {
   memoryId: ReturnType<typeof sharedMemoryId>;

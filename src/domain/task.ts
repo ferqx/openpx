@@ -1,8 +1,9 @@
 import { domainError } from "../shared/errors";
 import { taskId as sharedTaskId, threadId as sharedThreadId } from "../shared/ids";
 import { taskStatusSchema } from "../shared/schemas";
+import { z } from "zod";
 
-export type TaskStatus = typeof taskStatusSchema._type;
+export type TaskStatus = z.infer<typeof taskStatusSchema>;
 
 export type Task = {
   taskId: ReturnType<typeof sharedTaskId>;
@@ -24,7 +25,9 @@ export function createTask(taskId: string, threadId: string): Task {
 }
 
 export function transitionTask(task: Task, status: TaskStatus): Task {
-  if (!allowedTaskTransitions[task.status].includes(status)) {
+  const allowedStatuses = allowedTaskTransitions[task.status] ?? [];
+
+  if (!allowedStatuses.includes(status)) {
     throw domainError(`invalid task transition from ${task.status} to ${status}`);
   }
 
