@@ -6,7 +6,7 @@ export type MemoryRecord = {
   key: string;
   value: string;
   threadId: string;
-  createdAt: string;
+  createdAt?: string;
 };
 
 export function createMemoryRecord(input: {
@@ -23,6 +23,6 @@ export function createMemoryRecord(input: {
     key: input.key,
     value: input.value,
     threadId: input.threadId,
-    createdAt: input.createdAt ?? new Date().toISOString(),
+    createdAt: input.createdAt,
   };
 }

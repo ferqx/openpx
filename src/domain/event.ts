@@ -3,8 +3,8 @@ export type Event = {
   threadId: string;
   taskId?: string;
   type: string;
-  payload: Record<string, unknown>;
-  createdAt: string;
+  payload?: Record<string, unknown>;
+  createdAt?: string;
 };
 
 export function createEvent(input: {
@@ -20,7 +20,7 @@ export function createEvent(input: {
     threadId: input.threadId,
     taskId: input.taskId,
     type: input.type,
-    payload: input.payload ?? {},
-    createdAt: input.createdAt ?? new Date().toISOString(),
+    payload: input.payload,
+    createdAt: input.createdAt,
   };
 }
