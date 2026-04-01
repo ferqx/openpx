@@ -1,0 +1,46 @@
+import { createApprovalRequest, type ApprovalRequest } from "../../domain/approval";
+
+export type CreateApprovalInput = {
+  toolCallId: string;
+  threadId: string;
+  taskId: string;
+  summary: string;
+  risk: string;
+};
+
+export function createApprovalService(input?: { idGenerator?: () => string }) {
+  let counter = 0;
+  const requests = new Map<string, ApprovalRequest>();
+  const idGenerator =
+    input?.idGenerator ??
+    (() => {
+      counter += 1;
+      return `approval_${counter}`;
+    });
+
+  return {
+    async createPending(request: CreateApprovalInput): Promise<ApprovalRequest> {
+      const approval = createApprovalRequest({
+        approvalRequestId: idGenerator(),
+        toolCallId: request.toolCallId,
+        threadId: request.threadId,
+        taskId: request.taskId,
+        summary: request.summary,
+        risk: request.risk,
+      });
+
+      requests.set(approval.approvalRequestId, approval);
+      return approval;
+    },
+
+    async get(approvalRequestId: string): Promise<ApprovalRequest | undefined> {
+      return requests.get(approvalRequestId);
+    },
+
+    async listPendingByThread(threadId: string): Promise<ApprovalRequest[]> {
+      return [...requests.values()].filter((request) => request.threadId === threadId && request.status === "pending");
+    },
+  };
+}
+
+export type ApprovalService = ReturnType<typeof createApprovalService>;
