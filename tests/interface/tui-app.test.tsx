@@ -7,7 +7,7 @@ import { App } from "../../src/interface/tui/app";
 describe("TUI App", () => {
   test("renders the core task shell regions and submits composer input", async () => {
     const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-    async function waitFor(check: () => boolean, attempts = 20) {
+    async function waitFor(check: () => boolean, message: string, attempts = 20) {
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         if (check()) {
           return;
@@ -15,6 +15,8 @@ describe("TUI App", () => {
 
         await tick();
       }
+
+      throw new Error(message);
     }
 
     let receivedCommand:
@@ -37,13 +39,17 @@ describe("TUI App", () => {
     const { lastFrame, stdin } = render(<App kernel={kernel} />);
 
     await tick();
-    for (const char of "plan the repo") {
-      stdin.write(char);
-      await tick();
-    }
-    await waitFor(() => (lastFrame() ?? "").includes("plan the repo"));
+    stdin.write("plan the repo");
+    await waitFor(
+      () => (lastFrame() ?? "").includes("plan the repo"),
+      "expected composer to render the full input before submit",
+    );
+    await tick();
     stdin.write("\r");
-    await waitFor(() => receivedCommand?.payload.text === "plan the repo");
+    await waitFor(
+      () => receivedCommand?.payload.text === "plan the repo",
+      "expected kernel to receive the full submitted command",
+    );
 
     const frame = lastFrame();
 
