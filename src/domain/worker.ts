@@ -1,10 +1,12 @@
+import { taskId as sharedTaskId, threadId as sharedThreadId, workerId as sharedWorkerId } from "../shared/ids";
+
 export type WorkerStatus = "created" | "starting" | "running" | "stopping" | "exited" | "failed";
 export type WorkerRole = "planner" | "executor" | "verifier" | "memory_maintainer";
 
 export type Worker = {
-  workerId: string;
-  threadId: string;
-  ownerTaskId: string;
+  workerId: ReturnType<typeof sharedWorkerId>;
+  threadId: ReturnType<typeof sharedThreadId>;
+  ownerTaskId: ReturnType<typeof sharedTaskId>;
   role: WorkerRole;
   spawnReason: string;
   status: WorkerStatus;
@@ -17,5 +19,12 @@ export function createWorker(input: {
   role: WorkerRole;
   spawnReason: string;
 }): Worker {
-  return { ...input, status: "created" };
+  return {
+    workerId: sharedWorkerId(input.workerId),
+    threadId: sharedThreadId(input.threadId),
+    ownerTaskId: sharedTaskId(input.ownerTaskId),
+    role: input.role,
+    spawnReason: input.spawnReason,
+    status: "created",
+  };
 }

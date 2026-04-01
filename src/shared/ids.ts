@@ -1,8 +1,10 @@
+import { domainError } from "./errors";
+
 export type Id = string;
 
 export function ensureId(value: string): Id {
   if (!value) {
-    throw new Error("id must not be empty");
+    throw domainError("id must not be empty");
   }
 
   return value;

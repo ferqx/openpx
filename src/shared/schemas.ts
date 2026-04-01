@@ -4,6 +4,7 @@ export const threadStatusSchema = z.enum(["idle", "active", "waiting_approval", 
 export const taskStatusSchema = z.enum(["queued", "running", "blocked", "completed", "failed", "cancelled"]);
 export const workerStatusSchema = z.enum(["created", "starting", "running", "stopping", "exited", "failed"]);
 export const approvalStatusSchema = z.enum(["pending", "approved", "rejected", "cancelled"]);
+export const memoryNamespaceSchema = z.enum(["thread", "durable"]);
 
 export const idSchema = z.string().min(1);
 

@@ -1,18 +1,31 @@
 import { describe, expect, test } from "bun:test";
+import { DomainError } from "../../src/shared/errors";
 import { createThread, transitionThread } from "../../src/domain/thread";
 
 describe("thread transitions", () => {
-  test("moves from active to waiting_approval", () => {
-    const thread = createThread("thread_1");
-    const next = transitionThread(thread, "waiting_approval");
+  test("allows the declared transition matrix", () => {
+    const cases: Array<[string, Parameters<typeof transitionThread>[1]]> = [
+      ["active", "waiting_approval"],
+      ["active", "interrupted"],
+      ["active", "completed"],
+      ["waiting_approval", "active"],
+      ["interrupted", "completed"],
+      ["completed", "active"],
+      ["failed", "active"],
+    ];
 
-    expect(next.threadId).toBe("thread_1");
-    expect(next.status).toBe("waiting_approval");
+    for (const [from, to] of cases) {
+      const thread = { threadId: "thread_1", status: from as Parameters<typeof transitionThread>[0]["status"] };
+      const next = transitionThread(thread, to);
+
+      expect(next.status).toBe(to);
+    }
   });
 
-  test("rejects an invalid transition from active to idle", () => {
+  test("rejects a disallowed transition with a shared domain error", () => {
     const thread = createThread("thread_1");
 
+    expect(() => transitionThread(thread, "idle")).toThrow(DomainError);
     expect(() => transitionThread(thread, "idle")).toThrow("invalid thread transition from active to idle");
   });
 });
