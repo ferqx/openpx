@@ -8,6 +8,7 @@ export type TaskStatus = z.infer<typeof taskStatusSchema>;
 export type Task = {
   taskId: ReturnType<typeof sharedTaskId>;
   threadId: ReturnType<typeof sharedThreadId>;
+  summary?: string;
   status: TaskStatus;
 };
 
@@ -20,8 +21,8 @@ const allowedTaskTransitions: Record<TaskStatus, readonly TaskStatus[]> = {
   cancelled: [],
 };
 
-export function createTask(taskId: string, threadId: string): Task {
-  return { taskId: sharedTaskId(taskId), threadId: sharedThreadId(threadId), status: "queued" };
+export function createTask(taskId: string, threadId: string, summary?: string): Task {
+  return { taskId: sharedTaskId(taskId), threadId: sharedThreadId(threadId), summary, status: "queued" };
 }
 
 export function transitionTask(task: Task, status: TaskStatus): Task {

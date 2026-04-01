@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createTaskManager } from "../../src/control/tasks/task-manager";
+import { createSqlite } from "../../src/persistence/sqlite/sqlite-client";
+import { SqliteEventLog } from "../../src/persistence/sqlite/sqlite-event-log";
+import { SqliteTaskStore } from "../../src/persistence/sqlite/sqlite-task-store";
 
 describe("TaskManager", () => {
   test("creates a root task in queued state", async () => {
@@ -40,5 +43,27 @@ describe("TaskManager", () => {
         status: "queued",
       },
     });
+  });
+
+  test("persists root task summary through the sqlite task store", async () => {
+    const db = createSqlite(":memory:");
+    const taskStore = new SqliteTaskStore(db);
+    const eventLog = new SqliteEventLog(db);
+    const manager = createTaskManager({
+      taskStore,
+      eventLog,
+    });
+
+    const created = await manager.createRootTask("thread_1", "plan repo");
+    const reloaded = await taskStore.get(created.taskId);
+
+    expect(reloaded).toEqual({
+      taskId: created.taskId,
+      threadId: "thread_1",
+      summary: "plan repo",
+      status: "queued",
+    });
+
+    db.close();
   });
 });

@@ -8,9 +8,12 @@ export function migrateSqlite(db: Database): void {
     CREATE TABLE IF NOT EXISTS tasks (
       task_id TEXT PRIMARY KEY,
       thread_id TEXT NOT NULL,
+      summary TEXT,
       status TEXT NOT NULL
     )
   `);
+
+  ensureColumn(db, "tasks", "summary", "TEXT");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS memories (
@@ -59,4 +62,15 @@ export function migrateSqlite(db: Database): void {
   db.run("CREATE INDEX IF NOT EXISTS idx_memories_thread_id ON memories (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_events_thread_sequence ON events (thread_id, sequence)");
   db.run("CREATE INDEX IF NOT EXISTS idx_approvals_thread_id ON approvals (thread_id)");
+}
+
+function ensureColumn(db: Database, tableName: string, columnName: string, columnDefinition: string): void {
+  const columns = db
+    .query<{ name: string }, []>(`PRAGMA table_info(${tableName})`)
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes(columnName)) {
+    db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+  }
 }

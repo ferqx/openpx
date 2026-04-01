@@ -7,6 +7,7 @@ import { migrateSqlite } from "./sqlite-migrator";
 type TaskRow = {
   task_id: string;
   thread_id: string;
+  summary: string | null;
   status: Task["status"];
 };
 
@@ -23,18 +24,19 @@ export class SqliteTaskStore implements TaskStorePort {
 
   async save(task: Task): Promise<void> {
     this.db.run(
-      `INSERT INTO tasks (task_id, thread_id, status)
-       VALUES (?, ?, ?)
+      `INSERT INTO tasks (task_id, thread_id, summary, status)
+       VALUES (?, ?, ?, ?)
        ON CONFLICT(task_id) DO UPDATE SET
          thread_id = excluded.thread_id,
+         summary = excluded.summary,
          status = excluded.status`,
-      [task.taskId, task.threadId, task.status],
+      [task.taskId, task.threadId, task.summary ?? null, task.status],
     );
   }
 
   async get(taskId: string): Promise<Task | undefined> {
     const row = this.db
-      .query<TaskRow, [string]>("SELECT task_id, thread_id, status FROM tasks WHERE task_id = ?")
+      .query<TaskRow, [string]>("SELECT task_id, thread_id, summary, status FROM tasks WHERE task_id = ?")
       .get(taskId);
 
     return row ? mapTaskRow(row) : undefined;
@@ -42,7 +44,7 @@ export class SqliteTaskStore implements TaskStorePort {
 
   async listByThread(threadId: string): Promise<Task[]> {
     const rows = this.db
-      .query<TaskRow, [string]>("SELECT task_id, thread_id, status FROM tasks WHERE thread_id = ? ORDER BY rowid ASC")
+      .query<TaskRow, [string]>("SELECT task_id, thread_id, summary, status FROM tasks WHERE thread_id = ? ORDER BY rowid ASC")
       .all(threadId);
 
     return rows.map(mapTaskRow);
@@ -59,6 +61,7 @@ function mapTaskRow(row: TaskRow): Task {
   return {
     taskId: row.task_id,
     threadId: row.thread_id,
+    summary: row.summary ?? undefined,
     status: row.status,
   };
 }
