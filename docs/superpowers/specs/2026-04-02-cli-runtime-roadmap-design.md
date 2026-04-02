@@ -210,12 +210,34 @@ Differentiate:
 
 Task failure must not automatically kill the thread.
 
+For side-effecting executor work, checkpoint/resume must be paired with a durable execution ledger.
+
+Required rule:
+
+- every effectful tool action gets a durable execution record before the side effect starts
+- the record tracks at least `planned`, `started`, `completed`, `failed`, and `unknown_after_crash`
+- replay is allowed only for operations that are explicitly idempotent or proven incomplete
+- if runtime cannot prove whether the side effect committed, the task must enter a human-required recovery state instead of blindly replaying
+
+This execution ledger is the idempotency boundary for safe recovery.
+
 ### State Hydration
 
 All clients must follow:
 
 1. hydrate current thread/task/approval snapshot
 2. subscribe to live events
+
+This must be versioned. Hydration cannot be an unversioned point-in-time read.
+
+Required consistency contract:
+
+- snapshot responses include a monotonic `last_event_seq` or thread revision
+- event streams support replay from `last_event_seq + 1`
+- clients attach the stream with that replay cursor
+- runtime retains a replay window that bridges normal reconnects
+
+This avoids dropping transitions that happen between snapshot read and stream attachment.
 
 ## 7. Agent Team Strategy
 
@@ -261,6 +283,12 @@ Confirmation should remain concise:
 - that cost will increase
 - whether to continue
 
+Verifier policy clarification:
+
+- a lightweight verifier pass may still run inside normal mode as part of the main code agent’s default completion loop
+- explicit agent-team confirmation is required only when runtime promotes the task into additional subagent-backed team execution outside that normal-mode envelope
+- therefore verifier integration may precede full team-confirmation UX as long as it remains inside the default single-agent cost budget
+
 ## 8. Shared Runtime Service and Multi-Frontend Sync
 
 V1 should be:
@@ -291,6 +319,15 @@ Implications:
 - CLI, VSCode, Web, Desktop, and Mobile should all connect to the same runtime in the future
 - history, approvals, preferences, tasks, and answers stay consistent
 - state mutations are runtime-owned and atomic
+
+Multi-client mutation rule:
+
+- observations may be concurrent
+- state-changing commands must be revision-checked or otherwise serialized by runtime
+- commands should target a known thread revision or session epoch
+- if the target revision is stale, runtime rejects or revalidates the command instead of silently applying conflicting changes
+
+V1 may optionally designate a foreground controller for an actively edited thread, but runtime revision checks are the minimum required safety boundary.
 
 V1 scope assumption:
 
@@ -499,6 +536,7 @@ Targets:
 - extract runtime service entrypoint
 - define local control API and event stream boundaries
 - make CLI/TUI a runtime client
+- define snapshot versioning and replay cursor semantics for hydrate-to-stream continuity
 
 ### Batch 2: Long-Lived Thread Semantics
 
@@ -519,12 +557,14 @@ Targets:
 - complete checkpoint/hydration/resume integration
 - improve runtime restart recovery
 - add reconnect and blocked recovery regressions
+- add durable execution-ledger semantics for side-effect recovery
 
 ### Batch 5: ModelGateway Stabilization
 
 - timeout/retry/error taxonomy
 - planner/verifier through shared gateway
 - provider state visibility
+- keep lightweight verifier-in-normal-mode semantics explicit until team policy is fully rolled out
 
 ### Batch 6: CLI/TUI as Work Shell
 
@@ -538,6 +578,7 @@ Targets:
 - recommendation engine
 - concise user confirmation for team mode
 - internal topology hidden from default UX
+- explicit boundary between normal-mode verifier use and confirmed team-mode subagent expansion
 
 Recommended order:
 
