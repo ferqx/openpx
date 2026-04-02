@@ -50,6 +50,8 @@ Track B is the system itself:
 
 CLI is the best entry point. Runtime is the only source of truth.
 
+Runtime also owns orchestration authority. Any “main code agent” referenced later in this document must be understood as a runtime-owned coordinator role inside the active thread, not as a separate source of truth outside the runtime.
+
 ## 3. Runtime Core Model
 
 The core hierarchy should be:
@@ -83,12 +85,17 @@ Key rule:
 Recommended states:
 
 - `active`
+- `blocked`
 - `waiting_approval`
 - `interrupted`
 - `completed`
 - `failed`
 
 `completed` does not mean the thread is dead. It means the current stage ended and the thread remains reusable.
+
+`blocked` is used when the current task cannot proceed because of a non-approval dependency, such as missing config, an unavailable external prerequisite, or a policy gate that requires additional setup but not an approval prompt.
+
+`waiting_approval` is reserved specifically for approval-gated continuation.
 
 ### Task
 
@@ -102,6 +109,12 @@ Recommended states:
 - `cancelled`
 
 `blocked` is a normal first-class state.
+
+Thread roll-up rule:
+
+- if the active task is blocked on approval, the thread becomes `waiting_approval`
+- if the active task is blocked for a recoverable non-approval reason, the thread becomes `blocked`
+- if execution is intentionally paused or suspended at a resumable boundary, the thread becomes `interrupted`
 
 ### Worker
 
@@ -228,6 +241,13 @@ Runtime may choose internal topologies such as:
 
 But these are internal only.
 
+Important authority rule:
+
+- runtime is the only orchestration authority
+- the “main code agent” is the runtime-owned coordinating agent for the active thread
+- planner provides orchestration intelligence and recommendations, but does not own system authority
+- subagents execute delegated work and report back to the main code agent through runtime-managed state and events
+
 ### Cost Control
 
 Agent team consumes more tokens and usually more wall-clock time. Therefore:
@@ -271,6 +291,12 @@ Implications:
 - CLI, VSCode, Web, Desktop, and Mobile should all connect to the same runtime in the future
 - history, approvals, preferences, tasks, and answers stay consistent
 - state mutations are runtime-owned and atomic
+
+V1 scope assumption:
+
+- same-device shared runtime only
+- CLI, VSCode, Web, Desktop, and Mobile references in V1 mean clients on the same user device connecting to the same local runtime
+- remote multi-device clients are out of scope for V1 and should be treated as a later protocol/authentication expansion
 
 ## 9. Long-Lived Thread Model
 
@@ -400,7 +426,7 @@ Rules:
 - subagents do not orchestrate other subagents
 - all meaningful results flow back through the main code agent
 
-Subagents may perform different kinds of work, including bounded tool usage and scoped code modification when explicitly delegated. But only the main code agent orchestrates.
+Subagents may perform different kinds of work, including bounded tool usage and scoped code modification when explicitly delegated. But only the main code agent orchestrates, and that coordinating code agent itself is runtime-owned rather than an independent authority.
 
 Core principle:
 
@@ -517,8 +543,8 @@ Recommended order:
 
 1. Batch 1
 2. Batch 2
-3. Batch 4
-4. Batch 3
+3. Batch 3
+4. Batch 4
 5. Batch 5
 6. Batch 6
 7. Batch 7
