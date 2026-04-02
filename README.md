@@ -28,6 +28,22 @@ bun test
 bun run typecheck
 ```
 
+## Smoke / Verification
+
+Run these commands in order when checking the developer experience:
+
+```bash
+bun test
+bun run typecheck
+bun run src/app/main.ts --help
+```
+
+Expected results:
+
+- `bun test` passes
+- `bun run typecheck` passes
+- `bun run src/app/main.ts --help` prints usage and exits without launching the TUI
+
 ## SQLite Data
 
 By default, the app boots with in-memory SQLite for development. If you pass a file path as `dataDir`, both the app stores and LangGraph checkpointing use that SQLite file. A common local choice is a workspace-relative path such as `./.openwenpx/agent.sqlite`.

@@ -9,6 +9,16 @@ type MainInput = {
   mount?: (tree: React.ReactElement) => Instance | { unmount?: () => void };
 };
 
+function printUsage() {
+  console.log(`Usage: bun run src/app/main.ts [--help]
+
+Starts the OpenWENPX TUI shell.
+
+Options:
+  --help, -h   Show this help text and exit
+`);
+}
+
 export async function main(input?: MainInput) {
   const context = await createAppContext({
     workspaceRoot: input?.workspaceRoot ?? process.cwd(),
@@ -23,5 +33,10 @@ export async function main(input?: MainInput) {
 }
 
 if (import.meta.main) {
-  await main();
+  const args = process.argv.slice(2);
+  if (args.includes("--help") || args.includes("-h")) {
+    printUsage();
+  } else {
+    await main();
+  }
 }
