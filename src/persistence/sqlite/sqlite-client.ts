@@ -1,6 +1,12 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
 
 export function createSqlite(path: string): Database {
+  if (path !== ":memory:") {
+    mkdirSync(dirname(path), { recursive: true });
+  }
+
   return new Database(path, { create: true });
 }
 
