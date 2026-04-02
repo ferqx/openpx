@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "bun run src/app/main.ts",
+    "smoke:planner": "bun run src/app/smoke-planner.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

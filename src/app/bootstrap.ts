@@ -16,6 +16,7 @@ import { SqliteMemoryStore } from "../persistence/sqlite/sqlite-memory-store";
 import { SqliteTaskStore } from "../persistence/sqlite/sqlite-task-store";
 import { SqliteThreadStore } from "../persistence/sqlite/sqlite-thread-store";
 import { createRootGraph } from "../runtime/graph/root/graph";
+import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
 import { resolveConfig } from "../shared/config";
 
 type AppStores = ReturnType<typeof createStores>;
@@ -165,6 +166,7 @@ async function createControlPlane(input: {
   config: ReturnType<typeof resolveConfig>;
   stores: AppStores;
   checkpointer: ReturnType<typeof createSqliteCheckpointer>;
+  modelGateway: ModelGateway;
 }): Promise<ControlPlane> {
   const taskManager = createTaskManager({
     taskStore: input.stores.taskStore,
@@ -177,8 +179,8 @@ async function createControlPlane(input: {
   });
   const rootGraph = await createRootGraph({
     checkpointer: input.checkpointer,
-    planner: async ({ input: text }) => ({
-      summary: `Planned request: ${text}`,
+    planner: async ({ input: text, threadId, taskId }) => ({
+      summary: (await input.modelGateway.plan({ prompt: text, threadId, taskId })).summary,
       mode: "plan",
     }),
     verifier: async ({ input: text }) => ({
@@ -328,14 +330,25 @@ async function createControlPlane(input: {
   };
 }
 
-export async function createAppContext(input: { workspaceRoot: string; dataDir: string }) {
+export async function createAppContext(input: {
+  workspaceRoot: string;
+  dataDir: string;
+  modelGateway?: ModelGateway;
+}) {
   const config = resolveConfig(input);
   const sqlite = createSqlite(config.dataDir);
   migrateSqlite(sqlite);
 
   const stores = createStores(sqlite);
   const checkpointer = createSqliteCheckpointer(config.checkpointConnString);
-  const controlPlane = await createControlPlane({ config, stores, checkpointer });
+  const modelGateway =
+    input.modelGateway ??
+    createModelGateway({
+      apiKey: config.model.apiKey,
+      baseURL: config.model.baseURL,
+      modelName: config.model.name,
+    });
+  const controlPlane = await createControlPlane({ config, stores, checkpointer, modelGateway });
   const kernel = createSessionKernel({ stores, controlPlane });
 
   return { config, stores, controlPlane, kernel };

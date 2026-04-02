@@ -20,6 +20,14 @@ async function createWorkspace() {
   return dir;
 }
 
+function createTestModelGateway() {
+  return {
+    async plan(input: { prompt: string }) {
+      return { summary: `planned: ${input.prompt}` };
+    },
+  };
+}
+
 describe("root graph interrupt/resume", () => {
   test("interrupts after execution and resumes to done using the injected checkpointer", async () => {
     const checkpointer = new MemorySaver();
@@ -64,6 +72,7 @@ describe("root graph interrupt/resume", () => {
     const ctx = await createAppContext({
       workspaceRoot,
       dataDir,
+      modelGateway: createTestModelGateway(),
     });
 
     const result = await ctx.kernel.handleCommand({
@@ -93,6 +102,7 @@ describe("root graph interrupt/resume", () => {
     const firstCtx = await createAppContext({
       workspaceRoot,
       dataDir,
+      modelGateway: createTestModelGateway(),
     });
     const firstResult = await firstCtx.kernel.handleCommand({
       type: "submit_input",
@@ -102,6 +112,7 @@ describe("root graph interrupt/resume", () => {
     const secondCtx = await createAppContext({
       workspaceRoot,
       dataDir,
+      modelGateway: createTestModelGateway(),
     });
     const secondResult = await secondCtx.kernel.handleCommand({
       type: "submit_input",
@@ -134,6 +145,7 @@ describe("root graph interrupt/resume", () => {
     const firstCtx = await createAppContext({
       workspaceRoot,
       dataDir,
+      modelGateway: createTestModelGateway(),
     });
     const blocked = await firstCtx.kernel.handleCommand({
       type: "submit_input",
@@ -149,6 +161,7 @@ describe("root graph interrupt/resume", () => {
     const restartedCtx = await createAppContext({
       workspaceRoot,
       dataDir,
+      modelGateway: createTestModelGateway(),
     });
     const hydrated = await restartedCtx.kernel.hydrateSession();
 
@@ -173,6 +186,7 @@ describe("root graph interrupt/resume", () => {
     const afterResumeCtx = await createAppContext({
       workspaceRoot,
       dataDir,
+      modelGateway: createTestModelGateway(),
     });
     const afterResume = await afterResumeCtx.kernel.hydrateSession();
 
@@ -220,6 +234,7 @@ describe("root graph interrupt/resume", () => {
     const ctx = await createAppContext({
       workspaceRoot,
       dataDir,
+      modelGateway: createTestModelGateway(),
     });
     const hydrated = await ctx.kernel.hydrateSession();
     expect(hydrated?.approvals[0]?.approvalRequestId).toBe("approval_legacy");

@@ -36,6 +36,7 @@ Run these commands in order when checking the developer experience:
 bun test
 bun run typecheck
 bun run src/app/main.ts --help
+bun run smoke:planner
 ```
 
 Expected results:
@@ -43,6 +44,7 @@ Expected results:
 - `bun test` passes
 - `bun run typecheck` passes
 - `bun run src/app/main.ts --help` prints usage and exits without launching the TUI
+- `bun run smoke:planner` prints a real planner summary when `OPENAI_*` variables are configured
 
 ## SQLite Data
 
@@ -56,6 +58,18 @@ OPENWENPX_DATA_DIR=./.openwenpx/agent.sqlite bun run dev
 
 That path is used for both the app stores and LangGraph checkpointing.
 
+## Planner Model Config
+
+The planner worker reads local OpenAI-style variables from `.env`:
+
+```bash
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=...
+OPENAI_MODEL=kimi-k2.5
+```
+
+Copy [`.env.example`](/Users/chenchao/Code/ai/openwenpx-new/.env.example) to `.env` and fill in provider-specific values. `.env` is gitignored and stays local.
+
 ## Approvals
 
-Approvals are policy-gated. When a tool call is risky, the kernel creates a pending approval request instead of executing the change. The current TUI shows those pending requests in the approvals pane; it does not yet expose approve/reject actions in the shell.
+Approvals are policy-gated. When a tool call is risky, the kernel creates a pending approval request instead of executing the change. The TUI hydrates the latest blocked thread on boot and supports `/approve <approval-id>` and `/reject <approval-id>` to continue or cancel the blocked action.
