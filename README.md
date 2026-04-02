@@ -46,8 +46,16 @@ Expected results:
 
 ## SQLite Data
 
-By default, the app boots with in-memory SQLite for development. If you pass a file path as `dataDir`, both the app stores and LangGraph checkpointing use that SQLite file. A common local choice is a workspace-relative path such as `./.openwenpx/agent.sqlite`.
+By default, the app boots with in-memory SQLite for development.
+
+To persist local state while using `bun run dev`, set `OPENWENPX_DATA_DIR` to a SQLite file path first:
+
+```bash
+OPENWENPX_DATA_DIR=./.openwenpx/agent.sqlite bun run dev
+```
+
+That path is used for both the app stores and LangGraph checkpointing.
 
 ## Approvals
 
-Approvals are policy-gated. When a tool call is risky, the kernel creates a pending approval request instead of executing the change. The TUI renders those requests so you can approve or reject them from the control plane flow.
+Approvals are policy-gated. When a tool call is risky, the kernel creates a pending approval request instead of executing the change. The current TUI shows those pending requests in the approvals pane; it does not yet expose approve/reject actions in the shell.

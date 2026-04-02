@@ -22,7 +22,7 @@ Options:
 export async function main(input?: MainInput) {
   const context = await createAppContext({
     workspaceRoot: input?.workspaceRoot ?? process.cwd(),
-    dataDir: input?.dataDir ?? ":memory:",
+    dataDir: input?.dataDir ?? process.env.OPENWENPX_DATA_DIR ?? ":memory:",
   });
 
   const ui = (input?.mount ?? render)(React.createElement(App, { kernel: context.kernel }));
@@ -32,11 +32,15 @@ export async function main(input?: MainInput) {
   };
 }
 
-if (import.meta.main) {
-  const args = process.argv.slice(2);
+export async function runCli(args: string[] = process.argv.slice(2), input?: MainInput) {
   if (args.includes("--help") || args.includes("-h")) {
     printUsage();
-  } else {
-    await main();
+    return;
   }
+
+  await main(input);
+}
+
+if (import.meta.main) {
+  await runCli();
 }
