@@ -1,6 +1,7 @@
 import type { WorkerRuntimeFactory } from "./worker-runtime";
 import type { SpawnWorkerInput, WorkerRecord } from "./worker-types";
 import { createWorkerRecord } from "./worker-types";
+import { prefixedUuid } from "../../shared/id-generators";
 
 export type WorkerManager = {
   spawn(input: SpawnWorkerInput): Promise<WorkerRecord>;
@@ -11,7 +12,7 @@ export function createWorkerManager(deps: {
 }): WorkerManager {
   return {
     async spawn(input) {
-      const workerId = `worker_${Date.now()}`;
+      const workerId = prefixedUuid("worker");
       const runtime = deps.runtimeFactory({
         workerId,
         role: input.role,

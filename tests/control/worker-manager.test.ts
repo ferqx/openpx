@@ -43,4 +43,42 @@ describe("WorkerManager", () => {
       },
     ]);
   });
+
+  test("creates distinct worker IDs when the timestamp collides", async () => {
+    const originalDateNow = Date.now;
+    Date.now = () => 1234567890;
+
+    const starts: Array<{ workerId: string }> = [];
+    const manager = createWorkerManager({
+      runtimeFactory(input) {
+        return {
+          async start() {
+            starts.push({
+              workerId: input.workerId,
+            });
+          },
+        };
+      },
+    });
+
+    try {
+      const first = await manager.spawn({
+        role: "executor",
+        taskId: "task_1",
+        threadId: "thread_1",
+        spawnReason: "execute patch",
+      });
+      const second = await manager.spawn({
+        role: "executor",
+        taskId: "task_1",
+        threadId: "thread_1",
+        spawnReason: "execute patch",
+      });
+
+      expect(new Set([first.workerId, second.workerId]).size).toBe(2);
+      expect(new Set(starts.map((start) => start.workerId)).size).toBe(2);
+    } finally {
+      Date.now = originalDateNow;
+    }
+  });
 });

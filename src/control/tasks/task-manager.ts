@@ -1,6 +1,7 @@
 import { createEvent } from "../../domain/event";
 import type { ControlTask, TaskStoreContract } from "./task-types";
 import { createControlTask } from "./task-types";
+import { prefixedUuid } from "../../shared/id-generators";
 
 export type TaskManager = {
   createRootTask(threadId: string, summary: string): Promise<ControlTask>;
@@ -18,7 +19,7 @@ async function appendTaskCreatedEvent(deps: {
   try {
     await deps.eventLog.append(
       createEvent({
-        eventId: `event_${Date.now()}`,
+        eventId: prefixedUuid("event"),
         threadId: task.threadId,
         taskId: task.taskId,
         type: "task.created",
@@ -43,7 +44,7 @@ export function createTaskManager(deps: {
   return {
     async createRootTask(threadId: string, summary: string) {
       const task = createControlTask({
-        taskId: `task_${Date.now()}`,
+        taskId: prefixedUuid("task"),
         threadId,
         summary,
       });

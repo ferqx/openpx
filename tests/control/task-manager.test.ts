@@ -96,4 +96,43 @@ describe("TaskManager", () => {
     });
     expect(savedTasks).toEqual([task]);
   });
+
+  test("creates distinct task and event IDs when the timestamp collides", async () => {
+    const originalDateNow = Date.now;
+    Date.now = () => 1234567890;
+
+    const savedTasks: Array<{
+      taskId: string;
+      threadId: string;
+      summary: string;
+      status: string;
+    }> = [];
+    const appendedEvents: Array<{ eventId: string; type: string }> = [];
+    const manager = createTaskManager({
+      taskStore: {
+        async save(task) {
+          savedTasks.push(task);
+        },
+      },
+      eventLog: {
+        async append(event) {
+          appendedEvents.push({
+            eventId: event.eventId,
+            type: event.type,
+          });
+        },
+      },
+    });
+
+    try {
+      const first = await manager.createRootTask("thread_1", "plan repo");
+      const second = await manager.createRootTask("thread_1", "plan repo");
+
+      expect(new Set([first.taskId, second.taskId]).size).toBe(2);
+      expect(new Set(appendedEvents.map((event) => event.eventId)).size).toBe(2);
+      expect(savedTasks).toHaveLength(2);
+    } finally {
+      Date.now = originalDateNow;
+    }
+  });
 });
