@@ -3,10 +3,10 @@ import type { WorkerMode } from "../context";
 export function routeNode(state: { input: string }): { mode: WorkerMode } {
   const input = state.input.toLowerCase();
 
-  if (input.includes("verify")) {
+  if (/\bverify\b/.test(input)) {
     return { mode: "verify" };
   }
-  if (input.includes("plan")) {
+  if (/\bplan\b/.test(input)) {
     return { mode: "plan" };
   }
 

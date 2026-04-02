@@ -32,4 +32,33 @@ describe("root graph", () => {
     expect(plannerCallThreadId).toBe("thread_1");
     expect(plannerCallTaskId).toBe("task_1");
   });
+
+  test("routes execute work to the executor even when the request mentions src/planner.ts", async () => {
+    const checkpointer = new MemorySaver();
+    let plannerCalled = false;
+    let executorCalled = false;
+
+    const graph = await createRootGraph({
+      checkpointer,
+      planner: async () => {
+        plannerCalled = true;
+        return { summary: "planned", mode: "plan" };
+      },
+      executor: async () => {
+        executorCalled = true;
+        return { summary: "executed", mode: "execute" };
+      },
+      verifier: async () => ({ summary: "verified", mode: "verify" }),
+    });
+
+    const result = await graph.invoke(
+      { input: "delete src/planner.ts" },
+      { configurable: { thread_id: "thread_2", task_id: "task_2" } },
+    );
+
+    expect(result.mode).toBe("execute");
+    expect(result.summary).toBe("executed");
+    expect(plannerCalled).toBe(false);
+    expect(executorCalled).toBe(true);
+  });
 });
