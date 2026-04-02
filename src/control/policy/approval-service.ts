@@ -1,9 +1,10 @@
-import { createApprovalRequest, type ApprovalRequest } from "../../domain/approval";
+import { createApprovalRequest, type ApprovalRequest, type ApprovalToolRequest } from "../../domain/approval";
 
 export type CreateApprovalInput = {
   toolCallId: string;
   threadId: string;
   taskId: string;
+  toolRequest: ApprovalToolRequest;
   summary: string;
   risk: string;
 };
@@ -21,6 +22,7 @@ export function createApprovalService(input?: { idGenerator?: () => string }) {
         toolCallId: request.toolCallId,
         threadId: request.threadId,
         taskId: request.taskId,
+        toolRequest: request.toolRequest,
         summary: request.summary,
         risk: request.risk,
       });
@@ -35,6 +37,20 @@ export function createApprovalService(input?: { idGenerator?: () => string }) {
 
     async listPendingByThread(threadId: string): Promise<ApprovalRequest[]> {
       return [...requests.values()].filter((request) => request.threadId === threadId && request.status === "pending");
+    },
+
+    async updateStatus(
+      approvalRequestId: string,
+      status: Exclude<ApprovalRequest["status"], "pending">,
+    ): Promise<ApprovalRequest | undefined> {
+      const approval = requests.get(approvalRequestId);
+      if (!approval) {
+        return undefined;
+      }
+
+      const updated = { ...approval, status };
+      requests.set(approvalRequestId, updated);
+      return updated;
     },
   };
 }

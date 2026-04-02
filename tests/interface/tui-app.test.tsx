@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { main } from "../../src/app/main";
 import { App } from "../../src/interface/tui/app";
+import type { TuiKernel } from "../../src/interface/tui/hooks/use-kernel";
+import type { ApprovalCommand, SubmitInputCommand } from "../../src/interface/tui/commands";
 
 describe("TUI App", () => {
   test("renders the core task shell regions and submits composer input", async () => {
@@ -19,19 +21,14 @@ describe("TUI App", () => {
       throw new Error(message);
     }
 
-    let receivedCommand:
-      | {
-          type: string;
-          payload: { text: string };
-        }
-      | undefined;
-    const kernel = {
+    let receivedCommand: SubmitInputCommand | ApprovalCommand | undefined;
+    const kernel: TuiKernel = {
       events: {
         subscribe() {
           return () => undefined;
         },
       },
-      async handleCommand(command: { type: string; payload: { text: string } }) {
+      async handleCommand(command) {
         receivedCommand = command;
         return { status: "completed" };
       },
@@ -47,7 +44,7 @@ describe("TUI App", () => {
     await tick();
     stdin.write("\r");
     await waitFor(
-      () => receivedCommand?.payload.text === "plan the repo",
+      () => receivedCommand?.type === "submit_input" && receivedCommand.payload.text === "plan the repo",
       "expected kernel to receive the full submitted command",
     );
 
@@ -65,7 +62,7 @@ describe("TUI App", () => {
 
   test("renders task and approval state returned by the kernel", async () => {
     const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-    const kernel = {
+    const kernel: TuiKernel = {
       events: {
         subscribe() {
           return () => undefined;
@@ -107,6 +104,52 @@ describe("TUI App", () => {
     expect(frame).toContain("delete src/old.ts [blocked]");
     expect(frame).toContain("apply_patch delete_file src/old.ts [pending]");
     expect(frame).toContain("Approval required before deleting src/old.ts");
+  });
+
+  test("hydrates the latest blocked session state on mount", async () => {
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const kernel: TuiKernel = {
+      events: {
+        subscribe() {
+          return () => undefined;
+        },
+      },
+      async hydrateSession() {
+        return {
+          status: "waiting_approval",
+          summary: "Approval required before deleting src/resume-me.ts",
+          tasks: [
+            {
+              taskId: "task_resume",
+              summary: "delete src/resume-me.ts",
+              status: "blocked",
+            },
+          ],
+          approvals: [
+            {
+              approvalRequestId: "approval_resume",
+              summary: "apply_patch delete_file src/resume-me.ts",
+              status: "pending",
+            },
+          ],
+        };
+      },
+      async handleCommand() {
+        return { status: "completed" };
+      },
+    };
+
+    const { lastFrame } = render(<App kernel={kernel} />);
+    await tick();
+    await tick();
+
+    const frame = lastFrame();
+
+    expect(frame).toContain("delete src/resume-me.ts [blocked]");
+    expect(frame).toContain("apply_patch delete_file src/resume-me.ts");
+    expect(frame).toContain("[pending]");
+    expect(frame).toContain("Approval required before deleting");
+    expect(frame).toContain("src/resume-me.ts");
   });
 
   test("main mounts the Ink shell with the bootstrapped kernel", async () => {

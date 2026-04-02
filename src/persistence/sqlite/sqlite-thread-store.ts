@@ -7,6 +7,7 @@ import { migrateSqlite } from "./sqlite-migrator";
 type ThreadRow = {
   thread_id: string;
   status: Thread["status"];
+  updated_at: string | null;
 };
 
 export class SqliteThreadStore implements ThreadStorePort {
@@ -22,15 +23,30 @@ export class SqliteThreadStore implements ThreadStorePort {
 
   async save(thread: Thread): Promise<void> {
     this.db.run(
-      `INSERT INTO threads (thread_id, status)
-       VALUES (?, ?)
-       ON CONFLICT(thread_id) DO UPDATE SET status = excluded.status`,
-      [thread.threadId, thread.status],
+      `INSERT INTO threads (thread_id, status, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(thread_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`,
+      [thread.threadId, thread.status, new Date().toISOString()],
     );
   }
 
   async get(threadId: string): Promise<Thread | undefined> {
-    const row = this.db.query<ThreadRow, [string]>("SELECT thread_id, status FROM threads WHERE thread_id = ?").get(threadId);
+    const row = this.db
+      .query<ThreadRow, [string]>("SELECT thread_id, status, updated_at FROM threads WHERE thread_id = ?")
+      .get(threadId);
+    return row ? { threadId: row.thread_id, status: row.status } : undefined;
+  }
+
+  async getLatest(): Promise<Thread | undefined> {
+    const row = this.db
+      .query<ThreadRow, []>(
+        `SELECT thread_id, status, updated_at
+         FROM threads
+         ORDER BY COALESCE(updated_at, '') DESC, rowid DESC
+         LIMIT 1`,
+      )
+      .get();
+
     return row ? { threadId: row.thread_id, status: row.status } : undefined;
   }
 

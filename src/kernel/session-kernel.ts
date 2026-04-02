@@ -2,9 +2,13 @@ import { createEventBus, type KernelEvent } from "./event-bus";
 import { createInterruptService } from "./interrupt-service";
 import { createThreadService } from "./thread-service";
 import { transitionThread } from "../domain/thread";
+import { createEvent } from "../domain/event";
 import type { ApprovalRequest } from "../domain/approval";
 import type { Task } from "../domain/task";
 import type { ThreadStorePort } from "../persistence/ports/thread-store-port";
+import type { TaskStorePort } from "../persistence/ports/task-store-port";
+import type { EventLogPort } from "../persistence/ports/event-log-port";
+import { prefixedUuid } from "../shared/id-generators";
 
 export type SubmitInputCommand = {
   type: "submit_input";
@@ -13,7 +17,21 @@ export type SubmitInputCommand = {
   };
 };
 
-export type SessionCommand = SubmitInputCommand;
+export type ApproveRequestCommand = {
+  type: "approve_request";
+  payload: {
+    approvalRequestId: string;
+  };
+};
+
+export type RejectRequestCommand = {
+  type: "reject_request";
+  payload: {
+    approvalRequestId: string;
+  };
+};
+
+export type SessionCommand = SubmitInputCommand | ApproveRequestCommand | RejectRequestCommand;
 
 export type SessionControlPlaneResult = {
   status: "completed" | "waiting_approval";
@@ -34,14 +52,22 @@ export type SessionKernel = {
   events: ReturnType<typeof createEventBus<KernelEvent>>;
   interrupts: ReturnType<typeof createInterruptService<KernelEvent>>;
   handleCommand: (command: SessionCommand) => Promise<SessionCommandResult>;
+  hydrateSession: () => Promise<SessionCommandResult | undefined>;
 };
 
 export function createSessionKernel(deps: {
   stores: {
     threadStore: ThreadStorePort;
+    taskStore: TaskStorePort;
+    approvalStore: {
+      listPendingByThread(threadId: string): Promise<ApprovalRequest[]>;
+    };
+    eventLog?: EventLogPort;
   };
   controlPlane: {
     startRootTask: (threadId: string, text: string) => Promise<SessionControlPlaneResult | void>;
+    approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
+    rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
   };
 }): SessionKernel {
   const events = createEventBus<KernelEvent>();
@@ -51,63 +77,142 @@ export function createSessionKernel(deps: {
   });
   const interrupts = createInterruptService({ events });
 
-  return {
-    events,
-    interrupts,
-    async handleCommand(command) {
-      if (command.type !== "submit_input") {
-        throw new Error(`no command handler registered for ${command.type}`);
-      }
+  async function persistAnswerUpdated(result: SessionCommandResult): Promise<void> {
+    if (!deps.stores.eventLog) {
+      return;
+    }
 
-      const thread = await threadService.startThread();
-      const result =
-        (await deps.controlPlane.startRootTask(thread.threadId, command.payload.text)) ??
-        ({
-          status: "completed",
-          task: undefined,
-          approvals: [],
-          summary: command.payload.text,
-        } satisfies {
-          status: SessionControlPlaneResult["status"];
-          task?: Task;
-          approvals: SessionControlPlaneResult["approvals"];
-          summary: string;
-        });
-      const nextThread = transitionThread(thread, result.status === "waiting_approval" ? "waiting_approval" : "completed");
-      await deps.stores.threadStore.save(nextThread);
-
-      events.publish({
-        type: result.status === "waiting_approval" ? "thread.waiting_approval" : "thread.completed",
-        payload: nextThread,
-      });
-      if (result.task) {
-        events.publish({
-          type: "task.updated",
-          payload: result.task,
-        });
-      }
-      for (const approval of result.approvals) {
-        events.publish({
-          type: "approval.pending",
-          payload: approval,
-        });
-      }
-      events.publish({
+    await deps.stores.eventLog.append(
+      createEvent({
+        eventId: prefixedUuid("event"),
+        threadId: result.threadId,
+        taskId: result.tasks[0]?.taskId,
         type: "answer.updated",
         payload: {
-          threadId: nextThread.threadId,
+          threadId: result.threadId,
           status: result.status,
           summary: result.summary,
         },
-      });
+      }),
+    );
+  }
 
-      return {
-        status: result.status,
+  async function hydrateThread(threadId: string): Promise<SessionCommandResult> {
+    const tasks = await deps.stores.taskStore.listByThread(threadId);
+    const approvals = await deps.stores.approvalStore.listPendingByThread(threadId);
+    const loggedEvents = deps.stores.eventLog ? await deps.stores.eventLog.listByThread(threadId) : [];
+    const lastAnswer = [...loggedEvents]
+      .reverse()
+      .find((event) => event.type === "answer.updated" && typeof event.payload?.summary === "string");
+
+    return {
+      status: approvals.length > 0 ? "waiting_approval" : "completed",
+      threadId,
+      summary:
+        (typeof lastAnswer?.payload?.summary === "string" ? lastAnswer.payload.summary : undefined) ??
+        tasks.at(-1)?.summary ??
+        approvals[0]?.summary ??
+        "Awaiting answer",
+      tasks,
+      approvals,
+    };
+  }
+
+  async function finalize(threadId: string, result: SessionControlPlaneResult): Promise<SessionCommandResult> {
+    const currentThread = await deps.stores.threadStore.get(threadId);
+    if (!currentThread) {
+      throw new Error(`missing thread ${threadId}`);
+    }
+
+    const targetStatus = result.status === "waiting_approval" ? "waiting_approval" : "completed";
+    const nextThread = currentThread.status === targetStatus ? currentThread : transitionThread(currentThread, targetStatus);
+    await deps.stores.threadStore.save(nextThread);
+
+    events.publish({
+      type: result.status === "waiting_approval" ? "thread.waiting_approval" : "thread.completed",
+      payload: nextThread,
+    });
+    if (result.task) {
+      events.publish({
+        type: "task.updated",
+        payload: result.task,
+      });
+    }
+    for (const approval of result.approvals) {
+      events.publish({
+        type: "approval.pending",
+        payload: approval,
+      });
+    }
+
+    const commandResult = {
+      status: result.status,
+      threadId: nextThread.threadId,
+      summary: result.summary,
+      tasks: result.task ? [result.task] : [],
+      approvals: result.approvals,
+    } satisfies SessionCommandResult;
+
+    events.publish({
+      type: "answer.updated",
+      payload: {
         threadId: nextThread.threadId,
+        status: result.status,
         summary: result.summary,
-        tasks: result.task ? [result.task] : [],
-        approvals: result.approvals,
-      };
+      },
+    });
+    await persistAnswerUpdated(commandResult);
+
+    return commandResult;
+  }
+
+  return {
+    events,
+    interrupts,
+    async hydrateSession() {
+      const latestThread = await deps.stores.threadStore.getLatest();
+      if (!latestThread) {
+        return undefined;
+      }
+
+      return hydrateThread(latestThread.threadId);
+    },
+    async handleCommand(command) {
+      if (command.type === "submit_input") {
+        const latestThread = await deps.stores.threadStore.getLatest();
+        if (latestThread?.status === "waiting_approval") {
+          return hydrateThread(latestThread.threadId);
+        }
+
+        const thread = await threadService.startThread();
+        const result =
+          (await deps.controlPlane.startRootTask(thread.threadId, command.payload.text)) ??
+          ({
+            status: "completed",
+            task: undefined,
+            approvals: [],
+            summary: command.payload.text,
+          } satisfies {
+            status: SessionControlPlaneResult["status"];
+            task?: Task;
+            approvals: SessionControlPlaneResult["approvals"];
+            summary: string;
+          });
+
+        return finalize(thread.threadId, result as SessionControlPlaneResult);
+      }
+
+      if (command.type === "approve_request") {
+        const result = await deps.controlPlane.approveRequest(command.payload.approvalRequestId);
+        return finalize(result.task.threadId, result);
+      }
+
+      if (command.type === "reject_request") {
+        const result = await deps.controlPlane.rejectRequest(command.payload.approvalRequestId);
+        return finalize(result.task.threadId, result);
+      }
+
+      throw new Error(`no command handler registered for ${(command as { type: string }).type}`);
     },
   };
 }

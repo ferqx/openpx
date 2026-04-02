@@ -5,6 +5,7 @@ import { createPolicyEngine } from "../control/policy/policy-engine";
 import { createTaskManager } from "../control/tasks/task-manager";
 import type { ControlTask } from "../control/tasks/task-types";
 import { createToolRegistry } from "../control/tools/tool-registry";
+import type { ToolExecuteRequest } from "../control/tools/tool-types";
 import { createSessionKernel, type SessionControlPlaneResult } from "../kernel/session-kernel";
 import { createSqliteCheckpointer } from "../persistence/sqlite/sqlite-checkpointer";
 import { createSqlite } from "../persistence/sqlite/sqlite-client";
@@ -21,6 +22,8 @@ type AppStores = ReturnType<typeof createStores>;
 
 type ControlPlane = {
   startRootTask(threadId: string, text: string): Promise<SessionControlPlaneResult>;
+  approveRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
+  rejectRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
 };
 
 function createStores(path: string | ReturnType<typeof createSqlite>) {
@@ -48,6 +51,17 @@ function createPersistentApprovalService(stores: AppStores): ApprovalService {
     async listPendingByThread(threadId: string) {
       return stores.approvalStore.listPendingByThread(threadId);
     },
+    async updateStatus(approvalRequestId, status) {
+      const updated = await approvals.updateStatus(approvalRequestId, status);
+      const persisted = updated ?? (await stores.approvalStore.get(approvalRequestId));
+      if (!persisted) {
+        return undefined;
+      }
+
+      const next = { ...persisted, status };
+      await stores.approvalStore.save(next);
+      return next;
+    },
   };
 }
 
@@ -72,6 +86,79 @@ async function saveTaskStatus(stores: AppStores, task: ControlTask, status: Cont
   const next = { ...task, status };
   await stores.taskStore.save(next);
   return next;
+}
+
+function ensureControlTask(task: {
+  taskId: string;
+  threadId: string;
+  summary?: string;
+  status: ControlTask["status"];
+}): ControlTask {
+  return {
+    taskId: task.taskId,
+    threadId: task.threadId,
+    summary: task.summary ?? task.taskId,
+    status: task.status,
+  };
+}
+
+function summarizeApprovedAction(summary: string, workspaceRoot: string, requestPath?: string): string {
+  if (!requestPath) {
+    return summary;
+  }
+
+  const relativePath = requestPath.startsWith(workspaceRoot)
+    ? requestPath.slice(workspaceRoot.length).replace(/^\/+/, "")
+    : requestPath;
+
+  if (summary.includes("delete_file")) {
+    return `Deleted ${relativePath}`;
+  }
+
+  return summary;
+}
+
+function resolveApprovalToolRequest(
+  approval: Awaited<ReturnType<ApprovalService["get"]>>,
+  workspaceRoot: string,
+): ToolExecuteRequest | undefined {
+  if (!approval) {
+    return undefined;
+  }
+
+  if (approval.toolRequest?.toolName) {
+    return {
+      toolCallId: approval.toolRequest.toolCallId,
+      threadId: approval.toolRequest.threadId,
+      taskId: approval.toolRequest.taskId,
+      toolName: approval.toolRequest.toolName,
+      args: approval.toolRequest.args,
+      path: approval.toolRequest.path,
+      action: approval.toolRequest.action as ToolExecuteRequest["action"],
+      changedFiles: approval.toolRequest.changedFiles,
+    };
+  }
+
+  const legacyDeleteMatch = approval.summary.match(/^apply_patch delete_file (.+)$/);
+  if (!legacyDeleteMatch) {
+    return undefined;
+  }
+
+  const relativePath = legacyDeleteMatch[1]?.trim();
+  if (!relativePath) {
+    return undefined;
+  }
+
+  return {
+    toolCallId: approval.toolCallId,
+    threadId: approval.threadId,
+    taskId: approval.taskId,
+    toolName: "apply_patch",
+    args: {},
+    action: "delete_file",
+    path: resolve(workspaceRoot, relativePath),
+    changedFiles: 1,
+  };
 }
 
 async function createControlPlane(input: {
@@ -168,6 +255,74 @@ async function createControlPlane(input: {
         task: finalTask,
         approvals: approvalsForThread,
         summary,
+      };
+    },
+
+    async approveRequest(approvalRequestId: string) {
+      const approval = await approvals.get(approvalRequestId);
+      if (!approval) {
+        throw new Error(`approval request ${approvalRequestId} not found`);
+      }
+      const toolRequest = resolveApprovalToolRequest(approval, input.config.workspaceRoot);
+      if (!toolRequest) {
+        throw new Error(`approval request ${approvalRequestId} cannot be resumed without a stored tool request`);
+      }
+
+      const currentTask =
+        (await input.stores.taskStore.get(approval.taskId)) ??
+        ({
+          taskId: approval.taskId,
+          threadId: approval.threadId,
+          summary: approval.summary,
+          status: "blocked",
+        } satisfies ControlTask);
+      const runningTask = await saveTaskStatus(input.stores, ensureControlTask(currentTask), "running");
+      const outcome = await toolRegistry.executeApproved(toolRequest);
+      await approvals.updateStatus(approvalRequestId, "approved");
+      const pendingApprovals = await input.stores.approvalStore.listPendingByThread(approval.threadId);
+
+      if (outcome.kind === "executed") {
+        const completedTask = await saveTaskStatus(input.stores, runningTask, "completed");
+        return {
+          status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
+          task: completedTask,
+          approvals: pendingApprovals,
+          summary: summarizeApprovedAction(approval.summary, input.config.workspaceRoot, toolRequest.path),
+        };
+      }
+
+      const failedTask = await saveTaskStatus(input.stores, runningTask, "failed");
+      return {
+        status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
+        task: failedTask,
+        approvals: pendingApprovals,
+        summary: `Unable to complete approved action: ${outcome.reason}`,
+      };
+    },
+
+    async rejectRequest(approvalRequestId: string) {
+      const approval = await approvals.get(approvalRequestId);
+      if (!approval) {
+        throw new Error(`approval request ${approvalRequestId} not found`);
+      }
+
+      await approvals.updateStatus(approvalRequestId, "rejected");
+      const currentTask =
+        (await input.stores.taskStore.get(approval.taskId)) ??
+        ({
+          taskId: approval.taskId,
+          threadId: approval.threadId,
+          summary: approval.summary,
+          status: "blocked",
+        } satisfies ControlTask);
+      const cancelledTask = await saveTaskStatus(input.stores, ensureControlTask(currentTask), "cancelled");
+      const pendingApprovals = await input.stores.approvalStore.listPendingByThread(approval.threadId);
+
+      return {
+        status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
+        task: cancelledTask,
+        approvals: pendingApprovals,
+        summary: `Rejected ${approval.summary}`,
       };
     },
   };

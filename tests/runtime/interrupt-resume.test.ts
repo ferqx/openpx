@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createAppContext } from "../../src/app/bootstrap";
 import { createSqlite } from "../../src/persistence/sqlite/sqlite-client";
+import { migrateSqlite } from "../../src/persistence/sqlite/sqlite-migrator";
 import { createRootGraph } from "../../src/runtime/graph/root/graph";
 
 const tempDirs: string[] = [];
@@ -83,12 +84,11 @@ describe("root graph interrupt/resume", () => {
     expect(checkpointCount).toBeGreaterThan(0);
   });
 
-  test("persists distinct approval ids across separate app boots", async () => {
+  test("does not duplicate approval records across separate app boots while a thread stays blocked", async () => {
     const workspaceRoot = await createWorkspace();
     const dataDir = join(workspaceRoot, "agent.sqlite");
     await mkdir(join(workspaceRoot, "src"), { recursive: true });
     await Bun.write(join(workspaceRoot, "src/old-a.ts"), "export const a = true;\n");
-    await Bun.write(join(workspaceRoot, "src/old-b.ts"), "export const b = true;\n");
 
     const firstCtx = await createAppContext({
       workspaceRoot,
@@ -105,7 +105,7 @@ describe("root graph interrupt/resume", () => {
     });
     const secondResult = await secondCtx.kernel.handleCommand({
       type: "submit_input",
-      payload: { text: "delete src/old-b.ts" },
+      payload: { text: "delete src/old-a.ts again" },
     });
 
     const db = createSqlite(dataDir);
@@ -120,7 +120,118 @@ describe("root graph interrupt/resume", () => {
 
     expect(firstResult.approvals).toHaveLength(1);
     expect(secondResult.approvals).toHaveLength(1);
-    expect(approvals).toHaveLength(2);
-    expect(new Set(approvals.map((approval) => approval.approval_request_id)).size).toBe(2);
+    expect(secondResult.approvals[0]?.approvalRequestId).toBe(firstResult.approvals[0]?.approvalRequestId);
+    expect(approvals).toHaveLength(1);
+  });
+
+  test("hydrates and resumes approval-blocked work across app restarts", async () => {
+    const workspaceRoot = await createWorkspace();
+    const dataDir = join(workspaceRoot, "agent.sqlite");
+    const targetPath = join(workspaceRoot, "src/resume-me.ts");
+    await mkdir(join(workspaceRoot, "src"), { recursive: true });
+    await Bun.write(targetPath, "export const resumeMe = true;\n");
+
+    const firstCtx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+    });
+    const blocked = await firstCtx.kernel.handleCommand({
+      type: "submit_input",
+      payload: { text: "delete src/resume-me.ts" },
+    });
+
+    expect(blocked.status).toBe("waiting_approval");
+    expect(blocked.approvals).toHaveLength(1);
+    const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+    expect(approvalRequestId).toBeTruthy();
+    expect(await Bun.file(targetPath).exists()).toBe(true);
+
+    const restartedCtx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+    });
+    const hydrated = await restartedCtx.kernel.hydrateSession();
+
+    expect(hydrated?.threadId).toBe(blocked.threadId);
+    expect(hydrated?.status).toBe("waiting_approval");
+    expect(hydrated?.tasks).toHaveLength(1);
+    expect(hydrated?.tasks[0]?.status).toBe("blocked");
+    expect(hydrated?.approvals).toHaveLength(1);
+    expect(hydrated?.approvals[0]?.approvalRequestId).toBe(approvalRequestId);
+
+    const resumed = await restartedCtx.kernel.handleCommand({
+      type: "approve_request",
+      payload: { approvalRequestId: approvalRequestId! },
+    });
+
+    expect(resumed.status).toBe("completed");
+    expect(resumed.threadId).toBe(blocked.threadId);
+    expect(resumed.approvals).toHaveLength(0);
+    expect(resumed.tasks[0]?.status).toBe("completed");
+    expect(await Bun.file(targetPath).exists()).toBe(false);
+
+    const afterResumeCtx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+    });
+    const afterResume = await afterResumeCtx.kernel.hydrateSession();
+
+    expect(afterResume?.threadId).toBe(blocked.threadId);
+    expect(afterResume?.approvals).toHaveLength(0);
+    expect(afterResume?.tasks[0]?.status).toBe("completed");
+  });
+
+  test("can resume legacy pending approvals that were saved before request_json existed", async () => {
+    const workspaceRoot = await createWorkspace();
+    const dataDir = join(workspaceRoot, "agent.sqlite");
+    const targetPath = join(workspaceRoot, "src/legacy-delete.ts");
+    await mkdir(join(workspaceRoot, "src"), { recursive: true });
+    await Bun.write(targetPath, "export const legacyDelete = true;\n");
+
+    const seedDb = createSqlite(dataDir);
+    migrateSqlite(seedDb);
+    seedDb.run(`INSERT INTO threads (thread_id, status, updated_at) VALUES (?, ?, ?)`, [
+      "thread_legacy",
+      "waiting_approval",
+      new Date().toISOString(),
+    ]);
+    seedDb.run(`INSERT INTO tasks (task_id, thread_id, summary, status) VALUES (?, ?, ?, ?)`, [
+      "task_legacy",
+      "thread_legacy",
+      "delete src/legacy-delete.ts",
+      "blocked",
+    ]);
+    seedDb.run(
+      `INSERT INTO approvals (approval_request_id, thread_id, task_id, tool_call_id, request_json, summary, risk, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "approval_legacy",
+        "thread_legacy",
+        "task_legacy",
+        "tool_legacy",
+        null,
+        "apply_patch delete_file src/legacy-delete.ts",
+        "apply_patch.delete_file",
+        "pending",
+      ],
+    );
+    seedDb.close();
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+    });
+    const hydrated = await ctx.kernel.hydrateSession();
+    expect(hydrated?.approvals[0]?.approvalRequestId).toBe("approval_legacy");
+    expect(await Bun.file(targetPath).exists()).toBe(true);
+
+    const resumed = await ctx.kernel.handleCommand({
+      type: "approve_request",
+      payload: { approvalRequestId: "approval_legacy" },
+    });
+
+    expect(resumed.status).toBe("completed");
+    expect(resumed.approvals).toHaveLength(0);
+    expect(await Bun.file(targetPath).exists()).toBe(false);
   });
 });
