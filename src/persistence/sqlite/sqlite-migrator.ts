@@ -41,7 +41,8 @@ export function migrateSqlite(db: Database): void {
   db.run(`
     CREATE TABLE IF NOT EXISTS threads (
       thread_id TEXT PRIMARY KEY,
-      status TEXT NOT NULL
+      status TEXT NOT NULL,
+      updated_at TEXT
     )
   `);
 
@@ -51,11 +52,15 @@ export function migrateSqlite(db: Database): void {
       thread_id TEXT NOT NULL,
       task_id TEXT NOT NULL,
       tool_call_id TEXT NOT NULL,
+      request_json TEXT,
       summary TEXT NOT NULL,
       risk TEXT NOT NULL,
       status TEXT NOT NULL
     )
   `);
+
+  ensureColumn(db, "threads", "updated_at", "TEXT");
+  ensureColumn(db, "approvals", "request_json", "TEXT");
 
   db.run("CREATE INDEX IF NOT EXISTS idx_tasks_thread_id ON tasks (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories (namespace)");

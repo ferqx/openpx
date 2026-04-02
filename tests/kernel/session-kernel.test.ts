@@ -12,16 +12,51 @@ describe("SessionKernel", () => {
           async save(thread) {
             savedThreadId = thread.threadId;
           },
+          async getLatest() {
+            return undefined;
+          },
           async get(threadId) {
             return threadId === savedThreadId ? { threadId, status: "active" } : undefined;
           },
           async close() {},
+        },
+        taskStore: {
+          async save() {},
+          async get() {
+            return undefined;
+          },
+          async listByThread() {
+            return [];
+          },
+          async close() {},
+        },
+        approvalStore: {
+          async listPendingByThread() {
+            return [];
+          },
         },
       },
       controlPlane: {
         async startRootTask(threadId, text) {
           startedThreadId = threadId;
           startedText = text;
+          return {
+            status: "completed" as const,
+            task: {
+              taskId: "task_1",
+              threadId,
+              summary: text,
+              status: "completed" as const,
+            },
+            approvals: [],
+            summary: text,
+          };
+        },
+        async approveRequest() {
+          throw new Error("not needed in this test");
+        },
+        async rejectRequest() {
+          throw new Error("not needed in this test");
         },
       },
     });

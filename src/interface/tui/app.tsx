@@ -41,17 +41,7 @@ export function App(input: { kernel: TuiKernel }) {
     });
   }, [input.kernel]);
 
-  async function submit(text: string) {
-    const value = text.trim();
-    if (!value) {
-      return;
-    }
-
-    const result = await input.kernel.handleCommand(parseCommand(value));
-    if (!isKernelResult(result)) {
-      return;
-    }
-
+  function applyKernelResult(result: KernelResult) {
     setTasks(
       (result.tasks ?? []).map((task) => ({
         id: task.taskId,
@@ -70,6 +60,43 @@ export function App(input: { kernel: TuiKernel }) {
       ...current,
       summary: result.summary ?? current.summary,
     }));
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrate() {
+      if (!input.kernel.hydrateSession) {
+        return;
+      }
+
+      const result = await input.kernel.hydrateSession();
+      if (cancelled || !isKernelResult(result)) {
+        return;
+      }
+
+      applyKernelResult(result);
+    }
+
+    void hydrate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [input.kernel]);
+
+  async function submit(text: string) {
+    const value = text.trim();
+    if (!value) {
+      return;
+    }
+
+    const result = await input.kernel.handleCommand(parseCommand(value));
+    if (!isKernelResult(result)) {
+      return;
+    }
+
+    applyKernelResult(result);
   }
 
   return (

@@ -165,6 +165,7 @@ export function createToolRegistry(input: {
           toolCallId: normalizedRequest.toolCallId,
           threadId: normalizedRequest.threadId,
           taskId: normalizedRequest.taskId,
+          toolRequest: normalizedRequest,
           summary: summarizeRequest(normalizedRequest, workspaceRoot),
           risk: decision.risk.key,
         });
@@ -184,6 +185,73 @@ export function createToolRegistry(input: {
       return {
         kind: "executed",
         decision,
+        output,
+      };
+    },
+
+    async executeApproved(request: ToolExecuteRequest): Promise<ToolExecutionOutcome> {
+      const normalizedRequest = normalizeToolRequest(request);
+      const tool = tools.get(normalizedRequest.toolName);
+      if (!tool) {
+        const decision: Extract<PolicyDecision, { kind: "deny" }> = {
+          kind: "deny",
+          reason: "unsupported tool request",
+          risk: {
+            key: `${normalizedRequest.toolName}.unknown`,
+            level: "high",
+            reason: "tool is not registered",
+          },
+        };
+
+        return {
+          kind: "denied",
+          decision,
+          reason: decision.reason,
+        };
+      }
+
+      if (!(await isFilesystemPathAllowed(normalizedRequest, tool.effect))) {
+        const decision: Extract<PolicyDecision, { kind: "deny" }> = {
+          kind: "deny",
+          reason: "resolved filesystem target is outside the workspace",
+          risk: {
+            key: `${normalizedRequest.toolName}.path_escape`,
+            level: "high",
+            reason: "real filesystem target escapes the workspace",
+          },
+        };
+
+        return {
+          kind: "denied",
+          decision,
+          reason: decision.reason,
+        };
+      }
+
+      const evaluated = input.policy.evaluate(toPolicyRequest(tool, normalizedRequest));
+      if (evaluated.kind === "deny") {
+        return {
+          kind: "denied",
+          decision: evaluated,
+          reason: evaluated.reason,
+        };
+      }
+
+      const output = await tool.execute({
+        ...normalizedRequest,
+        request: normalizedRequest,
+      });
+
+      return {
+        kind: "executed",
+        decision:
+          evaluated.kind === "allow"
+            ? evaluated
+            : {
+                kind: "allow",
+                reason: "approval granted",
+                risk: evaluated.risk,
+              },
         output,
       };
     },
