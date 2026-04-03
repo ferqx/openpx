@@ -9,6 +9,9 @@ describe("planner model integration", () => {
           summary: `model summary for: ${input.prompt}`,
         };
       },
+      async verify() {
+        return { summary: "verified", isValid: true };
+      },
     };
 
     const ctx = await createAppContext({

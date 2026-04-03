@@ -25,6 +25,9 @@ function createTestModelGateway() {
     async plan(input: { prompt: string }) {
       return { summary: `planned: ${input.prompt}` };
     },
+    async verify() {
+      return { summary: "verified", isValid: true };
+    },
   };
 }
 

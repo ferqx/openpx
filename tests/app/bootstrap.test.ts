@@ -8,7 +8,10 @@ describe("createAppContext", () => {
       dataDir: ":memory:",
       modelGateway: {
         async plan() {
-          return { summary: "test plan" };
+          return { summary: "plan" };
+        },
+        async verify() {
+          return { summary: "verified", isValid: true };
         },
       },
     });

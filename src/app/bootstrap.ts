@@ -188,10 +188,13 @@ async function createControlPlane(input: {
       summary: (await input.modelGateway.plan({ prompt: text, threadId, taskId })).summary,
       mode: "plan",
     }),
-    verifier: async ({ input: text }) => ({
-      summary: `Verified request: ${text}`,
-      mode: "verify",
-    }),
+    verifier: async ({ input: text, threadId, taskId }) => {
+      const result = await input.modelGateway.verify({ prompt: text, threadId, taskId });
+      return {
+        summary: result.summary,
+        mode: "verify",
+      };
+    },
     executor: async ({ input: text, threadId, taskId }) => {
       const deleteRequest = parseDeleteRequest(text, input.config.workspaceRoot);
       if (!deleteRequest || !threadId || !taskId) {
