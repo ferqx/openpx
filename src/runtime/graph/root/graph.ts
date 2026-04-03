@@ -16,13 +16,21 @@ export async function createRootGraph(context: RootGraphContext) {
   const graph = new StateGraph(RootState)
     .addNode("intake", intakeNode)
     .addNode("route", routeNode)
-    .addNode("planner", async (state, config) =>
-      plannerGraph.invoke({ input: state.input }, config),
-    )
-    .addNode("executor", async (state, config) =>
-      executorGraph.invoke({ input: state.input }, config),
-    )
+    .addNode("planner", async (state, config) => {
+      console.log("[DEBUG] node: planner");
+      return plannerGraph.invoke({ input: state.input }, config);
+    })
+    .addNode("executor", (state, config) => {
+      console.log("[DEBUG] node: executor");
+      return context.executor({
+        input: state.input,
+        threadId: config.configurable?.thread_id as string | undefined,
+        taskId: config.configurable?.task_id as string | undefined,
+        configurable: config.configurable,
+      });
+    })
     .addNode("verifier", async (state, config) => {
+      console.log("[DEBUG] node: verifier");
       const result = await verifierGraph.invoke({ input: state.input }, config);
       return {
         summary: result.summary,

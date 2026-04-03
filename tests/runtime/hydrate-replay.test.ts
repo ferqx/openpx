@@ -29,7 +29,7 @@ describe("Hydrate and Replay", () => {
       const client = new RuntimeClient(`http://localhost:${server.port}`);
       
       // 1. Submit initial input to create some events
-      await client.sendCommand({ kind: "add_task", content: "task 1" });
+      await client.sendCommand({ kind: "add_task", content: "fix task1.ts" });
       
       // 2. Take snapshot
       const snapshot = await client.getSnapshot();
@@ -37,7 +37,7 @@ describe("Hydrate and Replay", () => {
       expect(lastSeq).toBeGreaterThan(0);
 
       // 3. Submit more input to create more events
-      await client.sendCommand({ kind: "add_task", content: "task 2" });
+      await client.sendCommand({ kind: "add_task", content: "fix task2.ts" });
 
       // 4. Subscribe from lastSeq
       const events: any[] = [];

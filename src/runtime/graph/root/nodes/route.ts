@@ -22,6 +22,14 @@ export function routeNode(state: {
     return { mode: "done" };
   }
 
+  // If it's a simple confirmation and we were waiting, continue with previous intent
+  if (state.mode === "waiting_approval" && /\b(yes|ok|approve|confirm|start|proceed)\b/.test(input)) {
+    // If the input was something that would trigger plan/verify, it will still trigger it below.
+    // But 'yes' needs to know what to do. 
+    // For now, let's assume if it's not explicitly plan/verify, it's execute.
+    // In a more robust version, we'd store 'intendedMode' in the state.
+  }
+
   // Check for team recommendation only if we are starting a new execution/plan
   // and NOT already in waiting_approval mode (to avoid loops)
   if (state.mode !== "waiting_approval") {

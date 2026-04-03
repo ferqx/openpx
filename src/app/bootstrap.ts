@@ -1,4 +1,4 @@
-import { INTERRUPT, isInterrupted } from "@langchain/langgraph";
+import { INTERRUPT, isInterrupted, Command, interrupt } from "@langchain/langgraph";
 import { resolve } from "node:path";
 import { createApprovalService, type ApprovalService, type CreateApprovalInput } from "../control/policy/approval-service";
 import { createPolicyEngine } from "../control/policy/policy-engine";
@@ -45,7 +45,15 @@ function createPersistentApprovalService(stores: AppStores): ApprovalService {
   const approvals = createApprovalService();
 
   return {
+    ...approvals,
     async createPending(request: CreateApprovalInput) {
+      // Check if a pending request already exists for this tool call
+      const existing = await stores.approvalStore.listPendingByThread(request.threadId);
+      const found = existing.find((r) => r.toolCallId === request.toolCallId);
+      if (found) {
+        return found;
+      }
+
       const approval = await approvals.createPending(request);
       await stores.approvalStore.save(approval);
       return approval;
@@ -218,21 +226,46 @@ async function createControlPlane(input: {
       });
 
       if (outcome.kind === "blocked") {
+        const summary = `Approval required before deleting ${deleteRequest.relativePath}`;
+        interrupt({
+          kind: "approval-required",
+          mode: "execute",
+          summary,
+          approvalRequest: outcome.approvalRequest,
+        });
         return {
-          summary: `Approval required before deleting ${deleteRequest.relativePath}`,
+          summary,
           mode: "execute",
         };
       }
 
       if (outcome.kind === "executed") {
+        const summary = `Deleted ${deleteRequest.relativePath}`;
+        await input.stores.eventLog.append({
+          eventId: `event_${crypto.randomUUID()}`,
+          threadId: threadId!,
+          taskId,
+          type: "tool.executed",
+          payload: { summary, output: outcome.output },
+          createdAt: new Date().toISOString(),
+        });
         return {
-          summary: `Deleted ${deleteRequest.relativePath}`,
+          summary,
           mode: "execute",
         };
       }
 
+      const errorSummary = `Unable to delete ${deleteRequest.relativePath}: ${outcome.reason}`;
+      await input.stores.eventLog.append({
+        eventId: `event_${crypto.randomUUID()}`,
+        threadId: threadId!,
+        taskId,
+        type: "tool.failed",
+        payload: { summary: errorSummary },
+        createdAt: new Date().toISOString(),
+      });
       return {
-        summary: `Unable to delete ${deleteRequest.relativePath}: ${outcome.reason}`,
+        summary: errorSummary,
         mode: "execute",
       };
     },
@@ -240,11 +273,34 @@ async function createControlPlane(input: {
 
   return {
     async startRootTask(threadId: string, text: string) {
-      let task = await taskManager.createRootTask(threadId, text);
-      task = await saveTaskStatus(input.stores, task, "running");
+      const thread = await input.stores.threadStore.get(threadId);
+      const isResume = thread?.status === "waiting_approval";
+      
+      let task: ControlTask;
+      let graphInput: any;
+
+      if (isResume) {
+        const tasks = await input.stores.taskStore.listByThread(threadId);
+        const lastTask = tasks[tasks.length - 1];
+        if (!lastTask) {
+          throw new Error(`no tasks found for thread ${threadId} to resume`);
+        }
+        task = ensureControlTask(lastTask);
+        task = await saveTaskStatus(input.stores, task, "running");
+        
+        // When resuming with 'yes', we want the graph to continue with the PREVIOUS input
+        // but the intake node will overwrite it if we provide a resumeValue.
+        // So for 'yes', we'll just resume without changing the input if possible, 
+        // or re-provide the original task summary.
+        graphInput = new Command({ resume: text });
+      } else {
+        task = await taskManager.createRootTask(threadId, text);
+        task = await saveTaskStatus(input.stores, task, "running");
+        graphInput = { input: text };
+      }
 
       const graphResult = await rootGraph.invoke(
-        { input: text },
+        graphInput,
         {
           configurable: {
             thread_id: threadId,
@@ -253,7 +309,14 @@ async function createControlPlane(input: {
         },
       );
       const approvalsForThread = await input.stores.approvalStore.listPendingByThread(threadId);
-      const status = approvalsForThread.length > 0 ? "waiting_approval" : "completed";
+      
+      let status: "waiting_approval" | "completed" = "completed";
+      if (approvalsForThread.length > 0) {
+        status = "waiting_approval";
+      } else if (isInterrupted(graphResult)) {
+        status = "waiting_approval";
+      }
+
       const finalTask = await saveTaskStatus(input.stores, task, status === "waiting_approval" ? "blocked" : "completed");
       const interruptValue = isInterrupted(graphResult)
         ? (graphResult[INTERRUPT][0]?.value as { summary?: string } | undefined)
