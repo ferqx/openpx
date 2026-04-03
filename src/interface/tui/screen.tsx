@@ -23,6 +23,7 @@ export function Screen(input: {
   threadId?: string;
   modelStatus?: string;
   runtimeStatus?: string;
+  recommendationReason?: string;
   onSubmit?: (text: string) => Promise<void> | void;
 }) {
   return (
@@ -31,6 +32,11 @@ export function Screen(input: {
         <Text bold color="cyan">PROJECT: {input.projectId ?? "unknown"}</Text>
         <Text color="gray"> ({input.workspaceRoot ?? "unknown"})</Text>
       </Box>
+      {input.composerMode === "confirm" && input.recommendationReason && (
+        <Box paddingX={1} marginBottom={0}>
+          <Text color="yellow">⚠ {input.recommendationReason}</Text>
+        </Box>
+      )}
       <Composer mode={input.composerMode} onSubmit={input.onSubmit} />
       <Box flexGrow={1}>
         <Box flexDirection="column" width="50%">

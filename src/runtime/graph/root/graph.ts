@@ -39,6 +39,8 @@ export async function createRootGraph(context: RootGraphContext) {
           return "planner";
         case "verify":
           return "verifier";
+        case "waiting_approval":
+          return "post-turn-guard";
         case "done":
           return END;
         default:

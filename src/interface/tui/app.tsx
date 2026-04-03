@@ -23,6 +23,7 @@ type KernelResult = {
   workspaceRoot?: string;
   projectId?: string;
   threadId?: string;
+  recommendationReason?: string;
 };
 
 function isKernelResult(value: unknown): value is KernelResult {
@@ -39,6 +40,7 @@ export function App(input: { kernel: TuiKernel }) {
   const [threadId, setThreadId] = useState<string>("");
   const [modelStatus, setModelStatus] = useState<string>("idle");
   const [runtimeStatus, setRuntimeStatus] = useState<string>("disconnected");
+  const [recommendationReason, setRecommendationReason] = useState<string | undefined>();
   const [answer, setAnswer] = useState({
     summary: "Awaiting answer",
     changes: [] as Array<{ path: string; additions: number; deletions: number }>,
@@ -80,6 +82,7 @@ export function App(input: { kernel: TuiKernel }) {
     if (result.workspaceRoot) setWorkspaceRoot(result.workspaceRoot);
     if (result.projectId) setProjectId(result.projectId);
     if (result.threadId) setThreadId(result.threadId);
+    setRecommendationReason(result.recommendationReason);
 
     if (result.status === "waiting_approval") {
       setComposerMode("confirm");
@@ -149,6 +152,7 @@ export function App(input: { kernel: TuiKernel }) {
       threadId={threadId}
       modelStatus={modelStatus}
       runtimeStatus={runtimeStatus}
+      recommendationReason={recommendationReason}
       onSubmit={submit}
     />
   );

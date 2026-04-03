@@ -38,6 +38,7 @@ class LocalRuntimeService implements RuntimeService {
       projectId: this.projectId,
       lastEventSeq: events.length > 0 ? (events[events.length - 1].sequence ?? 0) : 0,
       activeThreadId: thread.threadId,
+      recommendationReason: (thread as any).recommendationReason,
       threads: [thread],
       tasks: tasks.map(t => ({
         taskId: t.taskId,

@@ -1,6 +1,6 @@
 import type { CheckpointPort } from "../../../persistence/ports/checkpoint-port";
 
-export type RootMode = "plan" | "execute" | "verify" | "done";
+export type RootMode = "plan" | "execute" | "verify" | "done" | "waiting_approval";
 
 export type WorkerMode = Exclude<RootMode, "done">;
 

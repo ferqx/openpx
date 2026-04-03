@@ -62,6 +62,7 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
         approvals: snapshot.pendingApprovals,
         workspaceRoot: snapshot.workspaceRoot,
         projectId: snapshot.projectId,
+        recommendationReason: (snapshot as any).recommendationReason,
       };
     },
   };

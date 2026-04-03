@@ -13,4 +13,5 @@ export const RootState = Annotation.Root({
   verifierPassed: Annotation<boolean>(),
   verifierFeedback: Annotation<string>(),
   resumeValue: Annotation<any>(),
+  recommendationReason: Annotation<string>(),
 });
