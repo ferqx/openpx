@@ -28,6 +28,9 @@ function createTestModelGateway() {
     async verify() {
       return { summary: "verified", isValid: true };
     },
+    onStatusChange() {
+      return () => {};
+    },
   };
 }
 

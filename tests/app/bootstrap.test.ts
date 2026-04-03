@@ -13,6 +13,9 @@ describe("createAppContext", () => {
         async verify() {
           return { summary: "verified", isValid: true };
         },
+        onStatusChange() {
+          return () => {};
+        },
       },
     });
 

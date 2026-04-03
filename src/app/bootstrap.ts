@@ -370,5 +370,12 @@ export async function createAppContext(input: {
     projectId: "default-project", // TODO: resolve from config
   });
 
+  modelGateway.onStatusChange((status) => {
+    kernel.events.publish({
+      type: "model.status",
+      payload: { status },
+    });
+  });
+
   return { config, stores, controlPlane, kernel, narrativeService, scratchPolicy };
 }

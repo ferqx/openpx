@@ -12,6 +12,9 @@ describe("planner model integration", () => {
       async verify() {
         return { summary: "verified", isValid: true };
       },
+      onStatusChange() {
+        return () => {};
+      },
     };
 
     const ctx = await createAppContext({
