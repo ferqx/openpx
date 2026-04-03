@@ -153,6 +153,102 @@ describe("TUI App", () => {
     expect(frame).toMatch(/Confirm work\?.*\[Y\/n\]/);
   });
 
+  test("renders a manual-recovery shell when the hydrated thread is blocked", async () => {
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const kernel: TuiKernel = {
+      events: {
+        subscribe() {
+          return () => undefined;
+        },
+      },
+      async hydrateSession() {
+        return {
+          status: "blocked",
+          summary: "Awaiting answer",
+          blockingReason: {
+            kind: "human_recovery",
+            message: "Manual recovery required for apply_patch; previous execution outcome is uncertain after a crash.",
+          },
+          tasks: [
+            {
+              taskId: "task_recovery",
+              summary: "Apply risky patch",
+              status: "blocked",
+            },
+          ],
+          approvals: [],
+        };
+      },
+      async handleCommand() {
+        return { status: "completed" };
+      },
+    };
+
+    const { lastFrame } = render(<App kernel={kernel} />);
+    await tick();
+    await tick();
+    await tick();
+
+    const frame = lastFrame();
+
+    expect(frame).toContain("Manual recovery required for apply_patch");
+    expect(frame).toContain("uncertain after a");
+    expect(frame).toMatch(/Session blocked: manual recovery required/i);
+    expect(frame).toMatch(/Inspect the workspace state before continuing/i);
+    expect(frame).toMatch(/Input disabled for this thread/i);
+  });
+
+  test("reacts to live blocked recovery events without a hydrate refresh", async () => {
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
+
+    const kernel: TuiKernel = {
+      events: {
+        subscribe(handler) {
+          emit = handler;
+          return () => undefined;
+        },
+      },
+      async handleCommand() {
+        return { status: "completed" };
+      },
+    };
+
+    const { lastFrame } = render(<App kernel={kernel} />);
+    await tick();
+
+    emit?.({
+      type: "task.updated",
+      payload: {
+        taskId: "task_live_recovery",
+        summary: "Recover risky patch",
+        status: "blocked",
+        blockingReason: {
+          kind: "human_recovery",
+          message: "Manual recovery required from live event.",
+        },
+      },
+    });
+    emit?.({
+      type: "thread.blocked",
+      payload: {
+        threadId: "thread_live_recovery",
+        blockingReason: {
+          kind: "human_recovery",
+          message: "Manual recovery required from live event.",
+        },
+      },
+    });
+    await tick();
+    await tick();
+
+    const frame = lastFrame();
+
+    expect(frame).toMatch(/Session blocked: manual recovery required/i);
+    expect(frame).toContain("Manual recovery required from live event.");
+    expect(frame).toMatch(/Input disabled for this thread/i);
+  });
+
   test("main mounts the Ink shell with the bootstrapped kernel", async () => {
     const mounted: unknown[] = [];
 

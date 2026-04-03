@@ -35,7 +35,7 @@ export type RejectRequestCommand = {
 export type SessionCommand = SubmitInputCommand | ApproveRequestCommand | RejectRequestCommand;
 
 export type SessionControlPlaneResult = {
-  status: "completed" | "waiting_approval";
+  status: "completed" | "waiting_approval" | "blocked";
   task: Task;
   approvals: ApprovalRequest[];
   summary: string;
@@ -120,18 +120,40 @@ export function createSessionKernel(deps: {
     );
   }
 
+  async function appendRuntimeEvent(input: {
+    threadId: string;
+    taskId?: string;
+    type: string;
+    payload?: Record<string, unknown>;
+  }): Promise<void> {
+    if (!deps.stores.eventLog) {
+      return;
+    }
+
+    await deps.stores.eventLog.append(
+      createEvent({
+        eventId: prefixedUuid("event"),
+        threadId: input.threadId,
+        taskId: input.taskId,
+        type: input.type,
+        payload: input.payload,
+      }),
+    );
+  }
+
   async function hydrateThread(threadId: string): Promise<SessionCommandResult> {
     const tasks = await deps.stores.taskStore.listByThread(threadId);
     const approvals = await deps.stores.approvalStore.listPendingByThread(threadId);
     const loggedEvents = deps.stores.eventLog ? await deps.stores.eventLog.listByThread(threadId) : [];
+    const blockedTask = tasks.find((task) => task.status === "blocked");
     const lastAnswer = [...loggedEvents]
       .reverse()
       .find((event) => event.type === "answer.updated" && typeof event.payload?.summary === "string");
 
     return {
-      status: approvals.length > 0 ? "waiting_approval" : "completed",
+      status: approvals.length > 0 ? "waiting_approval" : blockedTask ? "blocked" : "completed",
       threadId,
-      summary:
+      summary: blockedTask?.blockingReason?.message ??
         (typeof lastAnswer?.payload?.summary === "string" ? lastAnswer.payload.summary : undefined) ??
         tasks.at(-1)?.summary ??
         approvals[0]?.summary ??
@@ -147,24 +169,61 @@ export function createSessionKernel(deps: {
       throw new Error(`missing thread ${threadId}`);
     }
 
-    const targetStatus = result.status === "waiting_approval" ? "waiting_approval" : "completed";
+    const targetStatus =
+      result.status === "waiting_approval"
+        ? "waiting_approval"
+        : result.status === "blocked"
+          ? "blocked"
+          : "completed";
     const nextThread = currentThread.status === targetStatus ? currentThread : transitionThread(currentThread, targetStatus);
     await deps.stores.threadStore.save(nextThread);
 
+    const threadEventType =
+      result.status === "waiting_approval"
+        ? "thread.waiting_approval"
+        : result.status === "blocked"
+          ? "thread.blocked"
+          : "thread.completed";
+    const threadEventPayload =
+      result.status === "blocked"
+        ? {
+            threadId: nextThread.threadId,
+            status: nextThread.status,
+            blockingReason: result.task?.blockingReason,
+          }
+        : nextThread;
+
     events.publish({
-      type: result.status === "waiting_approval" ? "thread.waiting_approval" : "thread.completed",
-      payload: nextThread,
+      type: threadEventType,
+      payload: threadEventPayload,
+    });
+    await appendRuntimeEvent({
+      threadId: nextThread.threadId,
+      type: threadEventType,
+      payload: threadEventPayload as Record<string, unknown>,
     });
     if (result.task) {
       events.publish({
         type: "task.updated",
         payload: result.task,
       });
+      await appendRuntimeEvent({
+        threadId: nextThread.threadId,
+        taskId: result.task.taskId,
+        type: "task.updated",
+        payload: result.task as unknown as Record<string, unknown>,
+      });
     }
     for (const approval of result.approvals) {
       events.publish({
         type: "approval.pending",
         payload: approval,
+      });
+      await appendRuntimeEvent({
+        threadId: nextThread.threadId,
+        taskId: approval.taskId,
+        type: "approval.pending",
+        payload: approval as unknown as Record<string, unknown>,
       });
     }
 
@@ -235,6 +294,11 @@ export function createSessionKernel(deps: {
           // Instead of just hydrating, resume the graph with the new input
           const result = await deps.controlPlane.startRootTask(latestThread.threadId, command.payload.text);
           return finalize(latestThread.threadId, result);
+        }
+
+        if (latestThread?.status === "blocked") {
+          await checkRevision(latestThread.threadId, expectedRevision);
+          return hydrateThread(latestThread.threadId);
         }
 
         const thread = await threadService.startThread();

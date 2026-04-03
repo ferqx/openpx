@@ -6,12 +6,16 @@ import { theme } from "../theme";
 export function Composer(input: { 
   onSubmit?: (text: string) => Promise<void> | void;
   prompt?: string;
-  mode?: "input" | "confirm";
+  mode?: "input" | "confirm" | "blocked";
 }) {
   const [value, setValue] = useState("");
   const mode = input.mode ?? "input";
 
   useInput(async (keyValue, key) => {
+    if (mode === "blocked") {
+      return;
+    }
+
     if (mode === "confirm") {
       if (keyValue.toLowerCase() === "y" || key.return) {
         await input.onSubmit?.("yes");
@@ -46,6 +50,14 @@ export function Composer(input: {
       <Box paddingX={1}>
         <Text color={theme.colors.user} bold>{theme.symbols.prompt} Confirm work? </Text>
         <Text color="yellow">[Y/n]</Text>
+      </Box>
+    );
+  }
+
+  if (mode === "blocked") {
+    return (
+      <Box paddingX={1}>
+        <Text color="yellow" bold>{theme.symbols.warning} Input disabled for this thread</Text>
       </Box>
     );
   }

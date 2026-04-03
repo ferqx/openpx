@@ -22,6 +22,8 @@ import { resolveConfig } from "../shared/config";
 import { createThreadNarrativeService } from "../control/context/thread-narrative-service";
 import { createWorkerScratchPolicy } from "../control/context/worker-scratch-policy";
 import { MemoryConsolidator } from "../control/context/memory-consolidator";
+import { transitionThread } from "../domain/thread";
+import { createEvent } from "../domain/event";
 
 type AppStores = ReturnType<typeof createStores>;
 
@@ -40,6 +42,90 @@ function createStores(path: string | ReturnType<typeof createSqlite>) {
     memoryStore: new SqliteMemoryStore(path),
     executionLedger: new SqliteExecutionLedger(path),
   };
+}
+
+async function recoverUncertainExecutions(stores: AppStores, scope: { workspaceRoot: string; projectId: string }) {
+  const threads = await stores.threadStore.listByScope(scope);
+
+  for (const thread of threads) {
+    const uncertainExecutions = await stores.executionLedger.findUncertain(thread.threadId);
+    const crashUncertainExecutions = uncertainExecutions.filter((execution) => execution.status === "started");
+    if (crashUncertainExecutions.length === 0) {
+      continue;
+    }
+
+    const now = new Date().toISOString();
+
+    let recoveryBlockingReason:
+      | {
+          kind: "human_recovery";
+          message: string;
+        }
+      | undefined;
+
+    for (const execution of crashUncertainExecutions) {
+      await stores.executionLedger.save({
+        ...execution,
+        status: "unknown_after_crash",
+        updatedAt: now,
+      });
+
+      const existingTask = await stores.taskStore.get(execution.taskId);
+      if (existingTask) {
+        const blockingReason = {
+          kind: "human_recovery" as const,
+          message: `Manual recovery required for ${execution.toolName}; previous execution outcome is uncertain after a crash.`,
+        };
+        await stores.taskStore.save({
+          ...existingTask,
+          status: "blocked",
+          blockingReason,
+        });
+        recoveryBlockingReason ??= blockingReason;
+        await stores.eventLog.append(
+          createEvent({
+            eventId: `event_${crypto.randomUUID()}`,
+            threadId: existingTask.threadId,
+            taskId: existingTask.taskId,
+            type: "task.updated",
+            payload: {
+              ...existingTask,
+              status: "blocked",
+              blockingReason,
+            },
+            createdAt: now,
+          }),
+        );
+      }
+    }
+
+    const recoveredThread =
+      thread.status === "blocked"
+        ? thread
+        : ({
+            ...(thread.status === "active" ||
+            thread.status === "waiting_approval" ||
+            thread.status === "interrupted"
+              ? transitionThread(thread, "blocked")
+              : thread),
+            status: "blocked",
+            revision: (thread.revision ?? 1) + 1,
+          } as typeof thread);
+    await stores.threadStore.save(recoveredThread);
+    await stores.eventLog.append(
+      createEvent({
+        eventId: `event_${crypto.randomUUID()}`,
+        threadId: recoveredThread.threadId,
+        type: "thread.blocked",
+        payload: {
+          threadId: recoveredThread.threadId,
+          status: recoveredThread.status,
+          blockingReason: recoveryBlockingReason,
+        },
+        createdAt: now,
+      }),
+    );
+  }
 }
 
 function createPersistentApprovalService(stores: AppStores): ApprovalService {
@@ -418,6 +504,7 @@ async function createControlPlane(input: {
 export async function createAppContext(input: {
   workspaceRoot: string;
   dataDir: string;
+  projectId?: string;
   modelGateway?: ModelGateway;
 }) {
   const config = resolveConfig(input);
@@ -425,6 +512,10 @@ export async function createAppContext(input: {
   migrateSqlite(sqlite);
 
   const stores = createStores(sqlite);
+  await recoverUncertainExecutions(stores, {
+    workspaceRoot: config.workspaceRoot,
+    projectId: config.projectId,
+  });
   const checkpointer = createSqliteCheckpointer(config.checkpointConnString);
   const modelGateway =
     input.modelGateway ??

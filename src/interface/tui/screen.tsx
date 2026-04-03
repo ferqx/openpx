@@ -17,7 +17,11 @@ export function Screen(input: {
     changes: Array<{ path: string; additions: number; deletions: number }>;
     verification: string[];
   };
-  composerMode?: "input" | "confirm";
+  composerMode?: "input" | "confirm" | "blocked";
+  blockingReason?: {
+    kind: "waiting_approval" | "human_recovery";
+    message: string;
+  };
   workspaceRoot?: string;
   projectId?: string;
   threadId?: string;
@@ -53,6 +57,14 @@ export function Screen(input: {
       {input.composerMode === "confirm" && input.recommendationReason && (
         <Box paddingX={1} marginBottom={1} borderStyle="round" borderColor="yellow">
           <Text color="yellow">{theme.symbols.warning} {input.recommendationReason}</Text>
+        </Box>
+      )}
+
+      {input.composerMode === "blocked" && (
+        <Box paddingX={1} marginBottom={1} borderStyle="round" borderColor="yellow" flexDirection="column">
+          <Text color="yellow">{theme.symbols.warning} Session blocked: manual recovery required.</Text>
+          {input.blockingReason?.message ? <Text>{input.blockingReason.message}</Text> : null}
+          <Text color={theme.colors.dim}>Inspect the workspace state before continuing.</Text>
         </Box>
       )}
 
