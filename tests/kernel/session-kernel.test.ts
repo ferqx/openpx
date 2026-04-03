@@ -17,6 +17,9 @@ describe("SessionKernel", () => {
           async getLatest() {
             return undefined;
           },
+          async listByScope() {
+            return [];
+          },
           async get(threadId) {
             return threadId === savedThreadId
               ? {

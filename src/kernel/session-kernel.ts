@@ -51,7 +51,7 @@ export type SessionCommandResult = {
 export type SessionKernel = {
   events: ReturnType<typeof createEventBus<KernelEvent>>;
   interrupts: ReturnType<typeof createInterruptService<KernelEvent>>;
-  handleCommand: (command: SessionCommand) => Promise<SessionCommandResult>;
+  handleCommand: (command: SessionCommand, expectedRevision?: number) => Promise<SessionCommandResult>;
   hydrateSession: () => Promise<SessionCommandResult | undefined>;
 };
 
@@ -69,13 +69,35 @@ export function createSessionKernel(deps: {
     approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
   };
+  workspaceRoot?: string;
+  projectId?: string;
 }): SessionKernel {
   const events = createEventBus<KernelEvent>();
   const threadService = createThreadService({
     threadStore: deps.stores.threadStore,
     events,
+    workspaceRoot: deps.workspaceRoot,
+    projectId: deps.projectId,
   });
   const interrupts = createInterruptService({ events });
+
+  async function checkRevision(threadId: string, expectedRevision?: number) {
+    if (expectedRevision === undefined) return;
+    const thread = await deps.stores.threadStore.get(threadId);
+    if (thread && thread.revision !== expectedRevision) {
+      throw new Error(`stale thread revision: expected ${expectedRevision} but found ${thread.revision}`);
+    }
+  }
+
+  async function incrementRevision(threadId: string) {
+    const thread = await deps.stores.threadStore.get(threadId);
+    if (thread) {
+      const nextThread = { ...thread, revision: (thread.revision ?? 1) + 1 };
+      await deps.stores.threadStore.save(nextThread);
+      return nextThread;
+    }
+    return undefined;
+  }
 
   async function persistAnswerUpdated(result: SessionCommandResult): Promise<void> {
     if (!deps.stores.eventLog) {
@@ -119,7 +141,7 @@ export function createSessionKernel(deps: {
   }
 
   async function finalize(threadId: string, result: SessionControlPlaneResult): Promise<SessionCommandResult> {
-    const currentThread = await deps.stores.threadStore.get(threadId);
+    const currentThread = await incrementRevision(threadId);
     if (!currentThread) {
       throw new Error(`missing thread ${threadId}`);
     }
@@ -177,10 +199,11 @@ export function createSessionKernel(deps: {
 
       return hydrateThread(latestThread.threadId);
     },
-    async handleCommand(command) {
+    async handleCommand(command, expectedRevision) {
       if (command.type === "submit_input") {
         const latestThread = await deps.stores.threadStore.getLatest();
         if (latestThread?.status === "waiting_approval") {
+          await checkRevision(latestThread.threadId, expectedRevision);
           return hydrateThread(latestThread.threadId);
         }
 
@@ -203,11 +226,20 @@ export function createSessionKernel(deps: {
       }
 
       if (command.type === "approve_request") {
+        // Need to find threadId for approval
+        const approval = await (deps.stores.approvalStore as any).get(command.payload.approvalRequestId);
+        if (approval) {
+          await checkRevision(approval.threadId, expectedRevision);
+        }
         const result = await deps.controlPlane.approveRequest(command.payload.approvalRequestId);
         return finalize(result.task.threadId, result);
       }
 
       if (command.type === "reject_request") {
+        const approval = await (deps.stores.approvalStore as any).get(command.payload.approvalRequestId);
+        if (approval) {
+          await checkRevision(approval.threadId, expectedRevision);
+        }
         const result = await deps.controlPlane.rejectRequest(command.payload.approvalRequestId);
         return finalize(result.task.threadId, result);
       }

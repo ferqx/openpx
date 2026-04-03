@@ -349,7 +349,12 @@ export async function createAppContext(input: {
       modelName: config.model.name,
     });
   const controlPlane = await createControlPlane({ config, stores, checkpointer, modelGateway });
-  const kernel = createSessionKernel({ stores, controlPlane });
+  const kernel = createSessionKernel({
+    stores,
+    controlPlane,
+    workspaceRoot: config.workspaceRoot,
+    projectId: "default-project", // TODO: resolve from config
+  });
 
   return { config, stores, controlPlane, kernel };
 }

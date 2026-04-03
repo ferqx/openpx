@@ -89,6 +89,25 @@ export class SqliteThreadStore implements ThreadStorePort {
       : undefined;
   }
 
+  async listByScope(scope: { workspaceRoot: string; projectId: string }): Promise<Thread[]> {
+    const rows = this.db
+      .query<ThreadRow, [string, string]>(
+        `SELECT thread_id, workspace_root, project_id, revision, status, updated_at
+         FROM threads
+         WHERE workspace_root = ? AND project_id = ?
+         ORDER BY COALESCE(updated_at, '') DESC, rowid DESC`,
+      )
+      .all(scope.workspaceRoot, scope.projectId);
+
+    return rows.map((row) => ({
+      threadId: row.thread_id,
+      workspaceRoot: row.workspace_root,
+      projectId: row.project_id,
+      revision: row.revision,
+      status: row.status,
+    }));
+  }
+
   async close(): Promise<void> {
     if (this.owned) {
       this.db.close();
