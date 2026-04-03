@@ -17,6 +17,8 @@ export interface RuntimeService {
 
 class LocalRuntimeService implements RuntimeService {
   private projectId: string;
+  private eventBuffer: RuntimeEventEnvelope[] = [];
+  private readonly MAX_BUFFER_SIZE = 100;
 
   constructor(
     private context: Awaited<ReturnType<typeof createAppContext>>,
@@ -24,6 +26,21 @@ class LocalRuntimeService implements RuntimeService {
     projectId?: string
   ) {
     this.projectId = projectId ?? resolve(workspaceRoot).split("/").pop() ?? "default-project";
+
+    // Wire up kernel events to the internal buffer
+    this.context.kernel.events.subscribe((event) => {
+      const envelope: RuntimeEventEnvelope = {
+        protocolVersion: PROTOCOL_VERSION,
+        seq: Date.now(), // Use timestamp as temporary seq if real seq isn't available
+        timestamp: new Date().toISOString(),
+        traceId: crypto.randomUUID(),
+        event: event,
+      };
+      this.eventBuffer.push(envelope);
+      if (this.eventBuffer.length > this.MAX_BUFFER_SIZE) {
+        this.eventBuffer.shift();
+      }
+    });
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
@@ -102,28 +119,39 @@ class LocalRuntimeService implements RuntimeService {
     const thread = await this.context.stores.threadStore.getLatest();
     if (!thread) return;
 
-    // First, emit existing events afterSeq
-    const existing = await this.context.stores.eventLog.listByThreadAfter(thread.threadId, afterSeq) as any[];
-    for (const event of existing) {
-      yield {
-        protocolVersion: PROTOCOL_VERSION,
-        seq: event.sequence ?? 0,
-        event: event,
-      };
+    // 1. Emit from internal buffer if possible
+    const buffered = this.eventBuffer.filter((e) => e.seq > afterSeq);
+    for (const envelope of buffered) {
+      yield envelope;
     }
 
-    // Then, subscribe to new events
+    // If buffer was empty or didn't have what we need, hit the database
+    if (buffered.length === 0) {
+      const existing = await this.context.stores.eventLog.listByThreadAfter(thread.threadId, afterSeq) as any[];
+      for (const event of existing) {
+        yield {
+          protocolVersion: PROTOCOL_VERSION,
+          seq: event.sequence ?? 0,
+          timestamp: event.createdAt ?? new Date().toISOString(),
+          traceId: event.eventId,
+          event: event,
+        };
+      }
+    }
+
+    // 2. Subscribe to new live events
     const queue: RuntimeEventEnvelope[] = [];
     let resolve: ((value: void) => void) | null = null;
 
     const unsubscribe = this.context.kernel.events.subscribe((event) => {
-      // In a real implementation, we'd get the seq from the store after append
-      // For now, we'll approximate or rely on the next poll/reconnect
-      queue.push({
+      const envelope: RuntimeEventEnvelope = {
         protocolVersion: PROTOCOL_VERSION,
-        seq: Date.now(), // Approximate seq for live events
+        seq: Date.now(),
+        timestamp: new Date().toISOString(),
+        traceId: crypto.randomUUID(),
         event: event,
-      });
+      };
+      queue.push(envelope);
       if (resolve) {
         resolve();
         resolve = null;
@@ -135,7 +163,9 @@ class LocalRuntimeService implements RuntimeService {
         while (queue.length > 0) {
           yield queue.shift()!;
         }
-        await new Promise<void>((r) => { resolve = r; });
+        await new Promise<void>((r) => {
+          resolve = r;
+        });
       }
     } finally {
       unsubscribe();

@@ -25,6 +25,8 @@ describe("Stable Control API Compliance", () => {
           yield {
             protocolVersion: PROTOCOL_VERSION,
             seq: 1,
+            timestamp: new Date().toISOString(),
+            traceId: "test-trace-id",
             event: { type: "test" },
           };
         }

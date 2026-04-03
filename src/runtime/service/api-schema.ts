@@ -74,6 +74,9 @@ export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>;
 export const runtimeEventEnvelopeSchema = z.object({
   protocolVersion: z.string(),
   seq: z.number(),
+  timestamp: z.string(),
+  traceId: z.string().optional(),
+  clientId: z.string().optional(),
   event: z.any(), // Keeping this broad for now, but in a real API we'd want more structure
 });
 

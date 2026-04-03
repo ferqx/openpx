@@ -108,13 +108,18 @@ export function createModelGateway(config: {
   async function invokeWithTimeout(messages: any[]) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
+    const startTime = Date.now();
 
     try {
       emitStatus("thinking");
       const response = await model.invoke(messages, { signal: controller.signal });
       emitStatus("responding");
+      const duration = Date.now() - startTime;
+      console.log(`[TELEMETRY] model.invoked: duration=${duration}ms`);
       return response;
     } catch (e: any) {
+      const duration = Date.now() - startTime;
+      console.error(`[TELEMETRY] model.failed: duration=${duration}ms error=${e.message}`);
       if (e.name === "AbortError") {
         throw new ModelGatewayError("timeout_error", `request timed out after ${timeoutMs}ms`);
       }
