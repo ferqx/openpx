@@ -18,6 +18,8 @@ import { SqliteThreadStore } from "../persistence/sqlite/sqlite-thread-store";
 import { createRootGraph } from "../runtime/graph/root/graph";
 import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
 import { resolveConfig } from "../shared/config";
+import { createThreadNarrativeService } from "../control/context/thread-narrative-service";
+import { createWorkerScratchPolicy } from "../control/context/worker-scratch-policy";
 
 type AppStores = ReturnType<typeof createStores>;
 
@@ -348,6 +350,10 @@ export async function createAppContext(input: {
       baseURL: config.model.baseURL,
       modelName: config.model.name,
     });
+
+  const narrativeService = createThreadNarrativeService();
+  const scratchPolicy = createWorkerScratchPolicy();
+
   const controlPlane = await createControlPlane({ config, stores, checkpointer, modelGateway });
   const kernel = createSessionKernel({
     stores,
@@ -356,5 +362,5 @@ export async function createAppContext(input: {
     projectId: "default-project", // TODO: resolve from config
   });
 
-  return { config, stores, controlPlane, kernel };
+  return { config, stores, controlPlane, kernel, narrativeService, scratchPolicy };
 }
