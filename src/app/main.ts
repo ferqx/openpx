@@ -48,14 +48,17 @@ export async function main(input?: MainInput) {
     dataDir,
   });
 
-  const client = new RuntimeClient(`http://localhost:${runtimeInfo.port}`);
-  const remoteKernel = createRemoteKernel(client);
+  const scopedClient = new RuntimeClient(`http://localhost:${runtimeInfo.port}`, {
+    workspaceRoot,
+    projectId,
+  });
+  const remoteKernel = createRemoteKernel(scopedClient);
 
   const ui = (input?.mount ?? render)(React.createElement(App, { kernel: remoteKernel }));
-  
+
   return {
     ui,
-    client,
+    client: scopedClient,
     remoteKernel,
   };
 }

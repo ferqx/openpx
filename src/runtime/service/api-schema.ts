@@ -31,6 +31,12 @@ export const runtimeTaskSummarySchema = z.object({
   taskId: z.string(),
   status: taskStatusSchema,
   summary: z.string(),
+  blockingReason: z
+    .object({
+      kind: z.enum(["waiting_approval", "human_recovery"]),
+      message: z.string(),
+    })
+    .optional(),
 });
 
 export const runtimePendingApprovalSchema = z.object({
@@ -52,6 +58,12 @@ export const runtimeSnapshotSchema = z.object({
   lastEventSeq: z.number(),
   activeThreadId: z.string().optional(),
   recommendationReason: z.string().optional(),
+  blockingReason: z
+    .object({
+      kind: z.enum(["waiting_approval", "human_recovery"]),
+      message: z.string(),
+    })
+    .optional(),
   threads: z.array(runtimeThreadSummarySchema),
   tasks: z.array(runtimeTaskSummarySchema),
   pendingApprovals: z.array(runtimePendingApprovalSchema),

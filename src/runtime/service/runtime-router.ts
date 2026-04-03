@@ -1,5 +1,17 @@
 import type { RuntimeService } from "./runtime-service";
 import { PROTOCOL_VERSION, runtimeCommandSchema } from "./runtime-types";
+import type { RuntimeScope } from "./runtime-service";
+
+function parseScope(url: URL): RuntimeScope | undefined {
+  const workspaceRoot = url.searchParams.get("workspaceRoot");
+  const projectId = url.searchParams.get("projectId");
+
+  if (!workspaceRoot || !projectId) {
+    return undefined;
+  }
+
+  return { workspaceRoot, projectId };
+}
 
 export class RuntimeRouter {
   constructor(private readonly runtime: RuntimeService) {}
@@ -20,7 +32,7 @@ export class RuntimeRouter {
 
     // Snapshot - available at /snapshot and /v1/snapshot
     if ((path === "/snapshot" || path === "/v1/snapshot") && method === "GET") {
-      const snapshot = await this.runtime.getSnapshot();
+      const snapshot = await this.runtime.getSnapshot(parseScope(url));
       return Response.json(snapshot);
     }
 
@@ -29,7 +41,7 @@ export class RuntimeRouter {
       try {
         const body = await req.json();
         const command = runtimeCommandSchema.parse(body);
-        await this.runtime.handleCommand(command);
+        await this.runtime.handleCommand(command, parseScope(url));
         return new Response(null, { status: 202 });
       } catch (e) {
         return new Response(String(e), { status: 400 });
@@ -39,9 +51,10 @@ export class RuntimeRouter {
     // Events - available at /events and /v1/events
     if ((path === "/events" || path === "/v1/events") && method === "GET") {
       const afterSeq = parseInt(url.searchParams.get("after") ?? "0", 10);
+      const scope = parseScope(url);
       const stream = new ReadableStream({
         start: async (controller) => {
-          for await (const envelope of this.runtime.subscribeEvents(afterSeq)) {
+          for await (const envelope of this.runtime.subscribeEvents(scope, afterSeq)) {
             controller.enqueue(`data: ${JSON.stringify(envelope)}\n\n`);
           }
         }

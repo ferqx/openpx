@@ -57,13 +57,16 @@ describe("Stable Control API Compliance", () => {
 
   test("POST /v1/commands accepts valid commands", async () => {
     const command = { kind: "new_thread" };
-    const req = new Request("http://localhost/v1/commands", {
+    const req = new Request("http://localhost/v1/commands?workspaceRoot=%2Ftest&projectId=test-project", {
       method: "POST",
       body: JSON.stringify(command),
     });
     const res = await router.handle(req);
     expect(res.status).toBe(202);
-    expect(runtime.handleCommand).toHaveBeenCalledWith(command as any);
+    expect(runtime.handleCommand).toHaveBeenCalledWith(command as any, {
+      workspaceRoot: "/test",
+      projectId: "test-project",
+    });
   });
 
   test("POST /v1/commands rejects invalid commands", async () => {

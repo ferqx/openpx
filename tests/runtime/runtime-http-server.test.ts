@@ -23,7 +23,7 @@ describe("Runtime HTTP Server", () => {
     const server = createHttpServer(runtime);
 
     try {
-      const res = await fetch(`http://localhost:${server.port}/snapshot`);
+      const res = await server.fetch(`/snapshot?workspaceRoot=${encodeURIComponent(testDir)}&projectId=test-project`);
       expect(res.status).toBe(200);
       const snapshot = await res.json() as RuntimeSnapshot;
       expect(snapshot.workspaceRoot).toBe(testDir);
@@ -39,7 +39,7 @@ describe("Runtime HTTP Server", () => {
     const server = createHttpServer(runtime);
 
     try {
-      const res = await fetch(`http://localhost:${server.port}/commands`, {
+      const res = await server.fetch(`/commands?workspaceRoot=${encodeURIComponent(testDir)}&projectId=test-project`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: "add_task", content: "test task" }),

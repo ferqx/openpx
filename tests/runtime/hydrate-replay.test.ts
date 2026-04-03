@@ -52,4 +52,45 @@ describe("Hydrate and Replay", () => {
       server.stop();
     }
   });
+
+  test("continues event sequence after runtime restart", async () => {
+    await fs.mkdir(testDir, { recursive: true });
+    const dataDir = path.join(testDir, "test.db");
+    const workspaceRoot = testDir;
+
+    const runtime1 = await createRuntimeService({ dataDir, workspaceRoot });
+    const server1 = createHttpServer(runtime1);
+
+    let lastSeq = 0;
+
+    try {
+      const client1 = new RuntimeClient(`http://localhost:${server1.port}`);
+      await client1.sendCommand({ kind: "add_task", content: "fix task1.ts" });
+      const snapshot1 = await client1.getSnapshot();
+      lastSeq = snapshot1.lastEventSeq;
+      expect(lastSeq).toBeGreaterThan(0);
+    } finally {
+      server1.stop();
+    }
+
+    const runtime2 = await createRuntimeService({ dataDir, workspaceRoot });
+    const server2 = createHttpServer(runtime2);
+
+    try {
+      const client2 = new RuntimeClient(`http://localhost:${server2.port}`);
+      const snapshot2 = await client2.getSnapshot();
+      expect(snapshot2.lastEventSeq).toBe(lastSeq);
+
+      const iterator = client2.subscribeEvents(lastSeq)[Symbol.asyncIterator]();
+      const nextEventPromise = iterator.next();
+
+      await client2.sendCommand({ kind: "add_task", content: "fix task2.ts" });
+
+      const { value } = await nextEventPromise;
+      expect(value).toBeDefined();
+      expect(value.seq).toBeGreaterThan(lastSeq);
+    } finally {
+      server2.stop();
+    }
+  });
 });

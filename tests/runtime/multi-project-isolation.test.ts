@@ -15,7 +15,7 @@ describe("Multi-Project Isolation", () => {
     }
   });
 
-  test("starts separate daemons for different projectIds in the same dataDir", async () => {
+  test("reuses one device runtime while keeping project snapshots isolated", async () => {
     await fs.mkdir(testDir, { recursive: true });
     const dataDir = path.join(testDir, "data");
     const w1 = path.join(testDir, "w1");
@@ -27,11 +27,21 @@ describe("Multi-Project Isolation", () => {
     const info1 = await ensureRuntime({ dataDir, workspaceRoot: w1, projectId: "p1" });
     const info2 = await ensureRuntime({ dataDir, workspaceRoot: w2, projectId: "p2" });
 
-    expect(info1.port).not.toBe(info2.port);
-    expect(info1.pid).toBe(info2.pid); // Still same process because we are calling ensureRuntime in same process
-    // Actually, in our simple implementation, ensureRuntime returns the same PID if it's the current process
-    // but the PORT should be different because they are different servers.
-    // Wait, currently ensureRuntime starts a NEW server if the lockfile doesn't exist.
-    // Each call to ensureRuntime starts a server.
+    expect(info1.port).toBe(info2.port);
+    expect(info1.pid).toBe(info2.pid);
+
+    const { RuntimeClient } = await import("../../src/interface/runtime/runtime-client");
+    const client1 = new RuntimeClient(`http://localhost:${info1.port}`, { workspaceRoot: w1, projectId: "p1" });
+    const client2 = new RuntimeClient(`http://localhost:${info2.port}`, { workspaceRoot: w2, projectId: "p2" });
+
+    await client1.sendCommand({ kind: "add_task", content: "task for p1" });
+
+    const snapshot1 = await client1.getSnapshot();
+    const snapshot2 = await client2.getSnapshot();
+
+    expect(snapshot1.projectId).toBe("p1");
+    expect(snapshot1.tasks.some((task) => task.summary.includes("task for p1"))).toBeTrue();
+    expect(snapshot2.projectId).toBe("p2");
+    expect(snapshot2.tasks.some((task) => task.summary.includes("task for p1"))).toBeFalse();
   });
 });

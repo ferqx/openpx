@@ -1,10 +1,31 @@
 import type { RuntimeSnapshot, RuntimeCommand, RuntimeEventEnvelope } from "../../runtime/service/runtime-types";
+import { dispatchRuntimeRequest } from "../../runtime/service/runtime-http-server";
+
+type RuntimeClientScope = {
+  workspaceRoot: string;
+  projectId: string;
+};
 
 export class RuntimeClient {
-  constructor(private baseUrl: string) {}
+  constructor(
+    private baseUrl: string,
+    private scope?: RuntimeClientScope,
+  ) {}
+
+  private scopedUrl(path: string, afterSeq?: number): string {
+    const url = new URL(path, this.baseUrl);
+    if (this.scope) {
+      url.searchParams.set("workspaceRoot", this.scope.workspaceRoot);
+      url.searchParams.set("projectId", this.scope.projectId);
+    }
+    if (afterSeq !== undefined) {
+      url.searchParams.set("after", afterSeq.toString());
+    }
+    return url.toString();
+  }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
-    const res = await fetch(`${this.baseUrl}/snapshot`);
+    const res = await dispatchRuntimeRequest(this.scopedUrl("/snapshot"));
     if (!res.ok) {
       throw new Error(`Failed to get snapshot: ${res.statusText}`);
     }
@@ -12,7 +33,7 @@ export class RuntimeClient {
   }
 
   async sendCommand(command: RuntimeCommand): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/commands`, {
+    const res = await dispatchRuntimeRequest(this.scopedUrl("/commands"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(command),
@@ -23,14 +44,11 @@ export class RuntimeClient {
   }
 
   subscribeEvents(afterSeq?: number): AsyncIterable<RuntimeEventEnvelope> {
-    const url = new URL(`${this.baseUrl}/events`);
-    if (afterSeq !== undefined) {
-      url.searchParams.set("after", afterSeq.toString());
-    }
+    const url = this.scopedUrl("/events", afterSeq);
 
     return {
       async *[Symbol.asyncIterator]() {
-        const res = await fetch(url.toString());
+        const res = await dispatchRuntimeRequest(url);
         if (!res.ok || !res.body) {
           throw new Error(`Failed to subscribe to events: ${res.statusText}`);
         }
@@ -43,7 +61,7 @@ export class RuntimeClient {
           const { done, value } = await reader.read();
           if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
+          buffer += typeof value === "string" ? value : decoder.decode(value, { stream: true });
           const lines = buffer.split("\n\n");
           buffer = lines.pop() ?? "";
 
