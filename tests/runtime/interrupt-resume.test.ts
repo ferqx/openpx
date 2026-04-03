@@ -58,7 +58,7 @@ describe("root graph interrupt/resume", () => {
     });
 
     const resumed = await graph.invoke(
-      new Command({ resume: "approved" }),
+      new Command({ resume: "approved and done" }),
       { configurable: { thread_id: "thread_interrupt", task_id: "task_interrupt" } },
     );
 

@@ -7,6 +7,8 @@ export type WorkerMode = Exclude<RootMode, "done">;
 export type WorkerResult<TMode extends WorkerMode = WorkerMode> = {
   summary: string;
   mode: TMode;
+  isValid?: boolean;
+  feedback?: string;
 };
 
 export type WorkerExecutionContext = {

@@ -22,9 +22,14 @@ export async function createRootGraph(context: RootGraphContext) {
     .addNode("executor", async (state, config) =>
       executorGraph.invoke({ input: state.input }, config),
     )
-    .addNode("verifier", async (state, config) =>
-      verifierGraph.invoke({ input: state.input }, config),
-    )
+    .addNode("verifier", async (state, config) => {
+      const result = await verifierGraph.invoke({ input: state.input }, config);
+      return {
+        summary: result.summary,
+        verifierPassed: result.isValid,
+        verifierFeedback: result.feedback,
+      };
+    })
     .addNode("post-turn-guard", postTurnGuardNode)
     .addEdge(START, "intake")
     .addEdge("intake", "route")
@@ -34,14 +39,21 @@ export async function createRootGraph(context: RootGraphContext) {
           return "planner";
         case "verify":
           return "verifier";
+        case "done":
+          return END;
         default:
           return "executor";
       }
     })
     .addEdge("planner", END)
-    .addEdge("verifier", END)
+    .addConditionalEdges("verifier", (state) => {
+      if (state.verifierPassed === false) {
+        return "route";
+      }
+      return END;
+    })
     .addEdge("executor", "post-turn-guard")
-    .addEdge("post-turn-guard", END);
+    .addEdge("post-turn-guard", "intake");
 
   return graph.compile({
     checkpointer: context.checkpointer,

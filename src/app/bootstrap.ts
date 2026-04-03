@@ -193,6 +193,8 @@ async function createControlPlane(input: {
       return {
         summary: result.summary,
         mode: "verify",
+        isValid: result.isValid,
+        feedback: result.summary, // Assuming summary contains feedback when invalid
       };
     },
     executor: async ({ input: text, threadId, taskId }) => {

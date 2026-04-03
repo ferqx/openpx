@@ -10,4 +10,7 @@ export const RootState = Annotation.Root({
   messages: MessagesAnnotation.spec.messages,
   narrative: Annotation<ThreadNarrative>(),
   taskWorkingState: Annotation<TaskWorkingState>(),
+  verifierPassed: Annotation<boolean>(),
+  verifierFeedback: Annotation<string>(),
+  resumeValue: Annotation<any>(),
 });
