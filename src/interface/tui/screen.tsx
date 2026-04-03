@@ -1,5 +1,5 @@
 import React from "react";
-import { Box } from "ink";
+import { Box, Text } from "ink";
 import { AnswerPane } from "./components/answer-pane";
 import { ApprovalPanel, type ApprovalSummary } from "./components/approval-panel";
 import { Composer } from "./components/composer";
@@ -17,10 +17,16 @@ export function Screen(input: {
     verification: string[];
   };
   composerMode?: "input" | "confirm";
+  workspaceRoot?: string;
+  projectId?: string;
   onSubmit?: (text: string) => Promise<void> | void;
 }) {
   return (
     <Box flexDirection="column">
+      <Box paddingX={1} borderStyle="single" borderColor="cyan">
+        <Text bold color="cyan">PROJECT: {input.projectId ?? "unknown"}</Text>
+        <Text color="gray"> ({input.workspaceRoot ?? "unknown"})</Text>
+      </Box>
       <Composer mode={input.composerMode} onSubmit={input.onSubmit} />
       <Box>
         <Box flexDirection="column" width="50%">

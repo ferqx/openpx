@@ -20,6 +20,8 @@ type KernelResult = {
   summary?: string;
   tasks?: KernelTask[];
   approvals?: KernelApproval[];
+  workspaceRoot?: string;
+  projectId?: string;
 };
 
 function isKernelResult(value: unknown): value is KernelResult {
@@ -31,6 +33,8 @@ export function App(input: { kernel: TuiKernel }) {
   const [tasks, setTasks] = useState<Array<{ id: string; title: string; status: string }>>([]);
   const [approvals, setApprovals] = useState<Array<{ id: string; title: string; status: string }>>([]);
   const [composerMode, setComposerMode] = useState<"input" | "confirm">("input");
+  const [workspaceRoot, setWorkspaceRoot] = useState<string>("");
+  const [projectId, setProjectId] = useState<string>("");
   const [answer, setAnswer] = useState({
     summary: "Awaiting answer",
     changes: [] as Array<{ path: string; additions: number; deletions: number }>,
@@ -62,6 +66,9 @@ export function App(input: { kernel: TuiKernel }) {
       ...current,
       summary: result.summary ?? current.summary,
     }));
+
+    if (result.workspaceRoot) setWorkspaceRoot(result.workspaceRoot);
+    if (result.projectId) setProjectId(result.projectId);
 
     if (result.status === "waiting_approval") {
       setComposerMode("confirm");
@@ -130,6 +137,8 @@ export function App(input: { kernel: TuiKernel }) {
       approvals={approvals}
       answer={answer}
       composerMode={composerMode}
+      workspaceRoot={workspaceRoot}
+      projectId={projectId}
       onSubmit={submit}
     />
   );
