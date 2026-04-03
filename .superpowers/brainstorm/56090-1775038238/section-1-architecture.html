@@ -1,0 +1,107 @@
+<h2>Section 1: System Architecture</h2>
+<p class="subtitle">Recommended V1 shape: Graph-Centric OS with a local daemon runtime</p>
+
+<div class="mockup">
+  <div class="mockup-header">High-Level Layers</div>
+  <div class="mockup-body">
+    <div class="section">
+      <div class="label">Interface Layer</div>
+      <div class="mock-content">
+        TUI Shell
+        <br>
+        input composer / event stream / task list / approval modal / final answer pane
+      </div>
+    </div>
+    <div class="section">
+      <div class="label">Kernel Layer</div>
+      <div class="mock-content">
+        SessionKernel
+        <br>
+        thread manager / command bus / event bus / checkpoint coordinator / interrupt-resume boundary
+      </div>
+    </div>
+    <div class="section">
+      <div class="label">Control Plane</div>
+      <div class="mock-content">
+        TaskManager / WorkerManager / PolicyEngine / ApprovalService / MemoryService / ToolRegistry
+      </div>
+    </div>
+    <div class="section">
+      <div class="label">Execution Runtime</div>
+      <div class="mock-content">
+        LangGraph root runtime
+        <br>
+        planner worker / executor worker / verifier worker / background memory worker
+      </div>
+    </div>
+    <div class="section">
+      <div class="label">Persistence</div>
+      <div class="mock-content">
+        StoragePort
+        <br>
+        SQLite adapters for checkpoints / task store / event log / memory namespaces
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Primary Flow</div>
+    <div class="mockup-body">
+      <div class="mock-content">
+        User input
+        <br>↓
+        TUI emits command
+        <br>↓
+        SessionKernel opens or resumes thread
+        <br>↓
+        Control Plane resolves task + policy
+        <br>↓
+        WorkerRuntime executes graph
+        <br>↓
+        Tool calls and approvals emit events
+        <br>↓
+        TUI renders stream only
+      </div>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">Key Boundary Rules</div>
+    <div class="mockup-body">
+      <div class="mock-content">
+        TUI never mutates runtime state directly
+        <br><br>
+        Graphs never bypass policy engine
+        <br><br>
+        Workers communicate by events and task contracts
+        <br><br>
+        Persistence hides behind StoragePort
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>Why this shape</h4>
+    <ul>
+      <li>Keeps LangGraph in its strongest role: orchestration runtime</li>
+      <li>Makes the TUI replaceable later by API or remote UI</li>
+      <li>Supports future daemon split without redesigning the model</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>Trade-off</h4>
+    <ul>
+      <li>More abstractions than a simple CLI agent</li>
+      <li>Requires discipline in event and store schema design</li>
+      <li>More upfront architecture work before coding the happy path</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Recommendation</h3>
+  <p>Select this if you want the first version to be a real OS-shaped agent kernel rather than a single graph wrapped in a CLI.</p>
+</div>
