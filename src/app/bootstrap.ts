@@ -21,6 +21,7 @@ import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
 import { resolveConfig } from "../shared/config";
 import { createThreadNarrativeService } from "../control/context/thread-narrative-service";
 import { createWorkerScratchPolicy } from "../control/context/worker-scratch-policy";
+import { MemoryConsolidator } from "../control/context/memory-consolidator";
 
 type AppStores = ReturnType<typeof createStores>;
 
@@ -192,10 +193,21 @@ async function createControlPlane(input: {
   });
   const rootGraph = await createRootGraph({
     checkpointer: input.checkpointer,
-    planner: async ({ input: text, threadId, taskId }) => ({
-      summary: (await input.modelGateway.plan({ prompt: text, threadId, taskId })).summary,
-      mode: "plan",
-    }),
+    planner: async ({ input: text, threadId, taskId }) => {
+      // Retrieve project memory for context
+      const memories = await input.stores.memoryStore.search("project", { limit: 5 });
+      const memoryContext = memories.length > 0 
+        ? `\nProject Memory:\n${memories.map(m => `- ${m.value}`).join("\n")}\n`
+        : "";
+      
+      const prompt = `${memoryContext}\nUser request: ${text}`;
+      const result = await input.modelGateway.plan({ prompt, threadId, taskId });
+      
+      return {
+        summary: result.summary,
+        mode: "plan",
+      };
+    },
     verifier: async ({ input: text, threadId, taskId }) => {
       const result = await input.modelGateway.verify({ prompt: text, threadId, taskId });
       return {
@@ -424,13 +436,14 @@ export async function createAppContext(input: {
 
   const narrativeService = createThreadNarrativeService();
   const scratchPolicy = createWorkerScratchPolicy();
+  const memoryConsolidator = new MemoryConsolidator(stores.memoryStore, modelGateway);
 
   const controlPlane = await createControlPlane({ config, stores, checkpointer, modelGateway });
   const kernel = createSessionKernel({
     stores,
     controlPlane,
     workspaceRoot: config.workspaceRoot,
-    projectId: "default-project", // TODO: resolve from config
+    projectId: config.projectId,
   });
 
   modelGateway.onStatusChange((status) => {
@@ -440,5 +453,5 @@ export async function createAppContext(input: {
     });
   });
 
-  return { config, stores, controlPlane, kernel, narrativeService, scratchPolicy };
-}
+  return { config, stores, controlPlane, kernel, narrativeService, scratchPolicy, memoryConsolidator };
+  }

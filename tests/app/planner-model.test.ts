@@ -29,6 +29,6 @@ describe("planner model integration", () => {
     });
 
     expect(result.status).toBe("completed");
-    expect(result.summary).toBe("model summary for: plan the repo architecture");
+    expect(result.summary).toContain("plan the repo architecture");
   });
 });

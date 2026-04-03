@@ -9,7 +9,7 @@ describe("createModelGateway", () => {
         baseURL: "https://example.invalid/v1",
         modelName: "kimi-k2.5",
       }),
-    ).toThrow("missing OPENAI_API_KEY");
+    ).toThrow("missing primary model configuration");
   });
 
   test("emits status changes during plan", async () => {
