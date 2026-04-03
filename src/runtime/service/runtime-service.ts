@@ -102,15 +102,13 @@ class LocalRuntimeService implements RuntimeService {
     if (!thread) return;
 
     // First, emit existing events afterSeq
-    const existing = await this.context.stores.eventLog.listByThread(thread.threadId) as any[];
+    const existing = await this.context.stores.eventLog.listByThreadAfter(thread.threadId, afterSeq) as any[];
     for (const event of existing) {
-      if ((event.sequence ?? 0) > afterSeq) {
-        yield {
-          protocolVersion: PROTOCOL_VERSION,
-          seq: event.sequence ?? 0,
-          event: event,
-        };
-      }
+      yield {
+        protocolVersion: PROTOCOL_VERSION,
+        seq: event.sequence ?? 0,
+        event: event,
+      };
     }
 
     // Then, subscribe to new events

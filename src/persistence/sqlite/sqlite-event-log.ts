@@ -5,6 +5,7 @@ import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 type EventRow = {
+  sequence: number;
   event_id: string;
   thread_id: string;
   task_id: string | null;
@@ -42,12 +43,25 @@ export class SqliteEventLog implements EventLogPort {
   async listByThread(threadId: string): Promise<Event[]> {
     const rows = this.db
       .query<EventRow, [string]>(
-        `SELECT event_id, thread_id, task_id, type, payload_json, created_at
+        `SELECT sequence, event_id, thread_id, task_id, type, payload_json, created_at
          FROM events
          WHERE thread_id = ?
          ORDER BY sequence ASC`,
       )
       .all(threadId);
+
+    return rows.map(mapEventRow);
+  }
+
+  async listByThreadAfter(threadId: string, seq: number): Promise<Event[]> {
+    const rows = this.db
+      .query<EventRow, [string, number]>(
+        `SELECT sequence, event_id, thread_id, task_id, type, payload_json, created_at
+         FROM events
+         WHERE thread_id = ? AND sequence > ?
+         ORDER BY sequence ASC`,
+      )
+      .all(threadId, seq);
 
     return rows.map(mapEventRow);
   }
@@ -61,11 +75,12 @@ export class SqliteEventLog implements EventLogPort {
 
 function mapEventRow(row: EventRow): Event {
   return {
+    sequence: row.sequence,
     eventId: row.event_id,
     threadId: row.thread_id,
     taskId: row.task_id ?? undefined,
     type: row.type,
     payload: row.payload_json ? (JSON.parse(row.payload_json) as Record<string, unknown>) : undefined,
     createdAt: row.created_at ?? undefined,
-  };
+  } as Event;
 }
