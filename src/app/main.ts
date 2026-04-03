@@ -30,7 +30,7 @@ function resolveProjectId(workspaceRoot: string): string {
 function printUsage() {
   console.log(`Usage: bun run src/app/main.ts [--help]
 
-Starts the OpenWENPX TUI shell.
+Starts the openpx TUI shell.
 
 Options:
   --help, -h   Show this help text and exit
@@ -40,7 +40,7 @@ Options:
 export async function main(input?: MainInput) {
   const workspaceRoot = input?.workspaceRoot ?? process.cwd();
   const projectId = input?.projectId ?? resolveProjectId(workspaceRoot);
-  const dataDir = input?.dataDir ?? process.env.OPENWENPX_DATA_DIR ?? ".openwenpx";
+  const dataDir = input?.dataDir ?? process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ".openpx";
 
   const runtimeInfo = await ensureRuntime({
     workspaceRoot,

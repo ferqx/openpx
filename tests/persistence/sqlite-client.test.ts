@@ -6,12 +6,12 @@ import { createSqlite } from "../../src/persistence/sqlite/sqlite-client";
 
 describe("createSqlite", () => {
   test("creates parent directories for file-backed databases", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "openwenpx-sqlite-client-"));
-    const dbPath = join(workspace, ".openwenpx", "agent.sqlite");
+    const workspace = await mkdtemp(join(tmpdir(), "openpx-sqlite-client-"));
+    const dbPath = join(workspace, ".openpx", "agent.sqlite");
 
     const db = createSqlite(dbPath);
     try {
-      await access(join(workspace, ".openwenpx"));
+      await access(join(workspace, ".openpx"));
     } finally {
       db.close();
       await rm(workspace, { recursive: true, force: true });

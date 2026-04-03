@@ -18,12 +18,12 @@ function resolveDbPath(dataDir: string): string {
     return ":memory:";
   }
 
-  return dataDir.endsWith(".db") ? dataDir : join(dataDir, "openwenpx.db");
+  return dataDir.endsWith(".db") ? dataDir : join(dataDir, "openpx.db");
 }
 
 function resolveRuntimeStateDir(dataDir: string, workspaceRoot: string): string {
   if (dataDir === ":memory:") {
-    return join(workspaceRoot, ".openwenpx-runtime");
+    return join(workspaceRoot, ".openpx-runtime");
   }
 
   if (dataDir.endsWith(".db")) {

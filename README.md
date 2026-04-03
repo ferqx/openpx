@@ -1,4 +1,4 @@
-# openwenpx-new
+# openpx
 
 ## Install
 
@@ -50,10 +50,10 @@ Expected results:
 
 By default, the app boots with in-memory SQLite for development.
 
-To persist local state while using `bun run dev`, set `OPENWENPX_DATA_DIR` to a SQLite file path first:
+To persist local state while using `bun run dev`, set `OPENPX_DATA_DIR` to a SQLite file path first:
 
 ```bash
-OPENWENPX_DATA_DIR=./.openwenpx/agent.sqlite bun run dev
+OPENPX_DATA_DIR=./.openpx/agent.sqlite bun run dev
 ```
 
 That path is used for both the app stores and LangGraph checkpointing.

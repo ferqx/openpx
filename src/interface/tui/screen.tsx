@@ -35,7 +35,7 @@ export function Screen(input: {
       {/* Header */}
       <Box marginBottom={1} justifyContent="space-between">
         <Box>
-          <Text bold color={theme.colors.primary}>OpenWENPX</Text>
+          <Text bold color={theme.colors.primary}>openpx</Text>
           <Text color={theme.colors.dim}> / </Text>
           <Text color={theme.colors.secondary}>{input.projectId ?? "unknown"}</Text>
         </Box>

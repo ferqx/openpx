@@ -1,4 +1,4 @@
-# OpenWENPX Project Guide
+# openpx Project Guide
 
 CLI-first agent OS for long-running code work. Built with Bun, React (Ink), and LangGraph.
 

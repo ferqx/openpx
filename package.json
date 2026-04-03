@@ -1,5 +1,5 @@
 {
-  "name": "openwenpx-new",
+  "name": "openpx",
   "module": "src/app/main.ts",
   "type": "module",
   "private": true,

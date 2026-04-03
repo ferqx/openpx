@@ -50,7 +50,7 @@ describe("TUI App", () => {
 
     const frame = lastFrame();
 
-    expect(frame).toContain("OpenWENPX");
+    expect(frame).toContain("openpx");
     expect(frame).toContain("›");
     expect(frame).toContain("PROJECT");
     expect(frame).toContain("THREAD");
