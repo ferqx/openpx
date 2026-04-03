@@ -14,6 +14,7 @@ export type SubmitInputCommand = {
   type: "submit_input";
   payload: {
     text: string;
+    background?: boolean;
   };
 };
 
@@ -214,12 +215,45 @@ export function createSessionKernel(deps: {
         const latestThread = await deps.stores.threadStore.getLatest();
         if (latestThread?.status === "waiting_approval") {
           await checkRevision(latestThread.threadId, expectedRevision);
+          
+          if (command.payload.background) {
+            // Background resume: don't await finalize
+            void deps.controlPlane.startRootTask(latestThread.threadId, command.payload.text)
+              .then(result => finalize(latestThread.threadId, result))
+              .catch(err => console.error("Background task failed", err));
+            
+            const tasks = await deps.stores.taskStore.listByThread(latestThread.threadId);
+            return {
+              threadId: latestThread.threadId,
+              status: "active" as any, // "running" basically
+              summary: "Task started in background",
+              tasks,
+              approvals: [],
+            };
+          }
+
           // Instead of just hydrating, resume the graph with the new input
           const result = await deps.controlPlane.startRootTask(latestThread.threadId, command.payload.text);
           return finalize(latestThread.threadId, result);
         }
 
         const thread = await threadService.startThread();
+        
+        if (command.payload.background) {
+          // Background start: don't await startRootTask or finalize
+          void deps.controlPlane.startRootTask(thread.threadId, command.payload.text)
+            .then(result => finalize(thread.threadId, result))
+            .catch(err => console.error("Background task failed", err));
+          
+          return {
+            status: "active" as any,
+            threadId: thread.threadId,
+            summary: "Task started in background",
+            tasks: [],
+            approvals: [],
+          };
+        }
+
         const result =
           (await deps.controlPlane.startRootTask(thread.threadId, command.payload.text)) ??
           ({

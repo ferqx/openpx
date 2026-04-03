@@ -94,7 +94,10 @@ class LocalRuntimeService implements RuntimeService {
       case "add_task":
         await this.context.kernel.handleCommand({
           type: "submit_input",
-          payload: { text: command.content }
+          payload: { 
+            text: command.content,
+            background: command.background,
+          }
         });
         break;
       case "approve":
