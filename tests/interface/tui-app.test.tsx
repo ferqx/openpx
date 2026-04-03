@@ -52,7 +52,7 @@ describe("TUI App", () => {
 
     expect(frame).toContain("Composer");
     expect(frame).toContain("Events");
-    expect(frame).toContain("Tasks");
+    expect(frame).toContain("TASKS");
     expect(frame).toContain("Answer");
     expect(receivedCommand).toEqual({
       type: "submit_input",
@@ -101,9 +101,10 @@ describe("TUI App", () => {
 
     const frame = lastFrame();
 
-    expect(frame).toContain("delete src/old.ts [blocked]");
+    expect(frame).toContain("delete src/old.ts");
     expect(frame).toContain("apply_patch delete_file src/old.ts [pending]");
     expect(frame).toContain("Approval required before deleting src/old.ts");
+    expect(frame).toContain("Agent team ready. Start? [Y/n]");
   });
 
   test("hydrates the latest blocked session state on mount", async () => {
@@ -142,14 +143,16 @@ describe("TUI App", () => {
     const { lastFrame } = render(<App kernel={kernel} />);
     await tick();
     await tick();
+    await tick();
 
     const frame = lastFrame();
 
-    expect(frame).toContain("delete src/resume-me.ts [blocked]");
+    expect(frame).toContain("delete src/resume-me.ts");
     expect(frame).toContain("apply_patch delete_file src/resume-me.ts");
     expect(frame).toContain("[pending]");
     expect(frame).toContain("Approval required before deleting");
     expect(frame).toContain("src/resume-me.ts");
+    expect(frame).toContain("Agent team ready. Start? [Y/n]");
   });
 
   test("main mounts the Ink shell with the bootstrapped kernel", async () => {

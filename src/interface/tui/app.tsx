@@ -16,6 +16,7 @@ type KernelApproval = {
 };
 
 type KernelResult = {
+  status?: string;
   summary?: string;
   tasks?: KernelTask[];
   approvals?: KernelApproval[];
@@ -29,6 +30,7 @@ export function App(input: { kernel: TuiKernel }) {
   const [events, setEvents] = useState<TuiKernelEvent[]>([]);
   const [tasks, setTasks] = useState<Array<{ id: string; title: string; status: string }>>([]);
   const [approvals, setApprovals] = useState<Array<{ id: string; title: string; status: string }>>([]);
+  const [composerMode, setComposerMode] = useState<"input" | "confirm">("input");
   const [answer, setAnswer] = useState({
     summary: "Awaiting answer",
     changes: [] as Array<{ path: string; additions: number; deletions: number }>,
@@ -60,6 +62,12 @@ export function App(input: { kernel: TuiKernel }) {
       ...current,
       summary: result.summary ?? current.summary,
     }));
+
+    if (result.status === "waiting_approval") {
+      setComposerMode("confirm");
+    } else {
+      setComposerMode("input");
+    }
   }
 
   useEffect(() => {
@@ -86,6 +94,22 @@ export function App(input: { kernel: TuiKernel }) {
   }, [input.kernel]);
 
   async function submit(text: string) {
+    if (composerMode === "confirm") {
+      if (text === "yes") {
+        // Continue work - for now we just submit a fake 'continue' command 
+        // or re-submit the input if kernel supports it.
+        // The plan says "trigger the next step in the graph".
+        // We'll assume the kernel handles this or we'll implement 'continue' later.
+        const result = await input.kernel.handleCommand({ type: "submit_input", payload: { text: "continue" } } as any);
+        if (isKernelResult(result)) {
+          applyKernelResult(result);
+        }
+      } else {
+        setComposerMode("input");
+      }
+      return;
+    }
+
     const value = text.trim();
     if (!value) {
       return;
@@ -105,6 +129,7 @@ export function App(input: { kernel: TuiKernel }) {
       tasks={tasks}
       approvals={approvals}
       answer={answer}
+      composerMode={composerMode}
       onSubmit={submit}
     />
   );

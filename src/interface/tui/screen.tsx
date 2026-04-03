@@ -16,11 +16,12 @@ export function Screen(input: {
     changes: Array<{ path: string; additions: number; deletions: number }>;
     verification: string[];
   };
+  composerMode?: "input" | "confirm";
   onSubmit?: (text: string) => Promise<void> | void;
 }) {
   return (
     <Box flexDirection="column">
-      <Composer onSubmit={input.onSubmit} />
+      <Composer mode={input.composerMode} onSubmit={input.onSubmit} />
       <Box>
         <Box flexDirection="column" width="50%">
           <EventStream events={input.events} />
