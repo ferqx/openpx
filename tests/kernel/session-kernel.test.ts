@@ -82,4 +82,84 @@ describe("SessionKernel", () => {
     expect(startedThreadId).toBe(savedThreadId);
     expect(startedText).toBe("plan the repo");
   });
+
+  test("updates the thread narrative when a stable task completes", async () => {
+    let narrativeTaskSummary = "";
+    const kernel = createSessionKernel({
+      stores: {
+        threadStore: {
+          async save() {},
+          async getLatest() {
+            return undefined;
+          },
+          async listByScope() {
+            return [];
+          },
+          async get(threadId) {
+            return {
+              threadId: sharedThreadId(threadId),
+              workspaceRoot: "",
+              projectId: "",
+              revision: 1,
+              status: "active",
+            };
+          },
+          async close() {},
+        },
+        taskStore: {
+          async save() {},
+          async get() {
+            return undefined;
+          },
+          async listByThread() {
+            return [];
+          },
+          async close() {},
+        },
+        approvalStore: {
+          async listPendingByThread() {
+            return [];
+          },
+        },
+      },
+      controlPlane: {
+        async startRootTask(threadId) {
+          return {
+            status: "completed" as const,
+            task: {
+              taskId: "task_1",
+              threadId,
+              summary: "completed root task",
+              status: "completed" as const,
+            },
+            approvals: [],
+            summary: "completed root task",
+          };
+        },
+        async approveRequest() {
+          throw new Error("not needed in this test");
+        },
+        async rejectRequest() {
+          throw new Error("not needed in this test");
+        },
+      },
+      narrativeService: {
+        async processTaskUpdate(task) {
+          narrativeTaskSummary = task.summary;
+        },
+        async getNarrative(threadId) {
+          return {
+            threadId,
+            summary: "",
+            events: [],
+            revision: 0,
+          };
+        },
+      },
+    });
+
+    await kernel.handleCommand({ type: "submit_input", payload: { text: "plan the repo" } });
+
+    expect(narrativeTaskSummary).toBe("completed root task");
+  });
 });

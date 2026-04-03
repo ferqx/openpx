@@ -88,6 +88,8 @@ describe("root graph interrupt/resume", () => {
 
     // 1. Recommendation interrupt
     expect(firstResult.status).toBe("waiting_approval");
+    expect(firstResult.recommendationReason).toContain("high-risk");
+    expect(firstResult.approvals).toHaveLength(0);
     
     const result = await ctx.kernel.handleCommand({
       type: "submit_input",
@@ -125,6 +127,7 @@ describe("root graph interrupt/resume", () => {
       payload: { text: "delete src/old-a.ts" },
     });
     expect(firstResult.status).toBe("waiting_approval");
+    expect(firstResult.recommendationReason).toContain("high-risk");
 
     const secondResult = await firstCtx.kernel.handleCommand({
       type: "submit_input",
@@ -177,6 +180,7 @@ describe("root graph interrupt/resume", () => {
       payload: { text: "delete src/resume-me.ts" },
     });
     expect(firstResult.status).toBe("waiting_approval");
+    expect(firstResult.recommendationReason).toContain("high-risk");
 
     const blocked = await firstCtx.kernel.handleCommand({
       type: "submit_input",
@@ -194,6 +198,8 @@ describe("root graph interrupt/resume", () => {
       dataDir,
       modelGateway: createTestModelGateway(),
     });
+    const preConfirmation = await restartedCtx.kernel.hydrateSession();
+    expect(preConfirmation?.recommendationReason).toBeUndefined();
     const hydrated = await restartedCtx.kernel.hydrateSession();
 
     expect(hydrated?.threadId).toBe(blocked.threadId);

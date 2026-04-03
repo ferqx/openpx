@@ -413,21 +413,32 @@ async function createControlPlane(input: {
         status = "waiting_approval";
       } else if (isInterrupted(graphResult)) {
         status = "waiting_approval";
+      } else if ((graphResult as { mode?: string }).mode === "waiting_approval") {
+        status = "waiting_approval";
       }
 
       const finalTask = await saveTaskStatus(input.stores, task, status === "waiting_approval" ? "blocked" : "completed");
       const interruptValue = isInterrupted(graphResult)
         ? (graphResult[INTERRUPT][0]?.value as { summary?: string } | undefined)
         : undefined;
+      const recommendationReason =
+        status === "waiting_approval" && approvalsForThread.length === 0
+          ? (graphResult as { recommendationReason?: string }).recommendationReason
+          : undefined;
       const summary = isInterrupted(graphResult)
         ? String(interruptValue?.summary ?? text)
-        : (graphResult as { summary: string }).summary;
+        : String(
+            (graphResult as { summary?: string; recommendationReason?: string }).summary ??
+            recommendationReason ??
+            text,
+          );
 
       return {
         status,
         task: finalTask,
         approvals: approvalsForThread,
         summary,
+        recommendationReason,
       };
     },
 
@@ -533,6 +544,7 @@ export async function createAppContext(input: {
   const kernel = createSessionKernel({
     stores,
     controlPlane,
+    narrativeService,
     workspaceRoot: config.workspaceRoot,
     projectId: config.projectId,
   });

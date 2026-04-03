@@ -9,6 +9,7 @@ import type { ThreadStorePort } from "../persistence/ports/thread-store-port";
 import type { TaskStorePort } from "../persistence/ports/task-store-port";
 import type { EventLogPort } from "../persistence/ports/event-log-port";
 import { prefixedUuid } from "../shared/id-generators";
+import type { ThreadNarrativeService } from "../control/context/thread-narrative-service";
 
 export type SubmitInputCommand = {
   type: "submit_input";
@@ -39,6 +40,7 @@ export type SessionControlPlaneResult = {
   task: Task;
   approvals: ApprovalRequest[];
   summary: string;
+  recommendationReason?: string;
 };
 
 export type SessionCommandResult = {
@@ -47,6 +49,7 @@ export type SessionCommandResult = {
   summary: string;
   tasks: Task[];
   approvals: ApprovalRequest[];
+  recommendationReason?: string;
 };
 
 export type SessionKernel = {
@@ -70,6 +73,7 @@ export function createSessionKernel(deps: {
     approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
   };
+  narrativeService?: ThreadNarrativeService;
   workspaceRoot?: string;
   projectId?: string;
 }): SessionKernel {
@@ -142,6 +146,7 @@ export function createSessionKernel(deps: {
   }
 
   async function hydrateThread(threadId: string): Promise<SessionCommandResult> {
+    const thread = await deps.stores.threadStore.get(threadId);
     const tasks = await deps.stores.taskStore.listByThread(threadId);
     const approvals = await deps.stores.approvalStore.listPendingByThread(threadId);
     const loggedEvents = deps.stores.eventLog ? await deps.stores.eventLog.listByThread(threadId) : [];
@@ -160,6 +165,7 @@ export function createSessionKernel(deps: {
         "Awaiting answer",
       tasks,
       approvals,
+      recommendationReason: thread?.recommendationReason,
     };
   }
 
@@ -175,7 +181,11 @@ export function createSessionKernel(deps: {
         : result.status === "blocked"
           ? "blocked"
           : "completed";
-    const nextThread = currentThread.status === targetStatus ? currentThread : transitionThread(currentThread, targetStatus);
+    const transitionedThread = currentThread.status === targetStatus ? currentThread : transitionThread(currentThread, targetStatus);
+    const nextThread = {
+      ...transitionedThread,
+      recommendationReason: result.recommendationReason,
+    };
     await deps.stores.threadStore.save(nextThread);
 
     const threadEventType =
@@ -190,6 +200,7 @@ export function createSessionKernel(deps: {
             threadId: nextThread.threadId,
             status: nextThread.status,
             blockingReason: result.task?.blockingReason,
+            recommendationReason: result.recommendationReason,
           }
         : nextThread;
 
@@ -213,6 +224,7 @@ export function createSessionKernel(deps: {
         type: "task.updated",
         payload: result.task as unknown as Record<string, unknown>,
       });
+      await deps.narrativeService?.processTaskUpdate(result.task as any);
     }
     for (const approval of result.approvals) {
       events.publish({
@@ -233,6 +245,7 @@ export function createSessionKernel(deps: {
       summary: result.summary,
       tasks: result.task ? [result.task] : [],
       approvals: result.approvals,
+      recommendationReason: result.recommendationReason,
     } satisfies SessionCommandResult;
 
     if (deps.stores.eventLog) {

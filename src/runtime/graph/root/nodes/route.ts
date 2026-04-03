@@ -15,11 +15,12 @@ export function routeNode(state: {
       mode: "execute",
       input: `${state.input}\n\nVerification failed: ${state.verifierFeedback}. Please fix these issues and verify again.`,
       verifierPassed: undefined, // Reset so we don't loop forever
+      recommendationReason: undefined,
     };
   }
 
   if (/\b(completed|done|finished)\b/.test(input)) {
-    return { mode: "done" };
+    return { mode: "done", recommendationReason: undefined };
   }
 
   // If it's a simple confirmation and we were waiting, continue with previous intent
@@ -44,11 +45,11 @@ export function routeNode(state: {
   }
 
   if (/\bverify\b/.test(input)) {
-    return { mode: "verify" };
+    return { mode: "verify", recommendationReason: undefined };
   }
   if (/\bplan\b/.test(input)) {
-    return { mode: "plan" };
+    return { mode: "plan", recommendationReason: undefined };
   }
 
-  return { mode: "execute" };
+  return { mode: "execute", recommendationReason: undefined };
 }
