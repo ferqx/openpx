@@ -12,6 +12,8 @@ export type Thread = {
   revision: number;
   status: ThreadStatus;
   recommendationReason?: string;
+  narrativeSummary?: string;
+  narrativeRevision?: number;
 };
 
 const allowedThreadTransitions: Record<ThreadStatus, readonly ThreadStatus[]> = {

@@ -11,6 +11,8 @@ type ThreadRow = {
   revision: number;
   status: Thread["status"];
   recommendation_reason: string | null;
+  narrative_summary: string | null;
+  narrative_revision: number | null;
   updated_at: string | null;
 };
 
@@ -27,14 +29,26 @@ export class SqliteThreadStore implements ThreadStorePort {
 
   async save(thread: Thread): Promise<void> {
     this.db.run(
-      `INSERT INTO threads (thread_id, workspace_root, project_id, revision, status, recommendation_reason, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO threads (
+         thread_id,
+         workspace_root,
+         project_id,
+         revision,
+         status,
+         recommendation_reason,
+         narrative_summary,
+         narrative_revision,
+         updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(thread_id) DO UPDATE SET
          workspace_root = excluded.workspace_root,
          project_id = excluded.project_id,
          revision = excluded.revision,
          status = excluded.status,
          recommendation_reason = excluded.recommendation_reason,
+         narrative_summary = excluded.narrative_summary,
+         narrative_revision = excluded.narrative_revision,
          updated_at = excluded.updated_at`,
       [
         thread.threadId,
@@ -43,6 +57,8 @@ export class SqliteThreadStore implements ThreadStorePort {
         thread.revision,
         thread.status,
         thread.recommendationReason ?? null,
+        thread.narrativeSummary ?? null,
+        thread.narrativeRevision ?? 0,
         new Date().toISOString(),
       ],
     );
@@ -50,7 +66,17 @@ export class SqliteThreadStore implements ThreadStorePort {
   async get(threadId: string): Promise<Thread | undefined> {
     const row = this.db
       .query<ThreadRow, [string]>(
-        "SELECT thread_id, workspace_root, project_id, revision, status, recommendation_reason FROM threads WHERE thread_id = ?",
+        `SELECT
+           thread_id,
+           workspace_root,
+           project_id,
+           revision,
+           status,
+           recommendation_reason,
+           narrative_summary,
+           narrative_revision
+         FROM threads
+         WHERE thread_id = ?`,
       )
       .get(threadId);
     return row
@@ -61,13 +87,15 @@ export class SqliteThreadStore implements ThreadStorePort {
           revision: row.revision,
           status: row.status,
           recommendationReason: row.recommendation_reason ?? undefined,
+          narrativeSummary: row.narrative_summary ?? undefined,
+          narrativeRevision: row.narrative_revision ?? 0,
         }
       : undefined;
   }
 
   async getLatest(scope?: { workspaceRoot: string; projectId: string }): Promise<Thread | undefined> {
     let query = `
-      SELECT thread_id, workspace_root, project_id, revision, status, recommendation_reason, updated_at
+      SELECT thread_id, workspace_root, project_id, revision, status, recommendation_reason, narrative_summary, narrative_revision, updated_at
       FROM threads
     `;
     const params: string[] = [];
@@ -89,6 +117,8 @@ export class SqliteThreadStore implements ThreadStorePort {
           revision: row.revision,
           status: row.status,
           recommendationReason: row.recommendation_reason ?? undefined,
+          narrativeSummary: row.narrative_summary ?? undefined,
+          narrativeRevision: row.narrative_revision ?? 0,
         }
       : undefined;
   }
@@ -96,7 +126,7 @@ export class SqliteThreadStore implements ThreadStorePort {
   async listByScope(scope: { workspaceRoot: string; projectId: string }): Promise<Thread[]> {
     const rows = this.db
       .query<ThreadRow, [string, string]>(
-        `SELECT thread_id, workspace_root, project_id, revision, status, recommendation_reason, updated_at
+        `SELECT thread_id, workspace_root, project_id, revision, status, recommendation_reason, narrative_summary, narrative_revision, updated_at
          FROM threads
          WHERE workspace_root = ? AND project_id = ?
          ORDER BY COALESCE(updated_at, '') DESC, rowid DESC`,
@@ -110,6 +140,8 @@ export class SqliteThreadStore implements ThreadStorePort {
       revision: row.revision,
       status: row.status,
       recommendationReason: row.recommendation_reason ?? undefined,
+      narrativeSummary: row.narrative_summary ?? undefined,
+      narrativeRevision: row.narrative_revision ?? 0,
     }));
   }
 

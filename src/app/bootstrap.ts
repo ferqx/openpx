@@ -536,7 +536,9 @@ export async function createAppContext(input: {
       modelName: config.model.name,
     });
 
-  const narrativeService = createThreadNarrativeService();
+  const narrativeService = createThreadNarrativeService({
+    threadStore: stores.threadStore,
+  });
   const scratchPolicy = createWorkerScratchPolicy();
   const memoryConsolidator = new MemoryConsolidator(stores.memoryStore, modelGateway);
 

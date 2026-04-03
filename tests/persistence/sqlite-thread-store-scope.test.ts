@@ -53,6 +53,23 @@ describe("SqliteThreadStore Scope", () => {
     expect(reloaded?.status).toBe("completed");
   });
 
+  test("persists thread narrative summary and revision", async () => {
+    const thread = {
+      ...createThread("thread-narrative"),
+      workspaceRoot: "/path/to/workspace",
+      projectId: "project-1",
+      revision: 1,
+      narrativeSummary: "Completed repo scan and isolated runtime recovery work.",
+      narrativeRevision: 3,
+    };
+
+    await store.save(thread);
+
+    const reloaded = await store.get("thread-narrative");
+    expect(reloaded?.narrativeSummary).toBe("Completed repo scan and isolated runtime recovery work.");
+    expect(reloaded?.narrativeRevision).toBe(3);
+  });
+
   test("looks up latest thread within a specific workspace and project scope", async () => {
     const thread1 = {
       ...createThread("t1"),

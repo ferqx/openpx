@@ -69,6 +69,8 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "threads", "project_id", "TEXT");
   ensureColumn(db, "threads", "revision", "INTEGER DEFAULT 1");
   ensureColumn(db, "threads", "recommendation_reason", "TEXT");
+  ensureColumn(db, "threads", "narrative_summary", "TEXT");
+  ensureColumn(db, "threads", "narrative_revision", "INTEGER DEFAULT 0");
   ensureColumn(db, "approvals", "request_json", "TEXT");
 
   db.run(`
