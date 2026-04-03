@@ -14,6 +14,7 @@ export function buildRuntimeSnapshot(input: {
   pendingApprovals: ApprovalRequest[];
   events: Event[];
   fallbackLastEventSeq: number;
+  narrativeSummary?: string;
 }): RuntimeSnapshot {
   const activeBlockingReason = input.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
   const lastEventSeq = getStoredEventSequence(input.events.at(-1)) ?? input.fallbackLastEventSeq;
@@ -25,6 +26,7 @@ export function buildRuntimeSnapshot(input: {
     lastEventSeq,
     activeThreadId: input.activeThread.threadId,
     recommendationReason: input.activeThread.recommendationReason,
+    narrativeSummary: input.narrativeSummary,
     blockingReason: activeBlockingReason,
     threads: input.threads,
     tasks: input.tasks.map((task) => ({

@@ -4,7 +4,7 @@ import { render } from "ink-testing-library";
 import { main } from "../../src/app/main";
 import { App } from "../../src/interface/tui/app";
 import type { TuiKernel } from "../../src/interface/tui/hooks/use-kernel";
-import type { ApprovalCommand, SubmitInputCommand } from "../../src/interface/tui/commands";
+import type { ApprovalCommand, SubmitInputCommand, ThreadCommand } from "../../src/interface/tui/commands";
 
 describe("TUI App", () => {
   test("renders the core task shell regions and submits composer input", async () => {
@@ -21,7 +21,7 @@ describe("TUI App", () => {
       throw new Error(message);
     }
 
-    let receivedCommand: SubmitInputCommand | ApprovalCommand | undefined;
+    let receivedCommand: SubmitInputCommand | ApprovalCommand | ThreadCommand | undefined;
     const kernel: TuiKernel = {
       events: {
         subscribe() {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { parseCommand, type ApprovalCommand, type SubmitInputCommand } from "../commands";
+import { parseCommand, type ApprovalCommand, type SubmitInputCommand, type ThreadCommand } from "../commands";
 
 export type TuiKernelEvent = {
   type: string;
@@ -10,7 +10,7 @@ export type TuiKernel = {
   events: {
     subscribe: (handler: (event: TuiKernelEvent) => void) => () => void;
   };
-  handleCommand: (command: SubmitInputCommand | ApprovalCommand) => Promise<unknown>;
+  handleCommand: (command: SubmitInputCommand | ApprovalCommand | ThreadCommand) => Promise<unknown>;
   hydrateSession?: () => Promise<unknown>;
 };
 

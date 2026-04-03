@@ -58,6 +58,7 @@ export const runtimeSnapshotSchema = z.object({
   lastEventSeq: z.number(),
   activeThreadId: z.string().optional(),
   recommendationReason: z.string().optional(),
+  narrativeSummary: z.string().optional(),
   blockingReason: z
     .object({
       kind: z.enum(["waiting_approval", "human_recovery"]),

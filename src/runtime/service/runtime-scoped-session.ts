@@ -93,6 +93,7 @@ export class RuntimeScopedSession {
     const tasks = await this.context.stores.taskStore.listByThread(activeThread.threadId);
     const pendingApprovals = await this.context.stores.approvalStore.listPendingByThread(activeThread.threadId);
     const events = await this.context.stores.eventLog.listByThread(activeThread.threadId);
+    const narrative = await this.context.narrativeService.getNarrative(activeThread.threadId);
 
     return buildRuntimeSnapshot({
       scope: this.scope,
@@ -102,6 +103,7 @@ export class RuntimeScopedSession {
       pendingApprovals,
       events,
       fallbackLastEventSeq: this.liveSeq,
+      narrativeSummary: narrative.summary || undefined,
     });
   }
 

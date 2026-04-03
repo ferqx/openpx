@@ -1,6 +1,7 @@
 import type { TuiKernel, TuiKernelEvent } from "../tui/hooks/use-kernel";
 import type { RuntimeClient } from "./runtime-client";
-import type { SubmitInputCommand, ApprovalCommand } from "../tui/commands";
+import type { SubmitInputCommand, ApprovalCommand, ThreadCommand } from "../tui/commands";
+import { deriveRuntimeSession } from "./runtime-session";
 
 export function createRemoteKernel(client: RuntimeClient): TuiKernel {
   const handlers = new Set<(event: TuiKernelEvent) => void>();
@@ -50,13 +51,34 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
         return () => handlers.delete(handler);
       },
     },
-    async handleCommand(command: SubmitInputCommand | ApprovalCommand) {
+    async handleCommand(command: SubmitInputCommand | ApprovalCommand | ThreadCommand) {
       if (command.type === "submit_input") {
         await client.sendCommand({ kind: "add_task", content: command.payload.text });
       } else if (command.type === "approve_request") {
         await client.sendCommand({ kind: "approve", approvalRequestId: command.payload.approvalRequestId });
       } else if (command.type === "reject_request") {
         await client.sendCommand({ kind: "reject", approvalRequestId: command.payload.approvalRequestId });
+      } else if (command.type === "thread_new") {
+        await client.sendCommand({ kind: "new_thread" });
+      } else if (command.type === "thread_switch") {
+        await client.sendCommand({ kind: "switch_thread", threadId: command.payload.threadId });
+      } else if (command.type === "thread_continue") {
+        const snapshot = await client.getSnapshot();
+        const threadId = command.payload.threadId ?? snapshot.activeThreadId;
+        if (!threadId) {
+          return deriveRuntimeSession(snapshot);
+        }
+        await client.sendCommand({ kind: "continue", threadId });
+      } else if (command.type === "thread_list") {
+        const snapshot = await client.getSnapshot();
+        const session = deriveRuntimeSession(snapshot);
+        const lines = session.threads.map((thread) =>
+          `${thread.threadId}${thread.threadId === session.threadId ? " (active)" : ""} [${thread.status}]`,
+        );
+        return {
+          ...session,
+          summary: lines.length > 0 ? lines.join("\n") : "No threads available.",
+        };
       }
       
       // After command, return a full hydration to update UI state immediately
@@ -64,21 +86,7 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
     },
     async hydrateSession() {
       const snapshot = await client.getSnapshot();
-      const blockingReason =
-        snapshot.blockingReason ??
-        snapshot.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
-      const status = snapshot.pendingApprovals.length > 0 ? "waiting_approval" : blockingReason ? "blocked" : "completed";
-      return {
-        status,
-        threadId: snapshot.activeThreadId,
-        summary: snapshot.answers.at(-1)?.content ?? blockingReason?.message ?? "Awaiting answer",
-        tasks: snapshot.tasks,
-        approvals: snapshot.pendingApprovals,
-        workspaceRoot: snapshot.workspaceRoot,
-        projectId: snapshot.projectId,
-        blockingReason,
-        recommendationReason: (snapshot as any).recommendationReason,
-      };
+      return deriveRuntimeSession(snapshot);
     },
   };
 }

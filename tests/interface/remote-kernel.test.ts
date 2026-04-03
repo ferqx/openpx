@@ -69,6 +69,8 @@ describe("Remote Kernel", () => {
         message: "Manual recovery required from snapshot.",
       },
       recommendationReason: undefined,
+      narrativeSummary: undefined,
+      threads: [],
     });
   });
 });
