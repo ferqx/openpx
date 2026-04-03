@@ -13,6 +13,9 @@ describe("verifier model integration", () => {
         verifyCalled = true;
         return { summary: "verified", isValid: true };
       },
+      onStatusChange() {
+        return () => {};
+      },
     };
 
     const context = await createAppContext({

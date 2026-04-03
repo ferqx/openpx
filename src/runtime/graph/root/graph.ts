@@ -16,15 +16,28 @@ export async function createRootGraph(context: RootGraphContext) {
   const graph = new StateGraph(RootState)
     .addNode("intake", intakeNode)
     .addNode("route", routeNode)
-    .addNode("planner", async (state, config) =>
-      plannerGraph.invoke({ input: state.input }, config),
-    )
-    .addNode("executor", async (state, config) =>
-      executorGraph.invoke({ input: state.input }, config),
-    )
-    .addNode("verifier", async (state, config) =>
-      verifierGraph.invoke({ input: state.input }, config),
-    )
+    .addNode("planner", async (state, config) => {
+      console.log("[DEBUG] node: planner");
+      return plannerGraph.invoke({ input: state.input }, config);
+    })
+    .addNode("executor", (state, config) => {
+      console.log("[DEBUG] node: executor");
+      return context.executor({
+        input: state.input,
+        threadId: config.configurable?.thread_id as string | undefined,
+        taskId: config.configurable?.task_id as string | undefined,
+        configurable: config.configurable,
+      });
+    })
+    .addNode("verifier", async (state, config) => {
+      console.log("[DEBUG] node: verifier");
+      const result = await verifierGraph.invoke({ input: state.input }, config);
+      return {
+        summary: result.summary,
+        verifierPassed: result.isValid,
+        verifierFeedback: result.feedback,
+      };
+    })
     .addNode("post-turn-guard", postTurnGuardNode)
     .addEdge(START, "intake")
     .addEdge("intake", "route")
@@ -34,14 +47,23 @@ export async function createRootGraph(context: RootGraphContext) {
           return "planner";
         case "verify":
           return "verifier";
+        case "waiting_approval":
+          return "post-turn-guard";
+        case "done":
+          return END;
         default:
           return "executor";
       }
     })
     .addEdge("planner", END)
-    .addEdge("verifier", END)
+    .addConditionalEdges("verifier", (state) => {
+      if (state.verifierPassed === false) {
+        return "route";
+      }
+      return END;
+    })
     .addEdge("executor", "post-turn-guard")
-    .addEdge("post-turn-guard", END);
+    .addEdge("post-turn-guard", "intake");
 
   return graph.compile({
     checkpointer: context.checkpointer,

@@ -9,6 +9,7 @@ export const runtimeSnapshotSchema = z.object({
   projectId: z.string(),
   lastEventSeq: z.number(),
   activeThreadId: z.string(),
+  recommendationReason: z.string().optional(),
   threads: z.array(z.object({
     threadId: z.string(),
     workspaceRoot: z.string(),

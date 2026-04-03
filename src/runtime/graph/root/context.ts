@@ -1,12 +1,14 @@
 import type { CheckpointPort } from "../../../persistence/ports/checkpoint-port";
 
-export type RootMode = "plan" | "execute" | "verify" | "done";
+export type RootMode = "plan" | "execute" | "verify" | "done" | "waiting_approval";
 
 export type WorkerMode = Exclude<RootMode, "done">;
 
 export type WorkerResult<TMode extends WorkerMode = WorkerMode> = {
   summary: string;
   mode: TMode;
+  isValid?: boolean;
+  feedback?: string;
 };
 
 export type WorkerExecutionContext = {

@@ -56,9 +56,11 @@ describe("root graph", () => {
       { configurable: { thread_id: "thread_2", task_id: "task_2" } },
     );
 
-    expect(result.mode).toBe("execute");
-    expect(result.summary).toBe("executed");
+    // Now it should be waiting_approval because of the RecommendationEngine
+    expect(result.mode).toBe("waiting_approval");
+    expect(result.recommendationReason).toContain("high-risk");
+    expect(result.summary).toBeUndefined();
     expect(plannerCalled).toBe(false);
-    expect(executorCalled).toBe(true);
+    expect(executorCalled).toBe(false); // Should NOT even call executor if recommended first
   });
 });

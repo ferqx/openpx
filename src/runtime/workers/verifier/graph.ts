@@ -5,6 +5,8 @@ const VerifierWorkerState = Annotation.Root({
   input: Annotation<string>(),
   summary: Annotation<string>(),
   mode: Annotation<"verify">(),
+  isValid: Annotation<boolean>(),
+  feedback: Annotation<string>(),
 });
 
 export async function createVerifierWorkerGraph(handler: WorkerHandler<"verify">) {

@@ -4,17 +4,31 @@ import type { SubmitInputCommand, ApprovalCommand } from "../tui/commands";
 
 export function createRemoteKernel(client: RuntimeClient): TuiKernel {
   const handlers = new Set<(event: TuiKernelEvent) => void>();
+  let lastRuntimeStatus: "connected" | "disconnected" = "disconnected";
+
+  function emitRuntimeStatus(status: "connected" | "disconnected") {
+    lastRuntimeStatus = status;
+    for (const handler of handlers) {
+      handler({ type: "runtime.status", payload: { status } });
+    }
+  }
 
   // Start event subscription in background
   (async () => {
-    try {
-      for await (const envelope of client.subscribeEvents()) {
-        for (const handler of handlers) {
-          handler(envelope.event);
+    while (true) {
+      try {
+        const events = client.subscribeEvents();
+        emitRuntimeStatus("connected");
+        for await (const envelope of events) {
+          for (const handler of handlers) {
+            handler(envelope.event);
+          }
         }
+      } catch (e) {
+        emitRuntimeStatus("disconnected");
+        // Wait before retrying
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
-    } catch (e) {
-      console.error("Event subscription failed", e);
     }
   })();
 
@@ -22,6 +36,8 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
     events: {
       subscribe(handler) {
         handlers.add(handler);
+        // Immediately notify of current status
+        handler({ type: "runtime.status", payload: { status: lastRuntimeStatus } });
         return () => handlers.delete(handler);
       },
     },
@@ -44,6 +60,9 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
         summary: snapshot.answers.at(-1)?.content ?? "Awaiting answer",
         tasks: snapshot.tasks,
         approvals: snapshot.pendingApprovals,
+        workspaceRoot: snapshot.workspaceRoot,
+        projectId: snapshot.projectId,
+        recommendationReason: (snapshot as any).recommendationReason,
       };
     },
   };

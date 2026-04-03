@@ -28,6 +28,9 @@ function createTestModelGateway() {
     async verify() {
       return { summary: "verified", isValid: true };
     },
+    onStatusChange() {
+      return () => {};
+    },
   };
 }
 
@@ -58,7 +61,7 @@ describe("root graph interrupt/resume", () => {
     });
 
     const resumed = await graph.invoke(
-      new Command({ resume: "approved" }),
+      new Command({ resume: "approved and done" }),
       { configurable: { thread_id: "thread_interrupt", task_id: "task_interrupt" } },
     );
 
@@ -78,11 +81,21 @@ describe("root graph interrupt/resume", () => {
       modelGateway: createTestModelGateway(),
     });
 
-    const result = await ctx.kernel.handleCommand({
+    const firstResult = await ctx.kernel.handleCommand({
       type: "submit_input",
       payload: { text: "delete src/old.ts" },
     });
 
+    // 1. Recommendation interrupt
+    expect(firstResult.status).toBe("waiting_approval");
+    
+    const result = await ctx.kernel.handleCommand({
+      type: "submit_input",
+      payload: { text: "yes" } // Confirm team mode
+    } as any);
+
+    // 2. Actual delete approval interrupt
+    // We might need to hydrate or wait if it's async, but handleCommand is awaited.
     expect(result.status).toBe("waiting_approval");
     expect(result.approvals).toHaveLength(1);
     expect(result.approvals[0]?.summary).toContain("delete_file");
@@ -111,13 +124,21 @@ describe("root graph interrupt/resume", () => {
       type: "submit_input",
       payload: { text: "delete src/old-a.ts" },
     });
+    expect(firstResult.status).toBe("waiting_approval");
+
+    const secondResult = await firstCtx.kernel.handleCommand({
+      type: "submit_input",
+      payload: { text: "yes" }
+    } as any);
+    expect(secondResult.status).toBe("waiting_approval");
+    expect(secondResult.approvals).toHaveLength(1);
 
     const secondCtx = await createAppContext({
       workspaceRoot,
       dataDir,
       modelGateway: createTestModelGateway(),
     });
-    const secondResult = await secondCtx.kernel.handleCommand({
+    const secondCtxResult = await secondCtx.kernel.handleCommand({
       type: "submit_input",
       payload: { text: "delete src/old-a.ts again" },
     });
@@ -132,9 +153,10 @@ describe("root graph interrupt/resume", () => {
       .all();
     db.close();
 
-    expect(firstResult.approvals).toHaveLength(1);
-    expect(secondResult.approvals).toHaveLength(1);
-    expect(secondResult.approvals[0]?.approvalRequestId).toBe(firstResult.approvals[0]?.approvalRequestId);
+    expect(firstResult.approvals).toHaveLength(0); // Before 'yes'
+    expect(secondResult.approvals).toHaveLength(1); // After 'yes'
+    expect(secondCtxResult.approvals).toHaveLength(1);
+    expect(secondCtxResult.approvals[0]?.approvalRequestId).toBe(secondResult.approvals[0]?.approvalRequestId);
     expect(approvals).toHaveLength(1);
   });
 
@@ -150,10 +172,16 @@ describe("root graph interrupt/resume", () => {
       dataDir,
       modelGateway: createTestModelGateway(),
     });
-    const blocked = await firstCtx.kernel.handleCommand({
+    const firstResult = await firstCtx.kernel.handleCommand({
       type: "submit_input",
       payload: { text: "delete src/resume-me.ts" },
     });
+    expect(firstResult.status).toBe("waiting_approval");
+
+    const blocked = await firstCtx.kernel.handleCommand({
+      type: "submit_input",
+      payload: { text: "yes" }
+    } as any);
 
     expect(blocked.status).toBe("waiting_approval");
     expect(blocked.approvals).toHaveLength(1);

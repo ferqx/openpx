@@ -17,6 +17,14 @@ export function createApprovalService(input?: { idGenerator?: () => string }) {
 
   return {
     async createPending(request: CreateApprovalInput): Promise<ApprovalRequest> {
+      // Check if a pending request already exists for this tool call
+      const existing = [...requests.values()].find(
+        (r) => r.toolCallId === request.toolCallId && r.status === "pending",
+      );
+      if (existing) {
+        return existing;
+      }
+
       const approval = createApprovalRequest({
         approvalRequestId: idGenerator(),
         toolCallId: request.toolCallId,

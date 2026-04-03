@@ -65,7 +65,7 @@ export function createSessionKernel(deps: {
     eventLog?: EventLogPort;
   };
   controlPlane: {
-    startRootTask: (threadId: string, text: string) => Promise<SessionControlPlaneResult | void>;
+    startRootTask: (threadId: string, text: string) => Promise<SessionControlPlaneResult>;
     approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
   };
@@ -175,6 +175,16 @@ export function createSessionKernel(deps: {
       approvals: result.approvals,
     } satisfies SessionCommandResult;
 
+    if (deps.stores.eventLog) {
+      await deps.stores.eventLog.append({
+        eventId: `event_${crypto.randomUUID()}`,
+        threadId: nextThread.threadId,
+        type: "answer.updated",
+        payload: { summary: result.summary },
+        createdAt: new Date().toISOString(),
+      });
+    }
+
     events.publish({
       type: "answer.updated",
       payload: {
@@ -204,7 +214,9 @@ export function createSessionKernel(deps: {
         const latestThread = await deps.stores.threadStore.getLatest();
         if (latestThread?.status === "waiting_approval") {
           await checkRevision(latestThread.threadId, expectedRevision);
-          return hydrateThread(latestThread.threadId);
+          // Instead of just hydrating, resume the graph with the new input
+          const result = await deps.controlPlane.startRootTask(latestThread.threadId, command.payload.text);
+          return finalize(latestThread.threadId, result);
         }
 
         const thread = await threadService.startThread();

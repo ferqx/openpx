@@ -22,9 +22,12 @@ export type VerifierModelOutput = {
   isValid: boolean;
 };
 
+export type ModelStatus = "idle" | "thinking" | "responding";
+
 export type ModelGateway = {
   plan(input: PlannerModelInput): Promise<PlannerModelOutput>;
   verify(input: VerifierModelInput): Promise<VerifierModelOutput>;
+  onStatusChange(handler: (status: ModelStatus) => void): () => void;
 };
 
 export type ModelGatewayErrorKind = 
@@ -86,6 +89,7 @@ export function createModelGateway(config: {
   }
 
   const timeoutMs = config.timeoutMs ?? 30000;
+  const handlers = new Set<(status: ModelStatus) => void>();
 
   const model = new ChatOpenAI({
     apiKey: config.apiKey,
@@ -97,12 +101,18 @@ export function createModelGateway(config: {
     },
   });
 
+  function emitStatus(status: ModelStatus) {
+    handlers.forEach((handler) => handler(status));
+  }
+
   async function invokeWithTimeout(messages: any[]) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+      emitStatus("thinking");
       const response = await model.invoke(messages, { signal: controller.signal });
+      emitStatus("responding");
       return response;
     } catch (e: any) {
       if (e.name === "AbortError") {
@@ -123,10 +133,15 @@ export function createModelGateway(config: {
       throw new ModelGatewayError("network_error", e.message, e);
     } finally {
       clearTimeout(id);
+      emitStatus("idle");
     }
   }
 
   return {
+    onStatusChange(handler) {
+      handlers.add(handler);
+      return () => handlers.delete(handler);
+    },
     async plan(input) {
       const response = await invokeWithTimeout([
         [

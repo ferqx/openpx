@@ -1,5 +1,15 @@
-export function intakeNode(state: { input: string }) {
+export function intakeNode(state: { input: string; resumeValue?: any }) {
+  let input = state.input;
+  if (state.resumeValue && typeof state.resumeValue === "string") {
+    const resumeText = state.resumeValue.toLowerCase();
+    const isConfirmation = /\b(yes|ok|approve|confirm|start|proceed)\b/.test(resumeText);
+    if (!isConfirmation) {
+      input = state.resumeValue;
+    }
+  }
+
   return {
-    input: state.input.trim(),
+    input: input.trim(),
+    resumeValue: undefined, // Clear after use
   };
 }
