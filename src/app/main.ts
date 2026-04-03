@@ -1,7 +1,9 @@
 import React from "react";
 import { render, type Instance } from "ink";
-import { createAppContext } from "./bootstrap";
 import { App } from "../interface/tui/app";
+import { ensureRuntime } from "../runtime/service/runtime-daemon";
+import { RuntimeClient } from "../interface/runtime/runtime-client";
+import { createRemoteKernel } from "../interface/runtime/remote-kernel";
 
 type MainInput = {
   workspaceRoot?: string;
@@ -20,15 +22,23 @@ Options:
 }
 
 export async function main(input?: MainInput) {
-  const context = await createAppContext({
-    workspaceRoot: input?.workspaceRoot ?? process.cwd(),
-    dataDir: input?.dataDir ?? process.env.OPENWENPX_DATA_DIR ?? ":memory:",
+  const workspaceRoot = input?.workspaceRoot ?? process.cwd();
+  const dataDir = input?.dataDir ?? process.env.OPENWENPX_DATA_DIR ?? ".openwenpx";
+
+  const runtimeInfo = await ensureRuntime({
+    workspaceRoot,
+    dataDir,
   });
 
-  const ui = (input?.mount ?? render)(React.createElement(App, { kernel: context.kernel }));
+  const client = new RuntimeClient(`http://localhost:${runtimeInfo.port}`);
+  const remoteKernel = createRemoteKernel(client);
+
+  const ui = (input?.mount ?? render)(React.createElement(App, { kernel: remoteKernel }));
+  
   return {
-    ...context,
     ui,
+    client,
+    remoteKernel,
   };
 }
 
