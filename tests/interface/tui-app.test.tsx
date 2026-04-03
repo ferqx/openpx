@@ -50,10 +50,10 @@ describe("TUI App", () => {
 
     const frame = lastFrame();
 
-    expect(frame).toContain("Composer");
-    expect(frame).toContain("Events");
-    expect(frame).toContain("TASKS");
-    expect(frame).toContain("Answer");
+    expect(frame).toContain("OpenWENPX");
+    expect(frame).toContain("›");
+    expect(frame).toContain("PROJECT");
+    expect(frame).toContain("THREAD");
     expect(receivedCommand).toEqual({
       type: "submit_input",
       payload: { text: "plan the repo" },
@@ -101,10 +101,10 @@ describe("TUI App", () => {
 
     const frame = lastFrame();
 
-    expect(frame).toContain("delete src/old.ts");
-    expect(frame).toContain("apply_patch delete_file src/old.ts [pending]");
+    expect(frame).toContain("Agent:");
     expect(frame).toContain("Approval required before deleting src/old.ts");
-    expect(frame).toContain("Agent team ready. Start? [Y/n]");
+    expect(frame).toMatch(/Action Required:.*apply_patch delete_file src\/old\.ts/);
+    expect(frame).toMatch(/Confirm work\?.*\[Y\/n\]/);
   });
 
   test("hydrates the latest blocked session state on mount", async () => {
@@ -147,12 +147,10 @@ describe("TUI App", () => {
 
     const frame = lastFrame();
 
-    expect(frame).toContain("delete src/resume-me.ts");
-    expect(frame).toContain("apply_patch delete_file src/resume-me.ts");
-    expect(frame).toContain("[pending]");
-    expect(frame).toContain("Approval required before deleting");
-    expect(frame).toContain("src/resume-me.ts");
-    expect(frame).toContain("Agent team ready. Start? [Y/n]");
+    expect(frame).toContain("Agent:");
+    expect(frame).toContain("Approval required before deleting src/resume-me.ts");
+    expect(frame).toMatch(/Action Required:.*apply_patch delete_file src\/resume-me\.ts/);
+    expect(frame).toMatch(/Confirm work\?.*\[Y\/n\]/);
   });
 
   test("main mounts the Ink shell with the bootstrapped kernel", async () => {

@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
+import { theme } from "../theme";
 
 export function Composer(input: { 
   onSubmit?: (text: string) => Promise<void> | void;
@@ -21,8 +22,10 @@ export function Composer(input: {
     }
 
     if (key.return) {
-      await input.onSubmit?.(value);
-      setValue("");
+      if (value.trim()) {
+        await input.onSubmit?.(value);
+        setValue("");
+      }
       return;
     }
 
@@ -38,14 +41,23 @@ export function Composer(input: {
     setValue((current) => current + keyValue);
   });
 
+  if (mode === "confirm") {
+    return (
+      <Box paddingX={1}>
+        <Text color={theme.colors.user} bold>{theme.symbols.prompt} Confirm work? </Text>
+        <Text color="yellow">[Y/n]</Text>
+      </Box>
+    );
+  }
+
   return (
-    <Box flexDirection="column" borderStyle="round" paddingX={1}>
-      <Text>{input.prompt ?? (mode === "confirm" ? "Confirm?" : "Composer")}</Text>
-      <Box>
-        {mode === "confirm" ? (
-          <Text color="yellow">Agent team ready. Start? [Y/n]</Text>
+    <Box paddingX={1} gap={1}>
+      <Text color={theme.colors.user} bold>{theme.symbols.prompt}</Text>
+      <Box flexGrow={1}>
+        {value.length > 0 ? (
+          <Text>{value}</Text>
         ) : (
-          <Text>{value.length > 0 ? value : "Describe the task"}</Text>
+          <Text color={theme.colors.dim}>Describe the task or ask a question...</Text>
         )}
       </Box>
     </Box>

@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { theme } from "../theme";
 
 export interface StatusBarProps {
   projectId: string;
@@ -12,39 +13,46 @@ export function StatusBar({ projectId, threadId, modelStatus, runtimeStatus }: S
   const getModelColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "thinking":
-        return "yellow";
+        return theme.colors.primary;
       case "responding":
-        return "green";
+        return theme.colors.success;
       default:
-        return "gray";
+        return theme.colors.dim;
     }
   };
 
   const getRuntimeColor = (status: string) => {
-    return status === "connected" ? "green" : "red";
+    return status === "connected" ? theme.colors.success : theme.colors.error;
   };
 
   return (
     <Box 
       width="100%" 
       borderStyle="single" 
+      borderTop={true} borderBottom={false} borderLeft={false} borderRight={false}
       borderColor="gray" 
       paddingX={1}
       justifyContent="space-between"
     >
-      <Box>
-        <Text bold>PRJ: </Text>
-        <Text color="cyan">{projectId || "none"}</Text>
-        <Text>  </Text>
-        <Text bold>THD: </Text>
-        <Text color="magenta">{threadId || "none"}</Text>
+      <Box gap={2}>
+        <Box>
+          <Text color={theme.colors.dim}>PROJECT </Text>
+          <Text color={theme.colors.primary}>{projectId || "none"}</Text>
+        </Box>
+        <Box>
+          <Text color={theme.colors.dim}>THREAD </Text>
+          <Text color={theme.colors.secondary}>{threadId || "none"}</Text>
+        </Box>
       </Box>
-      <Box>
-        <Text bold>MODEL: </Text>
-        <Text color={getModelColor(modelStatus)}>{modelStatus.toUpperCase()}</Text>
-        <Text>  </Text>
-        <Text bold>RUNTIME: </Text>
-        <Text color={getRuntimeColor(runtimeStatus)}>{runtimeStatus.toUpperCase()}</Text>
+      <Box gap={2}>
+        <Box>
+          <Text color={theme.colors.dim}>MODEL </Text>
+          <Text color={getModelColor(modelStatus)}>{modelStatus.toUpperCase()}</Text>
+        </Box>
+        <Box>
+          <Text color={theme.colors.dim}>RUNTIME </Text>
+          <Text color={getRuntimeColor(runtimeStatus)}>{runtimeStatus.toUpperCase()}</Text>
+        </Box>
       </Box>
     </Box>
   );

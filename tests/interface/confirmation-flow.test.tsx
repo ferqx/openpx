@@ -47,11 +47,11 @@ describe("Confirmation Flow", () => {
     
     // Wait for frame update
     await waitFor(
-      () => (lastFrame() ?? "").includes("Agent team ready"),
+      () => (lastFrame() ?? "").includes("Confirm work?"),
       "expected confirmation prompt to appear",
       50
     );
     
-    expect(lastFrame()).toContain("Agent team ready. Start? [Y/n]");
+    expect(lastFrame()).toContain("Confirm work?");
   });
 });

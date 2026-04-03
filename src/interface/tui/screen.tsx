@@ -1,12 +1,12 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { AnswerPane } from "./components/answer-pane";
-import { ApprovalPanel, type ApprovalSummary } from "./components/approval-panel";
+import { InteractionStream } from "./components/interaction-stream";
 import { Composer } from "./components/composer";
-import { EventStream } from "./components/event-stream";
-import { TaskPanel, type TaskSummary } from "./components/task-panel";
 import { StatusBar } from "./components/status-bar";
+import { theme } from "./theme";
 import type { TuiKernelEvent } from "./hooks/use-kernel";
+import type { TaskSummary } from "./components/task-panel";
+import type { ApprovalSummary } from "./components/approval-panel";
 
 export function Screen(input: {
   events: TuiKernelEvent[];
@@ -27,36 +27,46 @@ export function Screen(input: {
   onSubmit?: (text: string) => Promise<void> | void;
 }) {
   return (
-    <Box flexDirection="column" height="100%">
-      <Box paddingX={1} borderStyle="single" borderColor="cyan">
-        <Text bold color="cyan">PROJECT: {input.projectId ?? "unknown"}</Text>
-        <Text color="gray"> ({input.workspaceRoot ?? "unknown"})</Text>
+    <Box flexDirection="column" height="100%" paddingX={1}>
+      {/* Header */}
+      <Box marginBottom={1} justifyContent="space-between">
+        <Box>
+          <Text bold color={theme.colors.primary}>OpenWENPX</Text>
+          <Text color={theme.colors.dim}> / </Text>
+          <Text color={theme.colors.secondary}>{input.projectId ?? "unknown"}</Text>
+        </Box>
+        <Text color={theme.colors.dim}>{input.workspaceRoot ?? "unknown"}</Text>
       </Box>
+
+      {/* Main Interaction Stream */}
+      <Box flexGrow={1} flexDirection="column">
+        <InteractionStream 
+          events={input.events} 
+          answer={input.answer}
+          tasks={input.tasks}
+          approvals={input.approvals}
+          modelStatus={input.modelStatus}
+        />
+      </Box>
+
+      {/* Recommendation Prompt */}
       {input.composerMode === "confirm" && input.recommendationReason && (
-        <Box paddingX={1} marginBottom={0}>
-          <Text color="yellow">⚠ {input.recommendationReason}</Text>
+        <Box paddingX={1} marginBottom={1} borderStyle="round" borderColor="yellow">
+          <Text color="yellow">{theme.symbols.warning} {input.recommendationReason}</Text>
         </Box>
       )}
-      <Composer mode={input.composerMode} onSubmit={input.onSubmit} />
-      <Box flexGrow={1}>
-        <Box flexDirection="column" width="50%">
-          <EventStream events={input.events} />
-          <TaskPanel tasks={input.tasks} />
-        </Box>
-        <Box flexDirection="column" width="50%">
-          <ApprovalPanel approvals={input.approvals} />
-          <AnswerPane
-            summary={input.answer.summary}
-            changes={input.answer.changes}
-            verification={input.answer.verification}
-          />
-        </Box>
+
+      {/* Input Region */}
+      <Box borderStyle="single" borderTop={true} borderBottom={false} borderLeft={false} borderRight={false} borderColor="gray" paddingTop={1}>
+        <Composer mode={input.composerMode} onSubmit={input.onSubmit} />
       </Box>
+
+      {/* Status Footer */}
       <StatusBar 
         projectId={input.projectId ?? "unknown"} 
         threadId={input.threadId ?? "none"}
         modelStatus={input.modelStatus ?? "idle"}
-        runtimeStatus={input.runtimeStatus ?? "disconnected"}
+        runtimeStatus={input.runtimeStatus ?? "connected"}
       />
     </Box>
   );
