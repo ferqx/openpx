@@ -1,106 +1,41 @@
+# OpenWENPX Project Guide
 
-Default to using Bun instead of Node.js.
+CLI-first agent OS for long-running code work. Built with Bun, React (Ink), and LangGraph.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+## Core Commands
+- **Run TUI**: `bun dev` (Starts the shared runtime and attaches the high-fidelity shell)
+- **Run Tests**: `bun test` (Full suite including domain, persistence, and runtime tests)
+- **Type Check**: `bun run typecheck` or `bunx tsc --noEmit`
+- **Smoke Test**: `bun run smoke:planner` (Verifies planner model connectivity)
 
-## APIs
+## Project Structure
+- `src/app/`: Bootstrap logic and main entrypoints.
+- `src/kernel/`: The SessionKernel, Command Bus, and Thread services.
+- `src/runtime/`: LangGraph implementation (Root Graph and Specialized Workers).
+- `src/interface/`: TUI components (Ink-based) and Runtime Client.
+- `src/control/`: Policy engine, Task management, and Tool registry.
+- `src/domain/`: Core entities (Thread, Task, Event, Memory).
+- `src/persistence/`: SQLite implementations for all ports.
+- `src/shared/`: Config, ID generators, and Zod schemas.
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+## Tech Stack & Standards
+- **Runtime**: Bun 1.x
+- **Language**: TypeScript (Strict mode)
+- **Orchestration**: LangGraph.js
+- **UI**: React 19 + Ink 6 (High-fidelity ANSI output)
+- **Database**: SQLite (via `bun:sqlite`)
+- **Model Access**: LangChain OpenAI / ModelGateway
+- **API**: local HTTP (Control) + SSE (Events)
 
-## Testing
+## Architecture Principles
+1. **Runtime-First**: The shared runtime is the single source of truth.
+2. **Durable Recovery**: Every effectful tool call is logged in a durable ledger.
+3. **Context Discipline**: Three-layer model (Narrative, Working, Scratch) prevents context drift.
+4. **Multi-Project**: Threads and runtimes are isolated per workspace/projectId.
+5. **Human-in-the-Loop**: High-risk actions and team recommendations require explicit confirmation.
 
-Use `bun test` to run tests.
-
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
-```
-
-## Frontend
-
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
-
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
-
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+## Development Workflow
+- Always use `bun test` before committing.
+- Follow TDD for new domain or runtime features.
+- Update `api-schema.ts` when changing protocol types.
+- Maintain `CLAUDE.md` and roadmap specs as the project evolves.

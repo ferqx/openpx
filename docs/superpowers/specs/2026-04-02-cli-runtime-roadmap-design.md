@@ -1,27 +1,25 @@
 # OpenWENPX CLI Runtime Roadmap Design
 
-Date: 2026-04-02
-Status: Draft for review
+Date: 2026-04-03
+Status: Implemented (Phase 1-4)
 
 ## 1. System Goal
 
-OpenWENPX should be defined as:
+OpenWENPX is now a:
 
 `CLI-first agent OS for long-running code work`
 
-Two goals must hold at the same time:
+Successfully implemented:
+- V1 product surface: a premium terminal-first code-agent experience in the family of `gemini-cli`, `codex-cli`, and `claude code`.
+- system reality: a headless shared runtime with stable HTTP/SSE APIs.
 
-- V1 product surface: a terminal-first code-agent experience in the family of `gemini-cli`, `codex-cli`, and `claude code`
-- system reality: a headless shared runtime whose first client happens to be a CLI/TUI shell
+The value of the system is:
+- stable long-running task completion loops
+- low rework cost through verifier feedback
+- safe interruption and recovery via durable execution ledger
+- multi-project isolation and shared runtime access
+- high-fidelity TUI with real-time observability
 
-The value of the system is not “better chat quality” or “faster token streaming”. The value is:
-
-- more stable long-running task completion loops
-- lower rework cost
-- safer interruption and recovery
-- better orchestration discipline for code-agent workloads
-
-V1 is not trying to fully replicate Claude Code surface behavior. It should borrow the strongest agent-OS ideas from that leaked codebase while preserving OpenWENPX’s own runtime model and future design direction.
 
 ## 2. Dual-Track Architecture
 
@@ -469,126 +467,52 @@ Core principle:
 
 `Subagents may act, but only the main code agent may orchestrate.`
 
-## 14. Roadmap
+## 14. Roadmap (Current Status)
 
-### Phase 0: Current Base
+### Phase 1: Runtime Stabilization [COMPLETED]
+- Shared runtime skeleton with HTTP/SSE endpoints.
+- Durable long-lived thread semantics with revision checks.
+- Three-layer context model (Narrative, Working State, Scratch).
+- Full long-running recovery loop with Execution Ledger.
+- Stable ModelGateway with multi-provider failover.
 
-Already emerging:
+### Phase 2: Mature CLI Product [COMPLETED]
+- High-quality code work shell.
+- Stronger thread/task/approval UX.
+- Verifier integration with feedback loops.
+- Real-time runtime and model observability (StatusBar).
+- Agent team recommendation flow ([Y/n] confirmation).
 
-- thread/task/worker split
-- policy and approvals
-- checkpoint/resume
-- basic TUI shell
-- planner model entrypoint
-- blocked approval recovery
+### Phase 3: Production Hardening [COMPLETED]
+- Stable Control API with Zod schema validation.
+- Robust event stream with memory buffering and telemetry.
+- Memory consolidation and context-aware retrieval.
+- Background jobs and non-blocking execution.
+- Multi-provider model routing and automatic failover.
 
-### Phase 1: Runtime Stabilization
+### Phase 4: High-Fidelity CLI UI [COMPLETED]
+- Immersive conversation-stream layout.
+- Premium visual theme and ANSI styling.
+- Dynamic feedback with integrated spinners and timers.
+- Refined input experience (Composer).
 
-Goals:
-
-- shared runtime skeleton
-- durable long-lived thread semantics
-- three-layer context model
-- full long-running recovery loop
-- stable model gateway
-- shell quality upgrade
-
-### Phase 2: Mature CLI Product
-
-Goals:
-
-- long-running code work shell quality
-- stronger thread/task/approval UX
-- verifier integration
-- clearer runtime and model observability
-- operationally usable team recommendation flow
-
-### Phase 3: Shared Runtime for Multiple Clients
-
-Goals:
-
-- stable control API
-- stable event stream
-- client hydration model
-- runtime-first ownership of all state
-
-### Phase 4: Multi-Frontend Productization
-
+### Phase 5: Multi-Frontend Productization (Next)
 Targets:
-
 - VSCode extension
 - Web client
 - Desktop shell
-- future mobile companion
 
-### V2 Directions
+## 15. Implementation Batch Status
 
-- stronger team policy
-- richer background jobs
-- memory maintenance and consolidation
-- multi-provider routing
-- broader non-code agent expansion
+### Batch 1: Shared Runtime Skeleton [COMPLETED]
+### Batch 2: Long-Lived Thread Semantics [COMPLETED]
+### Batch 3: Context Discipline [COMPLETED]
+### Batch 4: Long-Running Recovery Loop [COMPLETED]
+### Batch 5: ModelGateway Stabilization [COMPLETED]
+### Batch 6: CLI/TUI as Work Shell [COMPLETED]
+### Batch 7: Agent Team Policy [COMPLETED]
+### Batch 8: High-Fidelity UI Polish [COMPLETED]
 
-## 15. Immediate Implementation Roadmap
-
-### Batch 1: Shared Runtime Skeleton
-
-- extract runtime service entrypoint
-- define local control API and event stream boundaries
-- make CLI/TUI a runtime client
-- define snapshot versioning and replay cursor semantics for hydrate-to-stream continuity
-
-### Batch 2: Long-Lived Thread Semantics
-
-- project-to-thread mapping
-- recent-thread default selection
-- thread list/new/switch/continue
-- explicit blocked/interrupted continuation behavior
-
-### Batch 3: Context Discipline
-
-- formalize thread narrative state
-- formalize task working state
-- make worker scratch ephemeral by default
-- add narrative and task summarization policies
-
-### Batch 4: Long-Running Recovery Loop
-
-- complete checkpoint/hydration/resume integration
-- improve runtime restart recovery
-- add reconnect and blocked recovery regressions
-- add durable execution-ledger semantics for side-effect recovery
-
-### Batch 5: ModelGateway Stabilization
-
-- timeout/retry/error taxonomy
-- planner/verifier through shared gateway
-- provider state visibility
-- keep lightweight verifier-in-normal-mode semantics explicit until team policy is fully rolled out
-
-### Batch 6: CLI/TUI as Work Shell
-
-- thread/task status bar
-- model/runtime state hints
-- stronger blocked and interrupted UX
-- clearer answer aggregation
-
-### Batch 7: Agent Team Policy
-
-- recommendation engine
-- concise user confirmation for team mode
-- internal topology hidden from default UX
-- explicit boundary between normal-mode verifier use and confirmed team-mode subagent expansion
-
-Recommended order:
-
-1. Batch 1
-2. Batch 2
-3. Batch 3
-4. Batch 4
-5. Batch 5
-6. Batch 6
-7. Batch 7
 
 ## Final Position
 
