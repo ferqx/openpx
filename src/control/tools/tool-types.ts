@@ -22,6 +22,7 @@ export type ToolExecutor = (context: ToolExecutionContext) => Promise<unknown>;
 export type ToolDefinition = {
   name: string;
   effect: ToolEffect;
+  isEffectful?: boolean;
   execute: ToolExecutor;
 };
 

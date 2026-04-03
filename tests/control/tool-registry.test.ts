@@ -27,9 +27,17 @@ describe("ToolRegistry", () => {
 
     const policy = createPolicyEngine({ workspaceRoot });
     const approvals = createApprovalService();
+    const executionLedger = {
+      async save() {},
+      async get() { return undefined },
+      async listByThread() { return [] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
     const registry = createToolRegistry({
       policy,
       approvals,
+      executionLedger,
     });
 
     const result = await registry.execute({
@@ -62,7 +70,14 @@ describe("ToolRegistry", () => {
 
     const policy = createPolicyEngine({ workspaceRoot });
     const approvals = createApprovalService();
-    const registry = createToolRegistry({ policy, approvals });
+    const executionLedger = {
+      async save() {},
+      async get() { return undefined },
+      async listByThread() { return [] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
+    const registry = createToolRegistry({ policy, approvals, executionLedger });
 
     const result = await registry.execute({
       toolCallId: "tool_2",
@@ -93,7 +108,14 @@ describe("ToolRegistry", () => {
 
     const policy = createPolicyEngine({ workspaceRoot });
     const approvals = createApprovalService();
-    const registry = createToolRegistry({ policy, approvals });
+    const executionLedger = {
+      async save() {},
+      async get() { return undefined },
+      async listByThread() { return [] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
+    const registry = createToolRegistry({ policy, approvals, executionLedger });
 
     const result = await registry.execute({
       toolCallId: "tool_3",
@@ -121,7 +143,14 @@ describe("ToolRegistry", () => {
 
     const policy = createPolicyEngine({ workspaceRoot });
     const approvals = createApprovalService();
-    const registry = createToolRegistry({ policy, approvals });
+    const executionLedger = {
+      async save() {},
+      async get() { return undefined },
+      async listByThread() { return [] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
+    const registry = createToolRegistry({ policy, approvals, executionLedger });
 
     const result = await registry.execute({
       toolCallId: "tool_symlink",
@@ -145,7 +174,14 @@ describe("ToolRegistry", () => {
 
     const policy = createPolicyEngine({ workspaceRoot });
     const approvals = createApprovalService();
-    const registry = createToolRegistry({ policy, approvals });
+    const executionLedger = {
+      async save() {},
+      async get() { return undefined },
+      async listByThread() { return [] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
+    const registry = createToolRegistry({ policy, approvals, executionLedger });
 
     const result = await registry.execute({
       toolCallId: "tool_read",

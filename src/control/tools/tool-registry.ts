@@ -7,6 +7,7 @@ import { execExecutor } from "./executors/exec";
 import { readFileExecutor } from "./executors/read-file";
 import type { ToolDefinition, ToolExecuteRequest, ToolExecutionOutcome } from "./tool-types";
 import { normalizeToolRequest, toPolicyRequest } from "./tool-types";
+import type { ExecutionLedgerPort, ExecutionLedgerEntry } from "../../persistence/ports/execution-ledger-port";
 
 function buildDefaultTools(): ToolDefinition[] {
   return [
@@ -18,11 +19,13 @@ function buildDefaultTools(): ToolDefinition[] {
     {
       name: "apply_patch",
       effect: "apply_patch",
+      isEffectful: true,
       execute: applyPatchExecutor,
     },
     {
       name: "exec",
       effect: "exec",
+      isEffectful: true,
       execute: execExecutor,
     },
   ];
@@ -45,6 +48,7 @@ function summarizeRequest(request: ToolExecuteRequest, workspaceRoot?: string): 
 export function createToolRegistry(input: {
   policy: ReturnType<typeof createPolicyEngine>;
   approvals: ApprovalService;
+  executionLedger: ExecutionLedgerPort;
   tools?: ToolDefinition[];
 }) {
   const tools = new Map((input.tools ?? buildDefaultTools()).map((tool) => [tool.name, tool]));
@@ -170,6 +174,20 @@ export function createToolRegistry(input: {
           risk: decision.risk.key,
         });
 
+        if (tool.isEffectful) {
+          await input.executionLedger.save({
+            executionId: `${normalizedRequest.toolCallId}:exec`,
+            threadId: normalizedRequest.threadId,
+            taskId: normalizedRequest.taskId,
+            toolCallId: normalizedRequest.toolCallId,
+            toolName: normalizedRequest.toolName,
+            argsJson: JSON.stringify(normalizedRequest.args),
+            status: "planned",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
         return {
           kind: "blocked",
           decision,
@@ -178,15 +196,53 @@ export function createToolRegistry(input: {
         };
       }
 
-      const output = await tool.execute({
-        ...normalizedRequest,
-        request: normalizedRequest,
-      });
-      return {
-        kind: "executed",
-        decision,
-        output,
-      };
+      let ledgerEntry: ExecutionLedgerEntry | undefined;
+      if (tool.isEffectful) {
+        ledgerEntry = {
+          executionId: `${normalizedRequest.toolCallId}:exec`,
+          threadId: normalizedRequest.threadId,
+          taskId: normalizedRequest.taskId,
+          toolCallId: normalizedRequest.toolCallId,
+          toolName: normalizedRequest.toolName,
+          argsJson: JSON.stringify(normalizedRequest.args),
+          status: "started",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await input.executionLedger.save(ledgerEntry);
+      }
+
+      try {
+        const output = await tool.execute({
+          ...normalizedRequest,
+          request: normalizedRequest,
+        });
+
+        if (ledgerEntry) {
+          await input.executionLedger.save({
+            ...ledgerEntry,
+            status: "completed",
+            resultJson: JSON.stringify(output),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        return {
+          kind: "executed",
+          decision,
+          output,
+        };
+      } catch (e) {
+        if (ledgerEntry) {
+          await input.executionLedger.save({
+            ...ledgerEntry,
+            status: "failed",
+            error: String(e),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        throw e;
+      }
     },
 
     async executeApproved(request: ToolExecuteRequest): Promise<ToolExecutionOutcome> {
@@ -237,23 +293,60 @@ export function createToolRegistry(input: {
         };
       }
 
-      const output = await tool.execute({
-        ...normalizedRequest,
-        request: normalizedRequest,
-      });
+      let ledgerEntry: ExecutionLedgerEntry | undefined;
+      if (tool.isEffectful) {
+        ledgerEntry = {
+          executionId: `${normalizedRequest.toolCallId}:exec`,
+          threadId: normalizedRequest.threadId,
+          taskId: normalizedRequest.taskId,
+          toolCallId: normalizedRequest.toolCallId,
+          toolName: normalizedRequest.toolName,
+          argsJson: JSON.stringify(normalizedRequest.args),
+          status: "started",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await input.executionLedger.save(ledgerEntry);
+      }
 
-      return {
-        kind: "executed",
-        decision:
-          evaluated.kind === "allow"
-            ? evaluated
-            : {
-                kind: "allow",
-                reason: "approval granted",
-                risk: evaluated.risk,
-              },
-        output,
-      };
+      try {
+        const output = await tool.execute({
+          ...normalizedRequest,
+          request: normalizedRequest,
+        });
+
+        if (ledgerEntry) {
+          await input.executionLedger.save({
+            ...ledgerEntry,
+            status: "completed",
+            resultJson: JSON.stringify(output),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        return {
+          kind: "executed",
+          decision:
+            evaluated.kind === "allow"
+              ? evaluated
+              : {
+                  kind: "allow",
+                  reason: "approval granted",
+                  risk: evaluated.risk,
+                },
+          output,
+        };
+      } catch (e) {
+        if (ledgerEntry) {
+          await input.executionLedger.save({
+            ...ledgerEntry,
+            status: "failed",
+            error: String(e),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        throw e;
+      }
     },
   };
 }

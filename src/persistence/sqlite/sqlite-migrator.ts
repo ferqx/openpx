@@ -70,6 +70,22 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "threads", "revision", "INTEGER DEFAULT 1");
   ensureColumn(db, "approvals", "request_json", "TEXT");
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS execution_ledger (
+      execution_id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      tool_call_id TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      args_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      result_json TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
   db.run("CREATE INDEX IF NOT EXISTS idx_tasks_thread_id ON tasks (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories (namespace)");
   db.run("CREATE INDEX IF NOT EXISTS idx_memories_thread_id ON memories (thread_id)");

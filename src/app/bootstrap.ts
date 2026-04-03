@@ -15,6 +15,7 @@ import { SqliteEventLog } from "../persistence/sqlite/sqlite-event-log";
 import { SqliteMemoryStore } from "../persistence/sqlite/sqlite-memory-store";
 import { SqliteTaskStore } from "../persistence/sqlite/sqlite-task-store";
 import { SqliteThreadStore } from "../persistence/sqlite/sqlite-thread-store";
+import { SqliteExecutionLedger } from "../persistence/sqlite/sqlite-execution-ledger";
 import { createRootGraph } from "../runtime/graph/root/graph";
 import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
 import { resolveConfig } from "../shared/config";
@@ -36,6 +37,7 @@ function createStores(path: string | ReturnType<typeof createSqlite>) {
     approvalStore: new SqliteApprovalStore(path),
     eventLog: new SqliteEventLog(path),
     memoryStore: new SqliteMemoryStore(path),
+    executionLedger: new SqliteExecutionLedger(path),
   };
 }
 
@@ -178,6 +180,7 @@ async function createControlPlane(input: {
   const toolRegistry = createToolRegistry({
     policy: createPolicyEngine({ workspaceRoot: input.config.workspaceRoot }),
     approvals,
+    executionLedger: input.stores.executionLedger,
   });
   const rootGraph = await createRootGraph({
     checkpointer: input.checkpointer,
