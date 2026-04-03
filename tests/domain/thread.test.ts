@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DomainError } from "../../src/shared/errors";
-import { createThread, transitionThread } from "../../src/domain/thread";
+import { createThread, transitionThread, type Thread, type ThreadStatus } from "../../src/domain/thread";
+import { threadId as sharedThreadId } from "../../src/shared/ids";
 
 describe("thread transitions", () => {
   test("allows the declared transition matrix", () => {
@@ -15,7 +16,13 @@ describe("thread transitions", () => {
     ];
 
     for (const [from, to] of cases) {
-      const thread = { threadId: "thread_1", status: from as Parameters<typeof transitionThread>[0]["status"] };
+      const thread = {
+        threadId: sharedThreadId("thread_1"),
+        workspaceRoot: "",
+        projectId: "",
+        revision: 1,
+        status: from as Parameters<typeof transitionThread>[0]["status"],
+      };
       const next = transitionThread(thread, to);
 
       expect(next.status).toBe(to);

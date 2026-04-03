@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-export const threadStatusSchema = z.enum(["idle", "active", "waiting_approval", "interrupted", "completed", "failed"]);
+export const threadStatusSchema = z.enum(["idle", "active", "waiting_approval", "blocked", "interrupted", "completed", "failed"]);
 export const taskStatusSchema = z.enum(["queued", "running", "blocked", "completed", "failed", "cancelled"]);
-export const workerStatusSchema = z.enum(["created", "starting", "running", "stopping", "exited", "failed"]);
+export const workerStatusSchema = z.enum(["created", "starting", "running", "paused", "completed", "failed", "cancelled"]);
 export const approvalStatusSchema = z.enum(["pending", "approved", "rejected", "cancelled"]);
 export const memoryNamespaceSchema = z.enum(["thread", "durable"]);
 

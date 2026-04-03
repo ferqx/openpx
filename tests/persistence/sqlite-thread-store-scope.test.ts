@@ -1,0 +1,88 @@
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { SqliteThreadStore } from "../../src/persistence/sqlite/sqlite-thread-store";
+import { createThread } from "../../src/domain/thread";
+import { Database } from "bun:sqlite";
+
+describe("SqliteThreadStore Scope", () => {
+  let store: SqliteThreadStore;
+  let db: Database;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    store = new SqliteThreadStore(db);
+  });
+
+  afterEach(async () => {
+    await store.close();
+  });
+
+  test("persists workspaceRoot, projectId, revision, and blocked status for a thread", async () => {
+    const thread = {
+      ...createThread("thread-1"),
+      workspaceRoot: "/path/to/workspace",
+      projectId: "project-1",
+      revision: 1,
+      status: "blocked" as const,
+    };
+
+    await store.save(thread);
+
+    const reloaded = await store.get("thread-1");
+    expect(reloaded).toBeDefined();
+    expect(reloaded?.workspaceRoot).toBe("/path/to/workspace");
+    expect(reloaded?.projectId).toBe("project-1");
+    expect(reloaded?.revision).toBe(1);
+    expect(reloaded?.status).toBe("blocked");
+  });
+
+  test("increments revision on save", async () => {
+    const thread = {
+      ...createThread("thread-1"),
+      workspaceRoot: "/path/to/workspace",
+      projectId: "project-1",
+      revision: 1,
+    };
+
+    await store.save(thread);
+    
+    const updatedThread = { ...thread, revision: 2, status: "completed" as const };
+    await store.save(updatedThread);
+
+    const reloaded = await store.get("thread-1");
+    expect(reloaded?.revision).toBe(2);
+    expect(reloaded?.status).toBe("completed");
+  });
+
+  test("looks up latest thread within a specific workspace and project scope", async () => {
+    const thread1 = {
+      ...createThread("t1"),
+      workspaceRoot: "w1",
+      projectId: "p1",
+      revision: 1,
+    };
+    const thread2 = {
+      ...createThread("t2"),
+      workspaceRoot: "w1",
+      projectId: "p2",
+      revision: 1,
+    };
+    const thread3 = {
+      ...createThread("t3"),
+      workspaceRoot: "w2",
+      projectId: "p1",
+      revision: 1,
+    };
+
+    await store.save(thread1);
+    await store.save(thread2);
+    await store.save(thread3);
+
+    // Should find t1 for (w1, p1)
+    const latest1 = await store.getLatest({ workspaceRoot: "w1", projectId: "p1" });
+    expect(latest1?.threadId).toBe("t1");
+
+    // Should find t2 for (w1, p2)
+    const latest2 = await store.getLatest({ workspaceRoot: "w1", projectId: "p2" });
+    expect(latest2?.threadId).toBe("t2");
+  });
+});

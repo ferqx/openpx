@@ -1,6 +1,6 @@
 import { taskId as sharedTaskId, threadId as sharedThreadId, workerId as sharedWorkerId } from "../shared/ids";
 
-export type WorkerStatus = "created" | "starting" | "running" | "stopping" | "exited" | "failed";
+export type WorkerStatus = "created" | "starting" | "running" | "paused" | "completed" | "failed" | "cancelled";
 export type WorkerRole = "planner" | "executor" | "verifier" | "memory_maintainer";
 
 export type Worker = {

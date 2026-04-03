@@ -10,6 +10,10 @@ export type Task = {
   threadId: ReturnType<typeof sharedThreadId>;
   summary?: string;
   status: TaskStatus;
+  blockingReason?: {
+    kind: "waiting_approval" | "human_recovery";
+    message: string;
+  };
 };
 
 const allowedTaskTransitions: Record<TaskStatus, readonly TaskStatus[]> = {

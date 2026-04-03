@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createSessionKernel } from "../../src/kernel/session-kernel";
+import { threadId as sharedThreadId } from "../../src/shared/ids";
+import type { Thread } from "../../src/domain/thread";
 
 describe("SessionKernel", () => {
   test("creates a thread, emits a thread.started event, and starts the root task", async () => {
@@ -16,7 +18,15 @@ describe("SessionKernel", () => {
             return undefined;
           },
           async get(threadId) {
-            return threadId === savedThreadId ? { threadId, status: "active" } : undefined;
+            return threadId === savedThreadId
+              ? {
+                  threadId: sharedThreadId(threadId),
+                  workspaceRoot: "",
+                  projectId: "",
+                  revision: 1,
+                  status: "active",
+                }
+              : undefined;
           },
           async close() {},
         },
