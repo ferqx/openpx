@@ -54,7 +54,7 @@ function cloneWorkingSetWindow(input?: WorkingSetWindow): WorkingSetWindow {
 }
 
 function composeThreadSummary(narrativeState: NarrativeState): string {
-  return narrativeState.taskSummaries.join("; ");
+  return [...narrativeState.taskSummaries, ...narrativeState.notableEvents].join("; ");
 }
 
 function isNonterminalTask(status: ControlTask["status"]): boolean {
@@ -84,6 +84,10 @@ function deriveBlockingFromPendingApprovals(recoveryFacts: RecoveryFacts): Recov
   };
 }
 
+function isTerminalTask(status: ControlTask["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
 export function createThreadStateProjector(
   options: ThreadStateProjectorOptions = {},
 ): ThreadStateProjector {
@@ -100,6 +104,12 @@ export function createThreadStateProjector(
       switch (input.kind) {
         case "task": {
           const roles = classifier.classifyTask(input.task);
+
+          if (isTerminalTask(input.task.status)) {
+            nextView.recoveryFacts!.pendingApprovals = nextView.recoveryFacts!.pendingApprovals.filter(
+              (approval) => approval.taskId !== input.task.taskId,
+            );
+          }
 
           if (roles.includes("RecoveryFact")) {
             if (isNonterminalTask(input.task.status)) {
@@ -129,7 +139,9 @@ export function createThreadStateProjector(
             } else if (
               nextView.recoveryFacts?.blocking?.sourceTaskId === input.task.taskId
             ) {
-              nextView.recoveryFacts!.blocking = undefined;
+              nextView.recoveryFacts!.blocking = deriveBlockingFromPendingApprovals(
+                nextView.recoveryFacts!,
+              );
             }
           } else if (roles.includes("WorkingSetOnly") && isNonterminalTask(input.task.status)) {
             nextView.recoveryFacts!.activeTask = {
@@ -197,6 +209,7 @@ export function createThreadStateProjector(
 
           if (roles.includes("NarrativeCandidate")) {
             nextView.narrativeState!.notableEvents.push(input.summary);
+            nextView.narrativeState!.threadSummary = composeThreadSummary(nextView.narrativeState!);
           }
 
           return nextView;
@@ -222,6 +235,7 @@ export function createThreadStateProjector(
 
           if (roles.includes("NarrativeCandidate")) {
             nextView.narrativeState!.notableEvents.push(input.summary);
+            nextView.narrativeState!.threadSummary = composeThreadSummary(nextView.narrativeState!);
           }
 
           if (roles.includes("WorkingSetOnly")) {
@@ -238,6 +252,7 @@ export function createThreadStateProjector(
           }
           if (roles.includes("NarrativeCandidate")) {
             nextView.narrativeState!.notableEvents.push(input.content);
+            nextView.narrativeState!.threadSummary = composeThreadSummary(nextView.narrativeState!);
           }
           return nextView;
         }

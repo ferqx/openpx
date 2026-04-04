@@ -287,6 +287,68 @@ describe("ThreadStateProjector", () => {
     expect(cancelledView.recoveryFacts?.activeTask).toBeUndefined();
   });
 
+  test("terminal task transitions remove same-task pending approvals and recompute blocking", () => {
+    const projector = createThreadStateProjector();
+    const approvalA = createApprovalRequest({
+      approvalRequestId: "approval-task-10",
+      threadId: "thread-1",
+      taskId: "task-10",
+      toolCallId: "tool-call-10",
+      toolRequest: {
+        toolCallId: "tool-call-10",
+        threadId: "thread-1",
+        taskId: "task-10",
+        toolName: "delete_file",
+        args: { path: "tmp/ten.txt" },
+      },
+      summary: "Delete tmp/ten.txt",
+      risk: "high",
+    });
+    const approvalB = createApprovalRequest({
+      approvalRequestId: "approval-task-11",
+      threadId: "thread-1",
+      taskId: "task-11",
+      toolCallId: "tool-call-11",
+      toolRequest: {
+        toolCallId: "tool-call-11",
+        threadId: "thread-1",
+        taskId: "task-11",
+        toolName: "delete_file",
+        args: { path: "tmp/eleven.txt" },
+      },
+      summary: "Delete tmp/eleven.txt",
+      risk: "high",
+    });
+
+    const withApprovalA = projector.project({}, { kind: "approval", approval: approvalA });
+    const withApprovalB = projector.project(withApprovalA, { kind: "approval", approval: approvalB });
+    const afterTaskComplete = projector.project(withApprovalB, {
+      kind: "task",
+      task: createControlTask({
+        taskId: "task-11",
+        threadId: "thread-1",
+        summary: "Cleanup skipped after review.",
+        status: "completed",
+      }),
+    });
+
+    expect(afterTaskComplete.recoveryFacts?.pendingApprovals).toEqual([
+      {
+        approvalRequestId: "approval-task-10",
+        taskId: "task-10",
+        toolCallId: "tool-call-10",
+        summary: "Delete tmp/ten.txt",
+        risk: "high",
+        status: "pending",
+      },
+    ]);
+    expect(afterTaskComplete.recoveryFacts?.blocking).toEqual({
+      sourceTaskId: "task-10",
+      kind: "waiting_approval",
+      message: "Delete tmp/ten.txt",
+    });
+  });
+
   test("keeps large tool output in the working set window", () => {
     const projector = createThreadStateProjector();
     const toolResult = Array.from({ length: 80 }, (_, index) => `line ${index}`).join("\n");
@@ -318,6 +380,7 @@ describe("ThreadStateProjector", () => {
       summary: "Runtime snapshot path updated.",
     });
     expect(view.narrativeState?.notableEvents).toContain("Runtime snapshot path updated.");
+    expect(view.narrativeState?.threadSummary).toBe("Runtime snapshot path updated.");
   });
 
   test("projects blocking events into recovery facts and narrative state", () => {
@@ -338,6 +401,7 @@ describe("ThreadStateProjector", () => {
       message: "Waiting on cleanup approval.",
     });
     expect(view.narrativeState?.notableEvents).toContain("Waiting on cleanup approval.");
+    expect(view.narrativeState?.threadSummary).toBe("Waiting on cleanup approval.");
   });
 
   test("projects transient events into the working-set window", () => {
