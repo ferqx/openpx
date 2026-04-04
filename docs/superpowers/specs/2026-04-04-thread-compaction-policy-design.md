@@ -402,3 +402,8 @@ Write an implementation plan that:
 - adds classifier, projector, compaction policy, and hydrator boundaries
 - updates root-graph flow to call compaction deliberately
 - migrates snapshot and hydration logic to consume the derived thread view
+
+## 14. Implementation Notes
+
+- The repository persisted the derived thread view directly on the `threads` table.
+- `runtime-snapshot` now prefers derived recovery facts over opportunistic event reconstruction.
