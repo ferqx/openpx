@@ -438,6 +438,22 @@ describe("ThreadStateProjector", () => {
     expect(view.narrativeState?.threadSummary).toBe("Waiting on cleanup approval.");
   });
 
+  test("source-less blocking events update narrative without creating sticky blocking facts", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {},
+      {
+        kind: "event",
+        eventType: "thread.waiting_approval",
+        summary: "Approval required before continuing.",
+      },
+    );
+
+    expect(view.recoveryFacts?.blocking).toBeUndefined();
+    expect(view.narrativeState?.notableEvents).toContain("Approval required before continuing.");
+    expect(view.narrativeState?.threadSummary).toBe("Approval required before continuing.");
+  });
+
   test("projects transient events into the working-set window", () => {
     const projector = createThreadStateProjector();
     const view = projector.project(

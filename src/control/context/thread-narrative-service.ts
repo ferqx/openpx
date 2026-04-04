@@ -30,6 +30,7 @@ export type NarrativeServiceOptions = {
 export function createThreadNarrativeService(options: NarrativeServiceOptions = {}): ThreadNarrativeService {
   const narratives = new Map<string, ThreadNarrative>();
   const derivedViews = new Map<string, DerivedThreadView>();
+  const threadUpdateLocks = new Map<string, Promise<void>>();
   const projector = createThreadStateProjector();
   const maxEvents = options.maxEvents ?? 50;
   const threadStore = options.threadStore;
@@ -92,6 +93,40 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
 
   function appendSummary(base: string, next: string): string {
     return base ? `${base}; ${next}` : next;
+  }
+
+  function cloneView(view: DerivedThreadView): DerivedThreadView {
+    return {
+      recoveryFacts: view.recoveryFacts
+        ? {
+            ...view.recoveryFacts,
+            activeTask: view.recoveryFacts.activeTask ? { ...view.recoveryFacts.activeTask } : undefined,
+            lastStableTask: view.recoveryFacts.lastStableTask ? { ...view.recoveryFacts.lastStableTask } : undefined,
+            blocking: view.recoveryFacts.blocking ? { ...view.recoveryFacts.blocking } : undefined,
+            pendingApprovals: [...view.recoveryFacts.pendingApprovals],
+            latestDurableAnswer: view.recoveryFacts.latestDurableAnswer
+              ? { ...view.recoveryFacts.latestDurableAnswer }
+              : undefined,
+            resumeAnchor: view.recoveryFacts.resumeAnchor ? { ...view.recoveryFacts.resumeAnchor } : undefined,
+          }
+        : undefined,
+      narrativeState: view.narrativeState
+        ? {
+            threadSummary: view.narrativeState.threadSummary,
+            taskSummaries: [...view.narrativeState.taskSummaries],
+            openLoops: [...view.narrativeState.openLoops],
+            notableEvents: [...view.narrativeState.notableEvents],
+          }
+        : undefined,
+      workingSetWindow: view.workingSetWindow
+        ? {
+            messages: [...view.workingSetWindow.messages],
+            toolResults: [...view.workingSetWindow.toolResults],
+            verifierFeedback: [...view.workingSetWindow.verifierFeedback],
+            retrievedMemories: [...view.workingSetWindow.retrievedMemories],
+          }
+        : undefined,
+    };
   }
 
   function mergeViews(
@@ -213,85 +248,106 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
 
   return {
     async processTaskUpdate(task: ControlTask): Promise<void> {
-      const {
-        narrative,
-        view,
-        revision,
-        persistedSummary,
-        hasPersistedNarrativeState,
-      } = await loadBaseView(task.threadId);
-      const nextView = projector.project(view, {
-        kind: "task",
-        task,
+      const previousLock = threadUpdateLocks.get(task.threadId) ?? Promise.resolve();
+      let releaseLock: () => void = () => {};
+      const currentLock = new Promise<void>((resolve) => {
+        releaseLock = resolve;
       });
-      const previousTaskSummaries = getTaskSummaries(view);
-      const nextTaskSummaries = getTaskSummaries(nextView);
-      const narrativeChanged =
-        previousTaskSummaries.length !== nextTaskSummaries.length
-        || previousTaskSummaries.some((summary, index) => summary !== nextTaskSummaries[index]);
+      const queuedLock = previousLock.then(() => currentLock);
+      threadUpdateLocks.set(task.threadId, queuedLock);
 
-      derivedViews.set(task.threadId, nextView);
+      await previousLock;
+      try {
+        const {
+          narrative,
+          view,
+          revision,
+          persistedSummary,
+          hasPersistedNarrativeState,
+        } = await loadBaseView(task.threadId);
+        const nextView = projector.project(view, {
+          kind: "task",
+          task,
+        });
 
-      if (!narrativeChanged) {
+        if (task.status === "blocked") {
+          nextView.narrativeState = cloneView(view).narrativeState;
+        }
+
+        const previousTaskSummaries = getTaskSummaries(view);
+        const nextTaskSummaries = getTaskSummaries(nextView);
+        const narrativeChanged =
+          previousTaskSummaries.length !== nextTaskSummaries.length
+          || previousTaskSummaries.some((summary, index) => summary !== nextTaskSummaries[index]);
+
+        derivedViews.set(task.threadId, nextView);
+
+        if (!narrativeChanged) {
+          if (threadStore) {
+            const thread = await threadStore.get(task.threadId);
+            if (thread) {
+              await threadStore.save({
+                ...thread,
+                recoveryFacts: nextView.recoveryFacts,
+                narrativeState: nextView.narrativeState,
+                workingSetWindow: nextView.workingSetWindow,
+              });
+            }
+          }
+          return;
+        }
+
+        const newEvent: NarrativeEvent = {
+          taskId: task.taskId,
+          summary: task.summary,
+          status: task.status,
+          timestamp: Date.now(),
+        };
+
+        const updatedEvents = [...narrative.events, newEvent];
+        if (updatedEvents.length > maxEvents) {
+          updatedEvents.splice(0, updatedEvents.length - maxEvents);
+        }
+
+        const nextSummary =
+          !hasPersistedNarrativeState
+          && persistedSummary.length > 0
+          && (view.narrativeState?.taskSummaries.length ?? 0) === 0
+            ? appendSummary(persistedSummary, task.summary)
+            : (nextView.narrativeState?.threadSummary ?? "");
+        if (
+          nextSummary !== nextView.narrativeState?.threadSummary
+          && nextView.narrativeState
+        ) {
+          nextView.narrativeState.threadSummary = nextSummary;
+        }
+
+        const nextNarrative = {
+          ...narrative,
+          summary: nextSummary,
+          events: updatedEvents,
+          revision: revision + 1,
+        };
+
+        narratives.set(task.threadId, nextNarrative);
+
         if (threadStore) {
           const thread = await threadStore.get(task.threadId);
           if (thread) {
             await threadStore.save({
               ...thread,
+              narrativeSummary: nextNarrative.summary,
+              narrativeRevision: nextNarrative.revision,
               recoveryFacts: nextView.recoveryFacts,
               narrativeState: nextView.narrativeState,
               workingSetWindow: nextView.workingSetWindow,
             });
           }
         }
-        return;
-      }
-
-      const newEvent: NarrativeEvent = {
-        taskId: task.taskId,
-        summary: task.summary,
-        status: task.status,
-        timestamp: Date.now(),
-      };
-
-      const updatedEvents = [...narrative.events, newEvent];
-      if (updatedEvents.length > maxEvents) {
-        updatedEvents.splice(0, updatedEvents.length - maxEvents);
-      }
-
-      const nextSummary =
-        !hasPersistedNarrativeState
-        && persistedSummary.length > 0
-        && (view.narrativeState?.taskSummaries.length ?? 0) === 0
-          ? appendSummary(persistedSummary, task.summary)
-          : (nextView.narrativeState?.threadSummary ?? "");
-      if (
-        nextSummary !== nextView.narrativeState?.threadSummary
-        && nextView.narrativeState
-      ) {
-        nextView.narrativeState.threadSummary = nextSummary;
-      }
-
-      const nextNarrative = {
-        ...narrative,
-        summary: nextSummary,
-        events: updatedEvents,
-        revision: revision + 1,
-      };
-
-      narratives.set(task.threadId, nextNarrative);
-
-      if (threadStore) {
-        const thread = await threadStore.get(task.threadId);
-        if (thread) {
-          await threadStore.save({
-            ...thread,
-            narrativeSummary: nextNarrative.summary,
-            narrativeRevision: nextNarrative.revision,
-            recoveryFacts: nextView.recoveryFacts,
-            narrativeState: nextView.narrativeState,
-            workingSetWindow: nextView.workingSetWindow,
-          });
+      } finally {
+        releaseLock();
+        if (threadUpdateLocks.get(task.threadId) === queuedLock) {
+          threadUpdateLocks.delete(task.threadId);
         }
       }
     },

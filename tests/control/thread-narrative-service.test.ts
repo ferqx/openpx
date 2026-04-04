@@ -31,6 +31,34 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.summary).toBe("User successfully authenticated");
   });
 
+  test("does not surface blocked task updates in the compatibility narrative", async () => {
+    const narrativeService = createThreadNarrativeService();
+    const threadId = "thread-blocked";
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-complete",
+        threadId,
+        summary: "Stable progress recorded",
+        status: "completed",
+      }),
+    );
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-blocked",
+        threadId,
+        summary: "Blocked waiting on approval",
+        status: "blocked",
+      }),
+    );
+
+    const narrative = await narrativeService.getNarrative(threadId);
+    expect(narrative.summary).toBe("Stable progress recorded");
+    expect(narrative.events).toHaveLength(1);
+    expect(narrative.events[0]?.summary).toBe("Stable progress recorded");
+  });
+
   test("maintains a curated history of stable task outcomes", async () => {
     const narrativeService = createThreadNarrativeService();
     const threadId = "thread-1";
@@ -416,5 +444,58 @@ describe("ThreadNarrativeService", () => {
     expect(persistedThread?.narrativeState?.threadSummary).toBe(
       "Legacy summary; First derived summary",
     );
+  });
+
+  test("serializes overlapping updates per thread so both stable updates survive", async () => {
+    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const baseThread = createThread("thread-serial", "/workspace", "project-1");
+    threads.set(baseThread.threadId, baseThread);
+
+    const saveOrder: string[] = [];
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          saveOrder.push(thread.narrativeSummary ?? "");
+          if ((thread.narrativeSummary ?? "").includes("First")) {
+            await new Promise((resolve) => setTimeout(resolve, 30));
+          }
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    await Promise.all([
+      narrativeService.processTaskUpdate(
+        createControlTask({
+          taskId: "task-first",
+          threadId: baseThread.threadId,
+          summary: "First stable update",
+          status: "completed",
+        }),
+      ),
+      narrativeService.processTaskUpdate(
+        createControlTask({
+          taskId: "task-second",
+          threadId: baseThread.threadId,
+          summary: "Second stable update",
+          status: "completed",
+        }),
+      ),
+    ]);
+
+    const narrative = await narrativeService.getNarrative(baseThread.threadId);
+    expect(narrative.summary).toBe("First stable update; Second stable update");
+    expect(narrative.events).toHaveLength(2);
+    expect(saveOrder.at(-1)).toBe("First stable update; Second stable update");
   });
 });

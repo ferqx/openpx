@@ -252,13 +252,13 @@ export function createThreadStateProjector(
             summary: input.summary,
           });
 
-          if (roles.includes("RecoveryFact")) {
+          if (roles.includes("RecoveryFact") && input.sourceTaskId) {
             const blockingKind =
               input.eventType === "thread.waiting_approval"
                 ? "waiting_approval"
                 : "human_recovery";
             nextView.recoveryFacts!.blocking = {
-              sourceTaskId: input.sourceTaskId ?? "event",
+              sourceTaskId: input.sourceTaskId,
               kind: blockingKind,
               message: input.summary,
             };
