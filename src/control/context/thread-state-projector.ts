@@ -53,8 +53,11 @@ function cloneWorkingSetWindow(input?: WorkingSetWindow): WorkingSetWindow {
   };
 }
 
-function composeThreadSummary(narrativeState: NarrativeState): string {
-  return [...narrativeState.taskSummaries, ...narrativeState.notableEvents].join("; ");
+function appendThreadSummary(
+  currentSummary: string,
+  nextItem: string,
+): string {
+  return currentSummary ? `${currentSummary}; ${nextItem}` : nextItem;
 }
 
 function isNonterminalTask(status: ControlTask["status"]): boolean {
@@ -82,6 +85,19 @@ function deriveBlockingFromPendingApprovals(recoveryFacts: RecoveryFacts): Recov
     kind: "waiting_approval",
     message: nextPendingApproval.summary,
   };
+}
+
+function clearContradictoryBlockedActiveTask(
+  recoveryFacts: RecoveryFacts,
+  taskId: string,
+): void {
+  if (
+    recoveryFacts.activeTask?.taskId === taskId
+    && recoveryFacts.activeTask.status === "blocked"
+    && recoveryFacts.blocking?.sourceTaskId !== taskId
+  ) {
+    recoveryFacts.activeTask = undefined;
+  }
 }
 
 function isTerminalTask(status: ControlTask["status"]): boolean {
@@ -159,7 +175,10 @@ export function createThreadStateProjector(
 
           if (roles.includes("NarrativeCandidate")) {
             nextView.narrativeState!.taskSummaries.push(input.task.summary);
-            nextView.narrativeState!.threadSummary = composeThreadSummary(nextView.narrativeState!);
+            nextView.narrativeState!.threadSummary = appendThreadSummary(
+              nextView.narrativeState!.threadSummary,
+              input.task.summary,
+            );
           }
 
           return nextView;
@@ -192,6 +211,10 @@ export function createThreadStateProjector(
             nextView.recoveryFacts!.blocking = deriveBlockingFromPendingApprovals(
               nextView.recoveryFacts!,
             );
+            clearContradictoryBlockedActiveTask(
+              nextView.recoveryFacts!,
+              input.approval.taskId,
+            );
           }
 
           return nextView;
@@ -209,7 +232,10 @@ export function createThreadStateProjector(
 
           if (roles.includes("NarrativeCandidate")) {
             nextView.narrativeState!.notableEvents.push(input.summary);
-            nextView.narrativeState!.threadSummary = composeThreadSummary(nextView.narrativeState!);
+            nextView.narrativeState!.threadSummary = appendThreadSummary(
+              nextView.narrativeState!.threadSummary,
+              input.summary,
+            );
           }
 
           return nextView;
@@ -235,7 +261,10 @@ export function createThreadStateProjector(
 
           if (roles.includes("NarrativeCandidate")) {
             nextView.narrativeState!.notableEvents.push(input.summary);
-            nextView.narrativeState!.threadSummary = composeThreadSummary(nextView.narrativeState!);
+            nextView.narrativeState!.threadSummary = appendThreadSummary(
+              nextView.narrativeState!.threadSummary,
+              input.summary,
+            );
           }
 
           if (roles.includes("WorkingSetOnly")) {
@@ -252,7 +281,10 @@ export function createThreadStateProjector(
           }
           if (roles.includes("NarrativeCandidate")) {
             nextView.narrativeState!.notableEvents.push(input.content);
-            nextView.narrativeState!.threadSummary = composeThreadSummary(nextView.narrativeState!);
+            nextView.narrativeState!.threadSummary = appendThreadSummary(
+              nextView.narrativeState!.threadSummary,
+              input.content,
+            );
           }
           return nextView;
         }

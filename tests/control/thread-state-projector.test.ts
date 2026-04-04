@@ -383,6 +383,40 @@ describe("ThreadStateProjector", () => {
     expect(view.narrativeState?.threadSummary).toBe("Runtime snapshot path updated.");
   });
 
+  test("preserves narrative summary insertion order across task and non-task candidates", () => {
+    const projector = createThreadStateProjector();
+    const afterTaskOne = projector.project(
+      {},
+      {
+        kind: "task",
+        task: createControlTask({
+          taskId: "task-order-1",
+          threadId: "thread-1",
+          summary: "Initial repository scan complete.",
+          status: "completed",
+        }),
+      },
+    );
+    const afterAnswer = projector.project(afterTaskOne, {
+      kind: "answer",
+      answerId: "answer-order-1",
+      summary: "Answer summarized the scan results.",
+    });
+    const afterTaskTwo = projector.project(afterAnswer, {
+      kind: "task",
+      task: createControlTask({
+        taskId: "task-order-2",
+        threadId: "thread-1",
+        summary: "Follow-up patch applied.",
+        status: "completed",
+      }),
+    });
+
+    expect(afterTaskTwo.narrativeState?.threadSummary).toBe(
+      "Initial repository scan complete.; Answer summarized the scan results.; Follow-up patch applied.",
+    );
+  });
+
   test("projects blocking events into recovery facts and narrative state", () => {
     const projector = createThreadStateProjector();
     const view = projector.project(
@@ -417,5 +451,55 @@ describe("ThreadStateProjector", () => {
 
     expect(view.workingSetWindow?.messages).toContain("Executor heartbeat");
     expect(view.recoveryFacts?.blocking).toBeUndefined();
+  });
+
+  test("approved approval clears contradictory blocked active task state", () => {
+    const projector = createThreadStateProjector();
+    const blockedView = projector.project(
+      {},
+      {
+        kind: "task",
+        task: createControlTask({
+          taskId: "task-approval-1",
+          threadId: "thread-1",
+          summary: "Waiting for delete approval.",
+          status: "blocked",
+          blockingReason: {
+            kind: "waiting_approval",
+            message: "Waiting for delete approval.",
+          },
+        }),
+      },
+    );
+    const pendingApproval = createApprovalRequest({
+      approvalRequestId: "approval-blocked-1",
+      threadId: "thread-1",
+      taskId: "task-approval-1",
+      toolCallId: "tool-call-blocked-1",
+      toolRequest: {
+        toolCallId: "tool-call-blocked-1",
+        threadId: "thread-1",
+        taskId: "task-approval-1",
+        toolName: "delete_file",
+        args: { path: "tmp/delete.txt" },
+      },
+      summary: "Delete tmp/delete.txt",
+      risk: "high",
+    });
+
+    const waitingApprovalView = projector.project(blockedView, {
+      kind: "approval",
+      approval: pendingApproval,
+    });
+    const approvedView = projector.project(waitingApprovalView, {
+      kind: "approval",
+      approval: {
+        ...pendingApproval,
+        status: "approved",
+      },
+    });
+
+    expect(approvedView.recoveryFacts?.blocking).toBeUndefined();
+    expect(approvedView.recoveryFacts?.activeTask).toBeUndefined();
   });
 });

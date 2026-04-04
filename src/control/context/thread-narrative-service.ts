@@ -78,6 +78,75 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     return view.narrativeState?.taskSummaries ?? [];
   }
 
+  function mergeViews(
+    persistedView: DerivedThreadView | undefined,
+    inMemoryView: DerivedThreadView | undefined,
+  ): DerivedThreadView {
+    if (!persistedView && !inMemoryView) {
+      return createEmptyView();
+    }
+
+    return {
+      recoveryFacts: {
+        pendingApprovals:
+          persistedView?.recoveryFacts?.pendingApprovals
+          ?? inMemoryView?.recoveryFacts?.pendingApprovals
+          ?? [],
+        activeTask:
+          persistedView?.recoveryFacts?.activeTask
+          ?? inMemoryView?.recoveryFacts?.activeTask,
+        lastStableTask:
+          persistedView?.recoveryFacts?.lastStableTask
+          ?? inMemoryView?.recoveryFacts?.lastStableTask,
+        blocking:
+          persistedView?.recoveryFacts?.blocking
+          ?? inMemoryView?.recoveryFacts?.blocking,
+        latestDurableAnswer:
+          persistedView?.recoveryFacts?.latestDurableAnswer
+          ?? inMemoryView?.recoveryFacts?.latestDurableAnswer,
+        resumeAnchor:
+          persistedView?.recoveryFacts?.resumeAnchor
+          ?? inMemoryView?.recoveryFacts?.resumeAnchor,
+      },
+      narrativeState: {
+        threadSummary:
+          persistedView?.narrativeState?.threadSummary
+          ?? inMemoryView?.narrativeState?.threadSummary
+          ?? "",
+        taskSummaries:
+          persistedView?.narrativeState?.taskSummaries
+          ?? inMemoryView?.narrativeState?.taskSummaries
+          ?? [],
+        openLoops:
+          persistedView?.narrativeState?.openLoops
+          ?? inMemoryView?.narrativeState?.openLoops
+          ?? [],
+        notableEvents:
+          persistedView?.narrativeState?.notableEvents
+          ?? inMemoryView?.narrativeState?.notableEvents
+          ?? [],
+      },
+      workingSetWindow: {
+        messages:
+          persistedView?.workingSetWindow?.messages
+          ?? inMemoryView?.workingSetWindow?.messages
+          ?? [],
+        toolResults:
+          persistedView?.workingSetWindow?.toolResults
+          ?? inMemoryView?.workingSetWindow?.toolResults
+          ?? [],
+        verifierFeedback:
+          persistedView?.workingSetWindow?.verifierFeedback
+          ?? inMemoryView?.workingSetWindow?.verifierFeedback
+          ?? [],
+        retrievedMemories:
+          persistedView?.workingSetWindow?.retrievedMemories
+          ?? inMemoryView?.workingSetWindow?.retrievedMemories
+          ?? [],
+      },
+    };
+  }
+
   async function loadBaseView(threadId: string): Promise<{
     narrative: ThreadNarrative;
     view: DerivedThreadView;
@@ -95,7 +164,7 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
         }
       : undefined;
 
-    const view = inMemoryView ?? persistedView ?? createEmptyView();
+    const view = mergeViews(persistedView, inMemoryView);
     const threadSummary = persistedThread?.narrativeSummary ?? "";
     const revision = inMemoryNarrative?.revision ?? persistedThread?.narrativeRevision ?? 0;
     const narrative =

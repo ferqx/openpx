@@ -185,4 +185,75 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.events).toEqual([]);
     expect(narrative.revision).toBe(4);
   });
+
+  test("does not let a stale in-memory derived view wipe newer persisted derived state", async () => {
+    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const baseThread = createThread("thread-4", "/workspace", "project-1");
+    threads.set(baseThread.threadId, baseThread);
+
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-1",
+        threadId: baseThread.threadId,
+        summary: "First stable task complete.",
+        status: "completed",
+      }),
+    );
+
+    const externallyUpdated = {
+      ...threads.get(baseThread.threadId)!,
+      recoveryFacts: {
+        ...(threads.get(baseThread.threadId)?.recoveryFacts ?? { pendingApprovals: [] }),
+        pendingApprovals: threads.get(baseThread.threadId)?.recoveryFacts?.pendingApprovals ?? [],
+        latestDurableAnswer: {
+          answerId: "answer-external-1",
+          summary: "External answer persisted.",
+        },
+      },
+      narrativeState: {
+        threadSummary: "First stable task complete.; External answer persisted.",
+        taskSummaries: ["First stable task complete."],
+        openLoops: [],
+        notableEvents: ["External answer persisted."],
+      },
+    };
+    threads.set(baseThread.threadId, externallyUpdated);
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-2",
+        threadId: baseThread.threadId,
+        summary: "Second stable task complete.",
+        status: "completed",
+      }),
+    );
+
+    const persistedThread = threads.get(baseThread.threadId);
+    expect(persistedThread?.recoveryFacts?.latestDurableAnswer).toEqual({
+      answerId: "answer-external-1",
+      summary: "External answer persisted.",
+    });
+    expect(persistedThread?.narrativeState?.notableEvents).toEqual(["External answer persisted."]);
+    expect(persistedThread?.narrativeState?.threadSummary).toBe(
+      "First stable task complete.; External answer persisted.; Second stable task complete.",
+    );
+  });
 });
