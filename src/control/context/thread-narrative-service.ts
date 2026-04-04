@@ -78,6 +78,10 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     return view.narrativeState?.taskSummaries ?? [];
   }
 
+  function appendSummary(base: string, next: string): string {
+    return base ? `${base}; ${next}` : next;
+  }
+
   function mergeViews(
     persistedView: DerivedThreadView | undefined,
     inMemoryView: DerivedThreadView | undefined,
@@ -151,6 +155,8 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     narrative: ThreadNarrative;
     view: DerivedThreadView;
     revision: number;
+    persistedSummary: string;
+    hasPersistedNarrativeState: boolean;
   }> {
     const inMemoryNarrative = narratives.get(threadId);
     const inMemoryView = derivedViews.get(threadId);
@@ -165,22 +171,43 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
       : undefined;
 
     const view = mergeViews(persistedView, inMemoryView);
-    const threadSummary = persistedThread?.narrativeSummary ?? "";
-    const revision = inMemoryNarrative?.revision ?? persistedThread?.narrativeRevision ?? 0;
-    const narrative =
-      inMemoryNarrative
-      ?? createNarrativeFromView(threadId, view, revision, threadSummary);
+    const persistedSummary = persistedThread?.narrativeSummary ?? "";
+    const persistedRevision = persistedThread?.narrativeRevision ?? 0;
+    const persistedNarrative = createNarrativeFromView(
+      threadId,
+      view,
+      persistedRevision,
+      persistedSummary,
+    );
+    const usePersistedNarrative =
+      !inMemoryNarrative
+      || persistedRevision > inMemoryNarrative.revision
+      || (
+        persistedRevision === inMemoryNarrative.revision
+        && persistedSummary.length > 0
+        && persistedSummary !== inMemoryNarrative.summary
+      );
+    const narrative = usePersistedNarrative ? persistedNarrative : inMemoryNarrative;
+    const revision = Math.max(inMemoryNarrative?.revision ?? 0, persistedRevision);
 
     return {
       narrative,
       view,
       revision,
+      persistedSummary,
+      hasPersistedNarrativeState: Boolean(persistedThread?.narrativeState),
     };
   }
 
   return {
     async processTaskUpdate(task: ControlTask): Promise<void> {
-      const { narrative, view, revision } = await loadBaseView(task.threadId);
+      const {
+        narrative,
+        view,
+        revision,
+        persistedSummary,
+        hasPersistedNarrativeState,
+      } = await loadBaseView(task.threadId);
       const nextView = projector.project(view, {
         kind: "task",
         task,
@@ -220,9 +247,22 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
         updatedEvents.splice(0, updatedEvents.length - maxEvents);
       }
 
+      const nextSummary =
+        !hasPersistedNarrativeState
+        && persistedSummary.length > 0
+        && (view.narrativeState?.taskSummaries.length ?? 0) === 0
+          ? appendSummary(persistedSummary, task.summary)
+          : (nextView.narrativeState?.threadSummary ?? "");
+      if (
+        nextSummary !== nextView.narrativeState?.threadSummary
+        && nextView.narrativeState
+      ) {
+        nextView.narrativeState.threadSummary = nextSummary;
+      }
+
       const nextNarrative = {
         ...narrative,
-        summary: nextView.narrativeState?.threadSummary ?? "",
+        summary: nextSummary,
         events: updatedEvents,
         revision: revision + 1,
       };

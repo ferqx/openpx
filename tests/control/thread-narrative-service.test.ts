@@ -256,4 +256,113 @@ describe("ThreadNarrativeService", () => {
       "First stable task complete.; External answer persisted.; Second stable task complete.",
     );
   });
+
+  test("prefers newer persisted narrative summary and revision over stale in-memory narrative", async () => {
+    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const baseThread = createThread("thread-5", "/workspace", "project-1");
+    threads.set(baseThread.threadId, baseThread);
+
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-old",
+        threadId: baseThread.threadId,
+        summary: "Older in-memory summary",
+        status: "completed",
+      }),
+    );
+
+    threads.set(baseThread.threadId, {
+      ...threads.get(baseThread.threadId)!,
+      narrativeSummary: "Newer persisted summary",
+      narrativeRevision: 7,
+      narrativeState: {
+        threadSummary: "Newer persisted summary",
+        taskSummaries: ["Newer persisted summary"],
+        openLoops: [],
+        notableEvents: [],
+      },
+    });
+
+    const reloadedNarrative = await narrativeService.getNarrative(baseThread.threadId);
+    expect(reloadedNarrative.summary).toBe("Newer persisted summary");
+    expect(reloadedNarrative.revision).toBe(7);
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-new",
+        threadId: baseThread.threadId,
+        summary: "Fresh completed task",
+        status: "completed",
+      }),
+    );
+
+    const persistedThread = threads.get(baseThread.threadId);
+    expect(persistedThread?.narrativeSummary).toBe("Newer persisted summary; Fresh completed task");
+    expect(persistedThread?.narrativeRevision).toBe(8);
+  });
+
+  test("extends legacy narrative summary on the first derived narrative update", async () => {
+    const baseThread = {
+      ...createThread("thread-6", "/workspace", "project-1"),
+      narrativeSummary: "Legacy summary",
+      narrativeRevision: 2,
+    };
+    const threads = new Map([[baseThread.threadId, baseThread]]);
+
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-migrate",
+        threadId: baseThread.threadId,
+        summary: "First derived summary",
+        status: "completed",
+      }),
+    );
+
+    const persistedThread = threads.get(baseThread.threadId);
+    expect(persistedThread?.narrativeSummary).toBe("Legacy summary; First derived summary");
+    expect(persistedThread?.narrativeRevision).toBe(3);
+    expect(persistedThread?.narrativeState?.threadSummary).toBe(
+      "Legacy summary; First derived summary",
+    );
+
+    const narrative = await narrativeService.getNarrative(baseThread.threadId);
+    expect(narrative.summary).toBe("Legacy summary; First derived summary");
+    expect(narrative.revision).toBe(3);
+  });
 });
