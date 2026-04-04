@@ -61,6 +61,16 @@ function isNonterminalTask(status: ControlTask["status"]): boolean {
   return status === "queued" || status === "running" || status === "blocked";
 }
 
+function shouldClearTaskRecoveryState(
+  currentView: DerivedThreadView,
+  task: ControlTask,
+): boolean {
+  return (
+    currentView.recoveryFacts?.activeTask?.taskId === task.taskId
+    || currentView.recoveryFacts?.blocking?.sourceTaskId === task.taskId
+  );
+}
+
 export function createThreadStateProjector(
   options: ThreadStateProjectorOptions = {},
 ): ThreadStateProjector {
@@ -100,8 +110,8 @@ export function createThreadStateProjector(
             if (input.task.status === "blocked") {
               nextView.recoveryFacts!.blocking = {
                 sourceTaskId: input.task.taskId,
-                kind: "human_recovery",
-                message: input.task.summary,
+                kind: input.task.blockingReason?.kind ?? "human_recovery",
+                message: input.task.blockingReason?.message ?? input.task.summary,
               };
             } else if (
               nextView.recoveryFacts?.blocking?.sourceTaskId === input.task.taskId
@@ -114,6 +124,12 @@ export function createThreadStateProjector(
               status: input.task.status,
               summary: input.task.summary,
             };
+          } else if (
+            input.task.status === "cancelled"
+            && shouldClearTaskRecoveryState(nextView, input.task)
+          ) {
+            nextView.recoveryFacts!.activeTask = undefined;
+            nextView.recoveryFacts!.blocking = undefined;
           }
 
           if (roles.includes("NarrativeCandidate")) {

@@ -7,6 +7,10 @@ export type ControlTask = {
   threadId: ReturnType<typeof sharedThreadId>;
   summary: string;
   status: ControlTaskStatus;
+  blockingReason?: {
+    kind: "waiting_approval" | "human_recovery";
+    message: string;
+  };
 };
 
 export type TaskStoreContract = {
@@ -18,11 +22,16 @@ export function createControlTask(input: {
   threadId: string;
   summary: string;
   status?: ControlTaskStatus;
+  blockingReason?: {
+    kind: "waiting_approval" | "human_recovery";
+    message: string;
+  };
 }): ControlTask {
   return {
     taskId: sharedTaskId(input.taskId),
     threadId: sharedThreadId(input.threadId),
     summary: input.summary,
     status: input.status ?? "queued",
+    blockingReason: input.blockingReason,
   };
 }

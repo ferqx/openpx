@@ -41,6 +41,10 @@ describe("ThreadStateProjector", () => {
           threadId: "thread-1",
           summary: "Waiting for manual database recovery.",
           status: "blocked",
+          blockingReason: {
+            kind: "human_recovery",
+            message: "Waiting for manual database recovery.",
+          },
         }),
       },
     );
@@ -55,6 +59,32 @@ describe("ThreadStateProjector", () => {
       sourceTaskId: "task-3",
       kind: "human_recovery",
       message: "Waiting for manual database recovery.",
+    });
+  });
+
+  test("uses task blocking metadata instead of hardcoded human recovery", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {},
+      {
+        kind: "task",
+        task: createControlTask({
+          taskId: "task-4",
+          threadId: "thread-1",
+          summary: "Delete tmp/output.txt is awaiting approval.",
+          status: "blocked",
+          blockingReason: {
+            kind: "waiting_approval",
+            message: "Delete tmp/output.txt is awaiting approval.",
+          },
+        }),
+      },
+    );
+
+    expect(view.recoveryFacts?.blocking).toEqual({
+      sourceTaskId: "task-4",
+      kind: "waiting_approval",
+      message: "Delete tmp/output.txt is awaiting approval.",
     });
   });
 
@@ -120,6 +150,81 @@ describe("ThreadStateProjector", () => {
 
     expect(resolvedView.recoveryFacts?.pendingApprovals).toEqual([]);
     expect(resolvedView.recoveryFacts?.blocking).toBeUndefined();
+  });
+
+  test("task cancellation clears stale active and blocking recovery state", () => {
+    const projector = createThreadStateProjector();
+    const blockedView = projector.project(
+      {},
+      {
+        kind: "task",
+        task: createControlTask({
+          taskId: "task-7",
+          threadId: "thread-1",
+          summary: "Waiting for operator intervention.",
+          status: "blocked",
+          blockingReason: {
+            kind: "human_recovery",
+            message: "Waiting for operator intervention.",
+          },
+        }),
+      },
+    );
+
+    const cancelledView = projector.project(blockedView, {
+      kind: "task",
+      task: createControlTask({
+        taskId: "task-7",
+        threadId: "thread-1",
+        summary: "Task cancelled by operator.",
+        status: "cancelled",
+      }),
+    });
+
+    expect(cancelledView.recoveryFacts?.activeTask).toBeUndefined();
+    expect(cancelledView.recoveryFacts?.blocking).toBeUndefined();
+    expect(cancelledView.recoveryFacts?.lastStableTask).toBeUndefined();
+  });
+
+  test("rejected approval followed by task cancellation does not leave the view blocked", () => {
+    const projector = createThreadStateProjector();
+    const pendingApproval = createApprovalRequest({
+      approvalRequestId: "approval-2",
+      threadId: "thread-1",
+      taskId: "task-8",
+      toolCallId: "tool-call-2",
+      toolRequest: {
+        toolCallId: "tool-call-2",
+        threadId: "thread-1",
+        taskId: "task-8",
+        toolName: "delete_file",
+        args: { path: "tmp/output.txt" },
+      },
+      summary: "Delete tmp/output.txt",
+      risk: "high",
+    });
+
+    const waitingView = projector.project({}, { kind: "approval", approval: pendingApproval });
+    const rejectedView = projector.project(waitingView, {
+      kind: "approval",
+      approval: {
+        ...pendingApproval,
+        status: "rejected",
+      },
+    });
+    const cancelledView = projector.project(rejectedView, {
+      kind: "task",
+      task: createControlTask({
+        taskId: "task-8",
+        threadId: "thread-1",
+        summary: "Task cancelled after rejection.",
+        status: "cancelled",
+      }),
+    });
+
+    expect(cancelledView.recoveryFacts?.pendingApprovals).toEqual([]);
+    expect(cancelledView.recoveryFacts?.blocking).toBeUndefined();
+    expect(cancelledView.recoveryFacts?.activeTask).toBeUndefined();
   });
 
   test("keeps large tool output in the working set window", () => {
