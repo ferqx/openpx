@@ -152,6 +152,66 @@ describe("ThreadStateProjector", () => {
     expect(resolvedView.recoveryFacts?.blocking).toBeUndefined();
   });
 
+  test("recomputes blocking from remaining pending approvals when one resolves", () => {
+    const projector = createThreadStateProjector();
+    const approvalA = createApprovalRequest({
+      approvalRequestId: "approval-a",
+      threadId: "thread-1",
+      taskId: "task-a",
+      toolCallId: "tool-call-a",
+      toolRequest: {
+        toolCallId: "tool-call-a",
+        threadId: "thread-1",
+        taskId: "task-a",
+        toolName: "delete_file",
+        args: { path: "tmp/a.txt" },
+      },
+      summary: "Delete tmp/a.txt",
+      risk: "high",
+    });
+    const approvalB = createApprovalRequest({
+      approvalRequestId: "approval-b",
+      threadId: "thread-1",
+      taskId: "task-b",
+      toolCallId: "tool-call-b",
+      toolRequest: {
+        toolCallId: "tool-call-b",
+        threadId: "thread-1",
+        taskId: "task-b",
+        toolName: "delete_file",
+        args: { path: "tmp/b.txt" },
+      },
+      summary: "Delete tmp/b.txt",
+      risk: "high",
+    });
+
+    const withApprovalA = projector.project({}, { kind: "approval", approval: approvalA });
+    const withApprovalB = projector.project(withApprovalA, { kind: "approval", approval: approvalB });
+    const afterResolveB = projector.project(withApprovalB, {
+      kind: "approval",
+      approval: {
+        ...approvalB,
+        status: "approved",
+      },
+    });
+
+    expect(afterResolveB.recoveryFacts?.pendingApprovals).toEqual([
+      {
+        approvalRequestId: "approval-a",
+        taskId: "task-a",
+        toolCallId: "tool-call-a",
+        summary: "Delete tmp/a.txt",
+        risk: "high",
+        status: "pending",
+      },
+    ]);
+    expect(afterResolveB.recoveryFacts?.blocking).toEqual({
+      sourceTaskId: "task-a",
+      kind: "waiting_approval",
+      message: "Delete tmp/a.txt",
+    });
+  });
+
   test("task cancellation clears stale active and blocking recovery state", () => {
     const projector = createThreadStateProjector();
     const blockedView = projector.project(

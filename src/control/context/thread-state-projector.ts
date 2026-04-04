@@ -71,6 +71,19 @@ function shouldClearTaskRecoveryState(
   );
 }
 
+function deriveBlockingFromPendingApprovals(recoveryFacts: RecoveryFacts): RecoveryFacts["blocking"] {
+  const nextPendingApproval = recoveryFacts.pendingApprovals[0];
+  if (!nextPendingApproval) {
+    return undefined;
+  }
+
+  return {
+    sourceTaskId: nextPendingApproval.taskId,
+    kind: "waiting_approval",
+    message: nextPendingApproval.summary,
+  };
+}
+
 export function createThreadStateProjector(
   options: ThreadStateProjectorOptions = {},
 ): ThreadStateProjector {
@@ -163,14 +176,10 @@ export function createThreadStateProjector(
               kind: "waiting_approval",
               message: input.approval.summary,
             };
-          } else if (
-            nextView.recoveryFacts?.blocking?.kind === "waiting_approval"
-            && nextView.recoveryFacts.blocking.sourceTaskId === input.approval.taskId
-            && !nextView.recoveryFacts.pendingApprovals.some(
-              (approval) => approval.taskId === input.approval.taskId,
-            )
-          ) {
-            nextView.recoveryFacts!.blocking = undefined;
+          } else if (nextView.recoveryFacts?.blocking?.kind === "waiting_approval") {
+            nextView.recoveryFacts!.blocking = deriveBlockingFromPendingApprovals(
+              nextView.recoveryFacts!,
+            );
           }
 
           return nextView;

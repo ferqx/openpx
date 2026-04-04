@@ -140,4 +140,49 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.events).toEqual([]);
     expect(narrative.revision).toBe(3);
   });
+
+  test("preserves legacy summary-only threads on non-narrative task updates", async () => {
+    const baseThread = {
+      ...createThread("thread-3", "/workspace", "project-1"),
+      narrativeSummary: "Legacy summary",
+      narrativeRevision: 4,
+    };
+    const threads = new Map([[baseThread.threadId, baseThread]]);
+
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-running",
+        threadId: baseThread.threadId,
+        summary: "Still scanning the repository.",
+        status: "running",
+      }),
+    );
+
+    const persistedThread = threads.get(baseThread.threadId);
+    expect(persistedThread?.narrativeSummary).toBe("Legacy summary");
+    expect(persistedThread?.narrativeRevision).toBe(4);
+
+    const narrative = await narrativeService.getNarrative(baseThread.threadId);
+    expect(narrative.summary).toBe("Legacy summary");
+    expect(narrative.events).toEqual([]);
+    expect(narrative.revision).toBe(4);
+  });
 });

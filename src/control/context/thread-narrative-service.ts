@@ -60,12 +60,22 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     revision: number,
     fallbackSummary: string,
   ): ThreadNarrative {
+    const hasNarrativeState =
+      (view.narrativeState?.taskSummaries.length ?? 0) > 0
+      || (view.narrativeState?.threadSummary.length ?? 0) > 0;
+
     return {
       threadId,
-      summary: view.narrativeState?.threadSummary ?? fallbackSummary,
+      summary: hasNarrativeState
+        ? (view.narrativeState?.threadSummary ?? "")
+        : fallbackSummary,
       events: [],
       revision,
     };
+  }
+
+  function getTaskSummaries(view: DerivedThreadView): string[] {
+    return view.narrativeState?.taskSummaries ?? [];
   }
 
   async function loadBaseView(threadId: string): Promise<{
@@ -106,8 +116,11 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
         kind: "task",
         task,
       });
+      const previousTaskSummaries = getTaskSummaries(view);
+      const nextTaskSummaries = getTaskSummaries(nextView);
       const narrativeChanged =
-        nextView.narrativeState?.taskSummaries.length !== view.narrativeState?.taskSummaries.length;
+        previousTaskSummaries.length !== nextTaskSummaries.length
+        || previousTaskSummaries.some((summary, index) => summary !== nextTaskSummaries[index]);
 
       derivedViews.set(task.threadId, nextView);
 
