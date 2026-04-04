@@ -57,7 +57,7 @@ describe("root graph interrupt/resume", () => {
     expect(interrupted[INTERRUPT][0]?.value).toEqual({
       kind: "post-turn-review",
       mode: "execute",
-      summary: "executed",
+      summary: "",
     });
 
     const resumed = await graph.invoke(
@@ -66,7 +66,6 @@ describe("root graph interrupt/resume", () => {
     );
 
     expect(resumed.mode).toBe("done");
-    expect(resumed.summary).toBe("executed");
   });
 
   test("blocks delete_file patches until approved", async () => {

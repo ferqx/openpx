@@ -1,7 +1,7 @@
 import { interrupt } from "@langchain/langgraph";
 import type { RootMode } from "../context";
 
-export function postTurnGuardNode(state: { mode: RootMode; summary: string }) {
+export function postTurnGuardNode(state: { mode: RootMode; recoveryFacts?: any }) {
   if (state.mode === "done" || state.mode === "completed" as any) {
     return { mode: "done" as const };
   }
@@ -9,7 +9,7 @@ export function postTurnGuardNode(state: { mode: RootMode; summary: string }) {
   const resumeValue = interrupt({
     kind: "post-turn-review",
     mode: state.mode,
-    summary: state.summary,
+    summary: state.recoveryFacts?.activeTask?.summary ?? "",
   });
 
   return {
