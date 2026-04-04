@@ -165,6 +165,11 @@ export function createThreadStateProjector(
               status: input.task.status,
               summary: input.task.summary,
             };
+            if (nextView.recoveryFacts?.blocking?.sourceTaskId === input.task.taskId) {
+              nextView.recoveryFacts!.blocking = deriveBlockingFromPendingApprovals(
+                nextView.recoveryFacts!,
+              );
+            }
           } else if (
             input.task.status === "cancelled"
             && shouldClearTaskRecoveryState(nextView, input.task)

@@ -365,4 +365,56 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.summary).toBe("Legacy summary; First derived summary");
     expect(narrative.revision).toBe(3);
   });
+
+  test("extends legacy summary after a prior non-narrative update persisted an empty derived shell", async () => {
+    const baseThread = {
+      ...createThread("thread-7", "/workspace", "project-1"),
+      narrativeSummary: "Legacy summary",
+      narrativeRevision: 5,
+    };
+    const threads = new Map([[baseThread.threadId, baseThread]]);
+
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-running-legacy",
+        threadId: baseThread.threadId,
+        summary: "Still preparing changes.",
+        status: "running",
+      }),
+    );
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-completed-legacy",
+        threadId: baseThread.threadId,
+        summary: "First derived summary",
+        status: "completed",
+      }),
+    );
+
+    const persistedThread = threads.get(baseThread.threadId);
+    expect(persistedThread?.narrativeSummary).toBe("Legacy summary; First derived summary");
+    expect(persistedThread?.narrativeRevision).toBe(6);
+    expect(persistedThread?.narrativeState?.threadSummary).toBe(
+      "Legacy summary; First derived summary",
+    );
+  });
 });

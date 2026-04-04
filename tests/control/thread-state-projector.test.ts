@@ -502,4 +502,41 @@ describe("ThreadStateProjector", () => {
     expect(approvedView.recoveryFacts?.blocking).toBeUndefined();
     expect(approvedView.recoveryFacts?.activeTask).toBeUndefined();
   });
+
+  test("running task clears stale same-task blocking when it resumes", () => {
+    const projector = createThreadStateProjector();
+    const blockedView = projector.project(
+      {},
+      {
+        kind: "task",
+        task: createControlTask({
+          taskId: "task-unblock-1",
+          threadId: "thread-1",
+          summary: "Waiting on temporary blocker.",
+          status: "blocked",
+          blockingReason: {
+            kind: "human_recovery",
+            message: "Waiting on temporary blocker.",
+          },
+        }),
+      },
+    );
+
+    const runningView = projector.project(blockedView, {
+      kind: "task",
+      task: createControlTask({
+        taskId: "task-unblock-1",
+        threadId: "thread-1",
+        summary: "Work resumed.",
+        status: "running",
+      }),
+    });
+
+    expect(runningView.recoveryFacts?.activeTask).toEqual({
+      taskId: "task-unblock-1",
+      status: "running",
+      summary: "Work resumed.",
+    });
+    expect(runningView.recoveryFacts?.blocking).toBeUndefined();
+  });
 });

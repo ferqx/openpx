@@ -78,6 +78,18 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     return view.narrativeState?.taskSummaries ?? [];
   }
 
+  function hasMeaningfulNarrativeState(view: DerivedThreadView | undefined): boolean {
+    return Boolean(
+      view?.narrativeState
+      && (
+        (view.narrativeState.threadSummary.length ?? 0) > 0
+        || view.narrativeState.taskSummaries.length > 0
+        || view.narrativeState.notableEvents.length > 0
+        || view.narrativeState.openLoops.length > 0
+      ),
+    );
+  }
+
   function appendSummary(base: string, next: string): string {
     return base ? `${base}; ${next}` : next;
   }
@@ -195,7 +207,7 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
       view,
       revision,
       persistedSummary,
-      hasPersistedNarrativeState: Boolean(persistedThread?.narrativeState),
+      hasPersistedNarrativeState: hasMeaningfulNarrativeState(persistedView),
     };
   }
 
