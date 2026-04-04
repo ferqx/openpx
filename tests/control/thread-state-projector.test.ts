@@ -76,4 +76,57 @@ describe("ThreadStateProjector", () => {
     expect(view.workingSetWindow?.toolResults).toEqual([toolResult]);
     expect(view.narrativeState?.taskSummaries ?? []).toHaveLength(0);
   });
+
+  test("projects answers into durable answer recovery facts and thread narrative", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {},
+      {
+        kind: "answer",
+        answerId: "answer-1",
+        summary: "Runtime snapshot path updated.",
+      },
+    );
+
+    expect(view.recoveryFacts?.latestDurableAnswer).toEqual({
+      answerId: "answer-1",
+      summary: "Runtime snapshot path updated.",
+    });
+    expect(view.narrativeState?.notableEvents).toContain("Runtime snapshot path updated.");
+  });
+
+  test("projects blocking events into recovery facts and narrative state", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {},
+      {
+        kind: "event",
+        eventType: "thread.waiting_approval",
+        sourceTaskId: "task-9",
+        summary: "Waiting on cleanup approval.",
+      },
+    );
+
+    expect(view.recoveryFacts?.blocking).toEqual({
+      sourceTaskId: "task-9",
+      kind: "waiting_approval",
+      message: "Waiting on cleanup approval.",
+    });
+    expect(view.narrativeState?.notableEvents).toContain("Waiting on cleanup approval.");
+  });
+
+  test("projects transient events into the working-set window", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {},
+      {
+        kind: "event",
+        eventType: "thread.tick",
+        summary: "Executor heartbeat",
+      },
+    );
+
+    expect(view.workingSetWindow?.messages).toContain("Executor heartbeat");
+    expect(view.recoveryFacts?.blocking).toBeUndefined();
+  });
 });

@@ -9,6 +9,8 @@ import type { ControlTask } from "../tasks/task-types";
 export type ThreadProjectionInput =
   | { kind: "task"; task: ControlTask }
   | { kind: "approval"; approval: ApprovalRequest }
+  | { kind: "answer"; answerId: string; summary: string }
+  | { kind: "event"; eventType: string; summary: string; sourceTaskId?: string }
   | { kind: "tool_result"; content: string }
   | { kind: "verifier_feedback"; content: string }
   | { kind: "message"; content: string }
@@ -121,6 +123,52 @@ export function createThreadStateProjector(
               kind: "waiting_approval",
               message: input.approval.summary,
             };
+          }
+
+          return nextView;
+        }
+
+        case "answer": {
+          const roles = classifier.classifyAnswer(input.summary);
+
+          if (roles.includes("RecoveryFact")) {
+            nextView.recoveryFacts!.latestDurableAnswer = {
+              answerId: input.answerId,
+              summary: input.summary,
+            };
+          }
+
+          if (roles.includes("NarrativeCandidate")) {
+            nextView.narrativeState!.notableEvents.push(input.summary);
+          }
+
+          return nextView;
+        }
+
+        case "event": {
+          const roles = classifier.classifyEvent({
+            type: input.eventType,
+            summary: input.summary,
+          });
+
+          if (roles.includes("RecoveryFact")) {
+            const blockingKind =
+              input.eventType === "thread.waiting_approval"
+                ? "waiting_approval"
+                : "human_recovery";
+            nextView.recoveryFacts!.blocking = {
+              sourceTaskId: input.sourceTaskId ?? "event",
+              kind: blockingKind,
+              message: input.summary,
+            };
+          }
+
+          if (roles.includes("NarrativeCandidate")) {
+            nextView.narrativeState!.notableEvents.push(input.summary);
+          }
+
+          if (roles.includes("WorkingSetOnly")) {
+            nextView.workingSetWindow!.messages.push(input.summary);
           }
 
           return nextView;
