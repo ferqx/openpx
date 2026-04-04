@@ -28,7 +28,15 @@ export function buildRuntimeSnapshot(input: {
     recommendationReason: input.activeThread.recommendationReason,
     narrativeSummary: input.narrativeSummary,
     blockingReason: activeBlockingReason,
-    threads: input.threads,
+    threads: input.threads.map((thread) => ({
+      threadId: thread.threadId,
+      workspaceRoot: thread.workspaceRoot,
+      projectId: thread.projectId,
+      revision: thread.revision,
+      status: thread.status,
+      narrativeSummary: thread.narrativeSummary,
+      narrativeRevision: thread.narrativeRevision,
+    })),
     tasks: input.tasks.map((task) => ({
       taskId: task.taskId,
       status: task.status,

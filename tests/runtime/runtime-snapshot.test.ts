@@ -22,6 +22,8 @@ describe("Runtime snapshot", () => {
           projectId: "project-1",
           revision: 2,
           status: "completed",
+          narrativeSummary: "Completed repo scan and isolated the runtime recovery path.",
+          narrativeRevision: 1,
         },
       ],
       tasks: [],
@@ -32,5 +34,6 @@ describe("Runtime snapshot", () => {
     });
 
     expect(snapshot.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
+    expect(snapshot.threads[0]?.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
   });
 });

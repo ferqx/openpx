@@ -28,6 +28,7 @@ export function Screen(input: {
   modelStatus?: string;
   runtimeStatus?: string;
   recommendationReason?: string;
+  narrativeSummary?: string;
   onSubmit?: (text: string) => Promise<void> | void;
 }) {
   return (
@@ -41,6 +42,13 @@ export function Screen(input: {
         </Box>
         <Text color={theme.colors.dim}>{input.workspaceRoot ?? "unknown"}</Text>
       </Box>
+
+      {input.narrativeSummary ? (
+        <Box marginBottom={1}>
+          <Text color={theme.colors.dim}>Thread:</Text>
+          <Text> {input.narrativeSummary}</Text>
+        </Box>
+      ) : null}
 
       {/* Main Interaction Stream */}
       <Box flexGrow={1} flexDirection="column">

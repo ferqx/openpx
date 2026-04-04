@@ -25,6 +25,8 @@ export const runtimeThreadSummarySchema = z.object({
   projectId: z.string(),
   revision: z.number(),
   status: threadStatusSchema,
+  narrativeSummary: z.string().optional(),
+  narrativeRevision: z.number().optional(),
 });
 
 export const runtimeTaskSummarySchema = z.object({

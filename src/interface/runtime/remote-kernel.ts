@@ -73,7 +73,12 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
         const snapshot = await client.getSnapshot();
         const session = deriveRuntimeSession(snapshot);
         const lines = session.threads.map((thread) =>
-          `${thread.threadId}${thread.threadId === session.threadId ? " (active)" : ""} [${thread.status}]`,
+          [
+            `${thread.threadId}${thread.threadId === session.threadId ? " (active)" : ""} [${thread.status}]`,
+            thread.narrativeSummary,
+          ]
+            .filter(Boolean)
+            .join(" "),
         );
         return {
           ...session,

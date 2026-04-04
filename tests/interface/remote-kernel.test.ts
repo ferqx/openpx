@@ -73,4 +73,63 @@ describe("Remote Kernel", () => {
       threads: [],
     });
   });
+
+  test("formats thread list output with durable narrative summaries", async () => {
+    const kernel = createRemoteKernel({
+      async getSnapshot() {
+        return {
+          protocolVersion: "1.0.0",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          lastEventSeq: 3,
+          activeThreadId: "thread-2",
+          recommendationReason: undefined,
+          narrativeSummary: "Current active thread summary.",
+          blockingReason: undefined,
+          threads: [
+            {
+              threadId: "thread-2",
+              workspaceRoot: "/tmp/workspace",
+              projectId: "project-1",
+              revision: 4,
+              status: "active",
+              narrativeSummary: "Current active thread summary.",
+            },
+            {
+              threadId: "thread-1",
+              workspaceRoot: "/tmp/workspace",
+              projectId: "project-1",
+              revision: 2,
+              status: "completed",
+              narrativeSummary: "Completed repo scan and isolated runtime recovery work.",
+            },
+          ],
+          tasks: [],
+          pendingApprovals: [],
+          answers: [],
+        };
+      },
+      async sendCommand() {
+        return undefined;
+      },
+      subscribeEvents() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            await new Promise(() => undefined);
+          },
+        };
+      },
+    } as any);
+
+    const result = await kernel.handleCommand({ type: "thread_list" });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      threadId: "thread-2",
+    });
+    expect((result as { summary: string }).summary).toContain("thread-2 (active) [active] Current active thread summary.");
+    expect((result as { summary: string }).summary).toContain(
+      "thread-1 [completed] Completed repo scan and isolated runtime recovery work.",
+    );
+  });
 });

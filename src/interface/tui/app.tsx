@@ -22,6 +22,7 @@ type KernelApproval = {
 type KernelResult = {
   status?: string;
   summary?: string;
+  narrativeSummary?: string;
   tasks?: KernelTask[];
   approvals?: KernelApproval[];
   workspaceRoot?: string;
@@ -59,6 +60,7 @@ export function App(input: { kernel: TuiKernel }) {
   const [runtimeStatus, setRuntimeStatus] = useState<string>("disconnected");
   const [recommendationReason, setRecommendationReason] = useState<string | undefined>();
   const [blockingReason, setBlockingReason] = useState<KernelResult["blockingReason"]>();
+  const [narrativeSummary, setNarrativeSummary] = useState<string | undefined>();
   const [answer, setAnswer] = useState({
     summary: "Awaiting answer",
     changes: [] as Array<{ path: string; additions: number; deletions: number }>,
@@ -154,6 +156,7 @@ export function App(input: { kernel: TuiKernel }) {
     if (result.threadId) setThreadId(result.threadId);
     setRecommendationReason(result.recommendationReason);
     setBlockingReason(result.blockingReason);
+    setNarrativeSummary(result.narrativeSummary);
 
     if (result.status === "waiting_approval") {
       setComposerMode("confirm");
@@ -231,6 +234,7 @@ export function App(input: { kernel: TuiKernel }) {
       runtimeStatus={runtimeStatus}
       recommendationReason={recommendationReason}
       blockingReason={blockingReason}
+      narrativeSummary={narrativeSummary}
       onSubmit={submit}
     />
   );

@@ -153,6 +153,39 @@ describe("TUI App", () => {
     expect(frame).toMatch(/Confirm work\?.*\[Y\/n\]/);
   });
 
+  test("shows the active thread narrative summary when no fresh answer is available", async () => {
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const kernel: TuiKernel = {
+      events: {
+        subscribe() {
+          return () => undefined;
+        },
+      },
+      async hydrateSession() {
+        return {
+          status: "completed",
+          summary: "Awaiting answer",
+          narrativeSummary: "Completed repo scan and isolated runtime recovery work.",
+          tasks: [],
+          approvals: [],
+        };
+      },
+      async handleCommand() {
+        return { status: "completed" };
+      },
+    };
+
+    const { lastFrame } = render(<App kernel={kernel} />);
+    await tick();
+    await tick();
+    await tick();
+
+    const frame = lastFrame();
+
+    expect(frame).toContain("Thread:");
+    expect(frame).toContain("Completed repo scan and isolated runtime recovery work.");
+  });
+
   test("renders a manual-recovery shell when the hydrated thread is blocked", async () => {
     const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     const kernel: TuiKernel = {
