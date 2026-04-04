@@ -57,19 +57,12 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
 
   function createNarrativeFromView(
     threadId: string,
-    view: DerivedThreadView,
     revision: number,
     fallbackSummary: string,
   ): ThreadNarrative {
-    const hasNarrativeState =
-      (view.narrativeState?.taskSummaries.length ?? 0) > 0
-      || (view.narrativeState?.threadSummary.length ?? 0) > 0;
-
     return {
       threadId,
-      summary: hasNarrativeState
-        ? (view.narrativeState?.threadSummary ?? "")
-        : fallbackSummary,
+      summary: fallbackSummary,
       events: [],
       revision,
     };
@@ -79,58 +72,8 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     return view.narrativeState?.taskSummaries ?? [];
   }
 
-  function hasMeaningfulNarrativeState(view: DerivedThreadView | undefined): boolean {
-    return Boolean(
-      view?.narrativeState
-      && (
-        (view.narrativeState.threadSummary.length ?? 0) > 0
-        || view.narrativeState.taskSummaries.length > 0
-        || view.narrativeState.notableEvents.length > 0
-        || view.narrativeState.openLoops.length > 0
-      ),
-    );
-  }
-
   function appendSummary(base: string, next: string): string {
     return base ? `${base}; ${next}` : next;
-  }
-
-  function isStableNarrativeStatus(status: ControlTask["status"]): boolean {
-    return status === "completed" || status === "failed";
-  }
-
-  function cloneView(view: DerivedThreadView): DerivedThreadView {
-    return {
-      recoveryFacts: view.recoveryFacts
-        ? {
-            ...view.recoveryFacts,
-            activeTask: view.recoveryFacts.activeTask ? { ...view.recoveryFacts.activeTask } : undefined,
-            lastStableTask: view.recoveryFacts.lastStableTask ? { ...view.recoveryFacts.lastStableTask } : undefined,
-            blocking: view.recoveryFacts.blocking ? { ...view.recoveryFacts.blocking } : undefined,
-            pendingApprovals: [...view.recoveryFacts.pendingApprovals],
-            latestDurableAnswer: view.recoveryFacts.latestDurableAnswer
-              ? { ...view.recoveryFacts.latestDurableAnswer }
-              : undefined,
-            resumeAnchor: view.recoveryFacts.resumeAnchor ? { ...view.recoveryFacts.resumeAnchor } : undefined,
-          }
-        : undefined,
-      narrativeState: view.narrativeState
-        ? {
-            threadSummary: view.narrativeState.threadSummary,
-            taskSummaries: [...view.narrativeState.taskSummaries],
-            openLoops: [...view.narrativeState.openLoops],
-            notableEvents: [...view.narrativeState.notableEvents],
-          }
-        : undefined,
-      workingSetWindow: view.workingSetWindow
-        ? {
-            messages: [...view.workingSetWindow.messages],
-            toolResults: [...view.workingSetWindow.toolResults],
-            verifierFeedback: [...view.workingSetWindow.verifierFeedback],
-            retrievedMemories: [...view.workingSetWindow.retrievedMemories],
-          }
-        : undefined,
-    };
   }
 
   function mergeViews(
@@ -206,8 +149,6 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     narrative: ThreadNarrative;
     view: DerivedThreadView;
     revision: number;
-    persistedSummary: string;
-    hasPersistedNarrativeState: boolean;
   }> {
     const inMemoryNarrative = narratives.get(threadId);
     const inMemoryView = derivedViews.get(threadId);
@@ -226,7 +167,6 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     const persistedRevision = persistedThread?.narrativeRevision ?? 0;
     const persistedNarrative = createNarrativeFromView(
       threadId,
-      view,
       persistedRevision,
       persistedSummary,
     );
@@ -245,8 +185,6 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
       narrative,
       view,
       revision,
-      persistedSummary,
-      hasPersistedNarrativeState: hasMeaningfulNarrativeState(persistedView),
     };
   }
 
@@ -266,8 +204,6 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
           narrative,
           view,
           revision,
-          persistedSummary,
-          hasPersistedNarrativeState,
         } = await loadBaseView(task.threadId);
         const nextView = projector.project(view, {
           kind: "task",
@@ -277,7 +213,7 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
         const previousTaskSummaries = getTaskSummaries(view);
         const nextTaskSummaries = getTaskSummaries(nextView);
         const narrativeChanged =
-          isStableNarrativeStatus(task.status)
+          (task.status === "completed" || task.status === "failed")
           && (
             previousTaskSummaries.length !== nextTaskSummaries.length
             || previousTaskSummaries.some((summary, index) => summary !== nextTaskSummaries[index])
@@ -312,18 +248,7 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
           updatedEvents.splice(0, updatedEvents.length - maxEvents);
         }
 
-        const nextSummary =
-          !hasPersistedNarrativeState
-          && persistedSummary.length > 0
-          && (view.narrativeState?.taskSummaries.length ?? 0) === 0
-            ? appendSummary(persistedSummary, task.summary)
-            : (nextView.narrativeState?.threadSummary ?? "");
-        if (
-          nextSummary !== nextView.narrativeState?.threadSummary
-          && nextView.narrativeState
-        ) {
-          nextView.narrativeState.threadSummary = nextSummary;
-        }
+        const nextSummary = appendSummary(narrative.summary, task.summary);
 
         const nextNarrative = {
           ...narrative,

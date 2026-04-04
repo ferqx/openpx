@@ -59,7 +59,7 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.events[0]?.summary).toBe("Stable progress recorded");
   });
 
-  test("persists blocked-task derived narrative while keeping compatibility narrative unchanged", async () => {
+  test("persists blocked-task derived narrative while keeping compatibility narrative unchanged across restart", async () => {
     const threads = new Map<string, ReturnType<typeof createThread>>();
     const baseThread = createThread("thread-blocked-persisted", "/workspace", "project-1");
     threads.set(baseThread.threadId, baseThread);
@@ -110,9 +110,28 @@ describe("ThreadNarrativeService", () => {
     );
     expect(persistedThread?.narrativeSummary).toBe("Stable progress recorded");
 
-    const narrative = await narrativeService.getNarrative(baseThread.threadId);
+    const reloadedService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    const narrative = await reloadedService.getNarrative(baseThread.threadId);
     expect(narrative.summary).toBe("Stable progress recorded");
-    expect(narrative.events).toHaveLength(1);
+    expect(narrative.events).toEqual([]);
+    expect(narrative.revision).toBe(1);
   });
 
   test("maintains a curated history of stable task outcomes", async () => {
@@ -187,14 +206,14 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.revision).toBe(1);
   });
 
-  test("reads existing persisted narrative as summary-only compatibility state", async () => {
+  test("reads compatibility narrative from narrativeSummary and revision instead of raw derived state", async () => {
     const baseThread = {
       ...createThread("thread-2", "/workspace", "project-1"),
       narrativeSummary: "Stored summary",
       narrativeRevision: 3,
       narrativeState: {
-        threadSummary: "Stored summary",
-        taskSummaries: ["Stored summary"],
+        threadSummary: "Stored summary; Blocked follow-up",
+        taskSummaries: ["Stored summary", "Blocked follow-up"],
         openLoops: ["Need approval on cleanup"],
         notableEvents: [],
       },
@@ -441,9 +460,7 @@ describe("ThreadNarrativeService", () => {
     const persistedThread = threads.get(baseThread.threadId);
     expect(persistedThread?.narrativeSummary).toBe("Legacy summary; First derived summary");
     expect(persistedThread?.narrativeRevision).toBe(3);
-    expect(persistedThread?.narrativeState?.threadSummary).toBe(
-      "Legacy summary; First derived summary",
-    );
+    expect(persistedThread?.narrativeState?.threadSummary).toBe("First derived summary");
 
     const narrative = await narrativeService.getNarrative(baseThread.threadId);
     expect(narrative.summary).toBe("Legacy summary; First derived summary");
@@ -497,9 +514,54 @@ describe("ThreadNarrativeService", () => {
     const persistedThread = threads.get(baseThread.threadId);
     expect(persistedThread?.narrativeSummary).toBe("Legacy summary; First derived summary");
     expect(persistedThread?.narrativeRevision).toBe(6);
-    expect(persistedThread?.narrativeState?.threadSummary).toBe(
-      "Legacy summary; First derived summary",
+    expect(persistedThread?.narrativeState?.threadSummary).toBe("First derived summary");
+  });
+
+  test("blocked then completed flow only exposes the stable completed narrative", async () => {
+    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const baseThread = createThread("thread-blocked-then-completed", "/workspace", "project-1");
+    threads.set(baseThread.threadId, baseThread);
+
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-block-first",
+        threadId: baseThread.threadId,
+        summary: "Blocked waiting on approval",
+        status: "blocked",
+      }),
     );
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-block-first",
+        threadId: baseThread.threadId,
+        summary: "Completed after retry",
+        status: "completed",
+      }),
+    );
+
+    const narrative = await narrativeService.getNarrative(baseThread.threadId);
+    expect(narrative.summary).toBe("Completed after retry");
+    expect(narrative.events).toHaveLength(1);
+    expect(narrative.events[0]?.summary).toBe("Completed after retry");
   });
 
   test("serializes overlapping updates per thread so both stable updates survive", async () => {
