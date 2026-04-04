@@ -24,6 +24,7 @@ import { createWorkerScratchPolicy } from "../control/context/worker-scratch-pol
 import { MemoryConsolidator } from "../control/context/memory-consolidator";
 import { transitionThread } from "../domain/thread";
 import { createEvent } from "../domain/event";
+import { compactThreadView } from "../control/context/thread-compaction-policy";
 
 type AppStores = ReturnType<typeof createStores>;
 
@@ -182,9 +183,39 @@ function parseDeleteRequest(input: string, workspaceRoot: string) {
   };
 }
 
+import { createThreadStateProjector } from "../control/context/thread-state-projector";
+
 async function saveTaskStatus(stores: AppStores, task: ControlTask, status: ControlTask["status"]): Promise<ControlTask> {
   const next = { ...task, status };
   await stores.taskStore.save(next);
+
+  // Update thread view via projector
+  const thread = await stores.threadStore.get(task.threadId);
+  if (thread) {
+    const projector = createThreadStateProjector();
+    const nextView = projector.project(
+      {
+        recoveryFacts: thread.recoveryFacts,
+        narrativeState: thread.narrativeState,
+        workingSetWindow: thread.workingSetWindow,
+      },
+      { kind: "task", task: next }
+    );
+
+    // Apply boundary compaction when a task blocks or completes
+    const shouldCompact = status === "blocked" || status === "completed" || status === "cancelled" || status === "failed";
+    const compactedView = shouldCompact 
+      ? compactThreadView(nextView, { trigger: "boundary" })
+      : nextView;
+
+    await stores.threadStore.save({
+      ...thread,
+      recoveryFacts: compactedView.recoveryFacts,
+      narrativeState: compactedView.narrativeState,
+      workingSetWindow: compactedView.workingSetWindow,
+    });
+  }
+
   return next;
 }
 
@@ -279,6 +310,8 @@ async function createControlPlane(input: {
   });
   const rootGraph = await createRootGraph({
     checkpointer: input.checkpointer,
+    compactionPolicy: { compact: compactThreadView },
+    getThreadView: async (threadId: string) => input.stores.threadStore.get(threadId),
     planner: async ({ input: text, threadId, taskId }) => {
       // Retrieve project memory for context
       const memories = await input.stores.memoryStore.search("project", { limit: 5 });

@@ -21,7 +21,15 @@ export function buildRuntimeSnapshot(input: {
   fallbackLastEventSeq: number;
   narrativeSummary?: string;
 }): RuntimeSnapshot {
-  const activeBlockingReason = input.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
+  const activeBlockingReason = input.activeThread.recoveryFacts?.blocking
+    ? {
+        kind: input.activeThread.recoveryFacts.blocking.kind,
+        message: input.activeThread.recoveryFacts.blocking.message,
+      }
+    : input.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
+
+  const narrativeSummary = input.activeThread.narrativeState?.threadSummary || input.narrativeSummary;
+
   const lastEventSeq = getStoredEventSequence(input.events.at(-1)) ?? input.fallbackLastEventSeq;
 
   return {
@@ -31,7 +39,7 @@ export function buildRuntimeSnapshot(input: {
     lastEventSeq,
     activeThreadId: input.activeThread.threadId,
     recommendationReason: input.activeThread.recommendationReason,
-    narrativeSummary: input.narrativeSummary,
+    narrativeSummary,
     blockingReason: activeBlockingReason,
     threads: input.threads.map((thread) => ({
       threadId: thread.threadId,
