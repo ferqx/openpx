@@ -26,6 +26,6 @@ export function updateTaskWorkingState(
   return {
     ...state,
     ...update,
-    scratch: update.scratch ? [...state.scratch, ...update.scratch] : state.scratch,
+    scratch: update.scratch ? [...state.scratch, ...update.scratch].slice(-10) : state.scratch,
   };
 }
