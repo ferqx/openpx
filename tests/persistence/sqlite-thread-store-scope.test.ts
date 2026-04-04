@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { SqliteThreadStore } from "../../src/persistence/sqlite/sqlite-thread-store";
 import { createThread } from "../../src/domain/thread";
 import { Database } from "bun:sqlite";
+import { migrateSqlite } from "../../src/persistence/sqlite/sqlite-migrator";
 
 describe("SqliteThreadStore Scope", () => {
   let store: SqliteThreadStore;
@@ -108,9 +109,121 @@ describe("SqliteThreadStore Scope", () => {
     await store.save(thread);
 
     const reloaded = await store.get(thread.threadId);
-    expect((reloaded as any)?.recoveryFacts?.blocking?.kind).toBe("human_recovery");
-    expect((reloaded as any)?.narrativeState?.threadSummary).toContain("blocked");
-    expect((reloaded as any)?.workingSetWindow?.messages).toHaveLength(1);
+    expect(reloaded?.recoveryFacts?.blocking?.kind).toBe("human_recovery");
+    expect(reloaded?.narrativeState?.threadSummary).toContain("blocked");
+    expect(reloaded?.workingSetWindow?.messages).toHaveLength(1);
+  });
+
+  test("migrates an existing threads table without losing rows and can round-trip derived thread state", async () => {
+    const legacyDb = new Database(":memory:");
+    legacyDb.run(`
+      CREATE TABLE threads (
+        thread_id TEXT PRIMARY KEY,
+        workspace_root TEXT,
+        project_id TEXT,
+        revision INTEGER DEFAULT 1,
+        status TEXT NOT NULL,
+        updated_at TEXT,
+        recommendation_reason TEXT,
+        narrative_summary TEXT,
+        narrative_revision INTEGER DEFAULT 0
+      )
+    `);
+    legacyDb.run(
+      `INSERT INTO threads (
+         thread_id,
+         workspace_root,
+         project_id,
+         revision,
+         status,
+         updated_at,
+         recommendation_reason,
+         narrative_summary,
+         narrative_revision
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "legacy-thread",
+        "/legacy/workspace",
+        "legacy-project",
+        3,
+        "active",
+        "2026-04-04T00:00:00.000Z",
+        "legacy reason",
+        "legacy summary",
+        4,
+      ],
+    );
+
+    migrateSqlite(legacyDb);
+
+    const legacyRow = legacyDb
+      .query<{ thread_id: string }, []>("SELECT thread_id FROM threads WHERE thread_id = 'legacy-thread'")
+      .get();
+    expect(legacyRow?.thread_id).toBe("legacy-thread");
+
+    const legacyStore = new SqliteThreadStore(legacyDb);
+    const thread = {
+      ...createThread("legacy-thread"),
+      workspaceRoot: "/legacy/workspace",
+      projectId: "legacy-project",
+      revision: 4,
+      status: "blocked" as const,
+      recoveryFacts: {
+        pendingApprovals: [],
+        blocking: {
+          sourceTaskId: "task-legacy",
+          kind: "waiting_approval",
+          message: "Awaiting approval.",
+        },
+      },
+      narrativeState: {
+        threadSummary: "Legacy thread summary.",
+        taskSummaries: ["task summary"],
+        openLoops: [],
+        notableEvents: [],
+      },
+      workingSetWindow: {
+        messages: ["message"],
+        toolResults: [],
+        verifierFeedback: [],
+        retrievedMemories: [],
+      },
+    };
+
+    await legacyStore.save(thread);
+
+    const reloaded = await legacyStore.get("legacy-thread");
+    expect(reloaded?.threadId).toBe("legacy-thread");
+    expect(reloaded?.recoveryFacts?.blocking?.kind).toBe("waiting_approval");
+    expect(reloaded?.narrativeState?.threadSummary).toBe("Legacy thread summary.");
+    expect(reloaded?.workingSetWindow?.messages).toEqual(["message"]);
+
+    await legacyStore.close();
+    legacyDb.close();
+  });
+
+  test("ignores malformed derived-state JSON when reading a thread", async () => {
+    const thread = {
+      ...createThread("thread-malformed-json"),
+      workspaceRoot: "/repo",
+      projectId: "openwenpx",
+      revision: 1,
+      narrativeSummary: "Valid narrative summary.",
+      narrativeRevision: 1,
+    };
+
+    await store.save(thread);
+    db.run(
+      `UPDATE threads
+       SET recovery_facts_json = ?
+       WHERE thread_id = ?`,
+      ["{not valid json", thread.threadId],
+    );
+
+    const reloaded = await store.get(thread.threadId);
+    expect(reloaded?.threadId).toBe("thread-malformed-json");
+    expect(reloaded?.narrativeSummary).toBe("Valid narrative summary.");
+    expect(reloaded?.recoveryFacts).toBeUndefined();
   });
 
   test("looks up latest thread within a specific workspace and project scope", async () => {

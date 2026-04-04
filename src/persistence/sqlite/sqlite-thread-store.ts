@@ -210,5 +210,9 @@ function parseJsonColumn<T>(value: string | null): T | undefined {
     return undefined;
   }
 
-  return JSON.parse(value) as T;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
 }
