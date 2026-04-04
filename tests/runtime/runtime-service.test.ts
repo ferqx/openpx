@@ -3,6 +3,7 @@ import { createRuntimeService } from "../../src/runtime/service/runtime-service"
 import { createAppContext } from "../../src/app/bootstrap";
 import { createThread } from "../../src/domain/thread";
 import { createTask } from "../../src/domain/task";
+import { createApprovalRequest } from "../../src/domain/approval";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -99,6 +100,23 @@ describe("RuntimeService", () => {
         message: "Manual recovery required before continuing this thread.",
       },
     });
+    await app.stores.approvalStore.save(
+      createApprovalRequest({
+        approvalRequestId: "approval-blocked-1",
+        threadId: thread.threadId,
+        taskId: task.taskId,
+        toolCallId: "tool-call-1",
+        toolRequest: {
+          toolCallId: "tool-call-1",
+          threadId: thread.threadId,
+          taskId: task.taskId,
+          toolName: "apply_patch",
+          args: {},
+        },
+        summary: "Review risky patch before continuing",
+        risk: "workspace_write",
+      }),
+    );
 
     const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
     const snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
@@ -111,5 +129,7 @@ describe("RuntimeService", () => {
       kind: "human_recovery",
       message: "Manual recovery required before continuing this thread.",
     });
+    expect(snapshot.threads[0]?.pendingApprovalCount).toBe(1);
+    expect(snapshot.threads[0]?.blockingReasonKind).toBe("human_recovery");
   });
 });

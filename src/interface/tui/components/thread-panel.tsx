@@ -7,6 +7,8 @@ export type ThreadSummary = {
   status: string;
   narrativeSummary?: string;
   active?: boolean;
+  pendingApprovalCount?: number;
+  blockingReasonKind?: "waiting_approval" | "human_recovery";
 };
 
 function getStatusIndicator(status: string) {
@@ -38,6 +40,8 @@ export function ThreadPanel(input: { threads: ThreadSummary[] }) {
               {thread.id}
               {thread.active ? " (active)" : ""} [{thread.status}]
             </Text>
+            {thread.pendingApprovalCount ? <Text color="yellow">approval:{thread.pendingApprovalCount}</Text> : null}
+            {thread.blockingReasonKind ? <Text color="yellow">{thread.blockingReasonKind}</Text> : null}
           </Box>
           {thread.narrativeSummary ? (
             <Box marginLeft={2}>

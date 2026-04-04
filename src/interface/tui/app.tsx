@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { parseCommand } from "./commands";
 import { Screen } from "./screen";
 import type { TuiKernel, TuiKernelEvent } from "./hooks/use-kernel";
+import type { ThreadSummary } from "./components/thread-panel";
 
 type KernelTask = {
   taskId: string;
@@ -27,6 +28,8 @@ type KernelResult = {
     threadId: string;
     status: string;
     narrativeSummary?: string;
+    pendingApprovalCount?: number;
+    blockingReasonKind?: "waiting_approval" | "human_recovery";
   }>;
   tasks?: KernelTask[];
   approvals?: KernelApproval[];
@@ -66,7 +69,7 @@ export function App(input: { kernel: TuiKernel }) {
   const [recommendationReason, setRecommendationReason] = useState<string | undefined>();
   const [blockingReason, setBlockingReason] = useState<KernelResult["blockingReason"]>();
   const [narrativeSummary, setNarrativeSummary] = useState<string | undefined>();
-  const [threads, setThreads] = useState<Array<{ id: string; status: string; narrativeSummary?: string; active?: boolean }>>([]);
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [answer, setAnswer] = useState({
     summary: "Awaiting answer",
     changes: [] as Array<{ path: string; additions: number; deletions: number }>,
@@ -169,6 +172,8 @@ export function App(input: { kernel: TuiKernel }) {
         status: thread.status,
         narrativeSummary: thread.narrativeSummary,
         active: thread.threadId === result.threadId,
+        pendingApprovalCount: thread.pendingApprovalCount,
+        blockingReasonKind: thread.blockingReasonKind,
       })),
     );
 

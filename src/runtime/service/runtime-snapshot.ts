@@ -6,10 +6,15 @@ import type { RuntimeScope } from "./runtime-scope";
 import { PROTOCOL_VERSION, type RuntimeSnapshot } from "./runtime-types";
 import { getStoredEventSequence } from "./runtime-events";
 
+type RuntimeThreadView = Thread & {
+  pendingApprovalCount?: number;
+  blockingReasonKind?: "waiting_approval" | "human_recovery";
+};
+
 export function buildRuntimeSnapshot(input: {
   scope: RuntimeScope;
   activeThread: Thread;
-  threads: Thread[];
+  threads: RuntimeThreadView[];
   tasks: Task[];
   pendingApprovals: ApprovalRequest[];
   events: Event[];
@@ -36,6 +41,8 @@ export function buildRuntimeSnapshot(input: {
       status: thread.status,
       narrativeSummary: thread.narrativeSummary,
       narrativeRevision: thread.narrativeRevision,
+      pendingApprovalCount: thread.pendingApprovalCount,
+      blockingReasonKind: thread.blockingReasonKind,
     })),
     tasks: input.tasks.map((task) => ({
       taskId: task.taskId,

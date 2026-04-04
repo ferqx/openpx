@@ -90,6 +90,21 @@ export class RuntimeScopedSession {
     const activeThread = await this.ensureActiveThread();
     await this.syncLiveSeqWithEventLog();
     const threads = await this.context.stores.threadStore.listByScope(this.scope);
+    const threadViews = await Promise.all(
+      threads.map(async (thread) => {
+        const [threadTasks, threadApprovals] = await Promise.all([
+          this.context.stores.taskStore.listByThread(thread.threadId),
+          this.context.stores.approvalStore.listPendingByThread(thread.threadId),
+        ]);
+        const blockedTask = threadTasks.find((task) => task.status === "blocked" && task.blockingReason);
+
+        return {
+          ...thread,
+          pendingApprovalCount: threadApprovals.length,
+          blockingReasonKind: blockedTask?.blockingReason?.kind,
+        };
+      }),
+    );
     const tasks = await this.context.stores.taskStore.listByThread(activeThread.threadId);
     const pendingApprovals = await this.context.stores.approvalStore.listPendingByThread(activeThread.threadId);
     const events = await this.context.stores.eventLog.listByThread(activeThread.threadId);
@@ -98,7 +113,7 @@ export class RuntimeScopedSession {
     return buildRuntimeSnapshot({
       scope: this.scope,
       activeThread,
-      threads,
+      threads: threadViews,
       tasks,
       pendingApprovals,
       events,

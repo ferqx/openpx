@@ -75,6 +75,8 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
         const lines = session.threads.map((thread) =>
           [
             `${thread.threadId}${thread.threadId === session.threadId ? " (active)" : ""} [${thread.status}]`,
+            thread.pendingApprovalCount ? `approval:${thread.pendingApprovalCount}` : undefined,
+            thread.blockingReasonKind,
             thread.narrativeSummary,
           ]
             .filter(Boolean)

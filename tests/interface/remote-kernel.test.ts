@@ -94,6 +94,7 @@ describe("Remote Kernel", () => {
               revision: 4,
               status: "active",
               narrativeSummary: "Current active thread summary.",
+              pendingApprovalCount: 1,
             },
             {
               threadId: "thread-1",
@@ -102,6 +103,7 @@ describe("Remote Kernel", () => {
               revision: 2,
               status: "completed",
               narrativeSummary: "Completed repo scan and isolated runtime recovery work.",
+              blockingReasonKind: "human_recovery",
             },
           ],
           tasks: [],
@@ -127,9 +129,9 @@ describe("Remote Kernel", () => {
       status: "completed",
       threadId: "thread-2",
     });
-    expect((result as { summary: string }).summary).toContain("thread-2 (active) [active] Current active thread summary.");
+    expect((result as { summary: string }).summary).toContain("thread-2 (active) [active] approval:1 Current active thread summary.");
     expect((result as { summary: string }).summary).toContain(
-      "thread-1 [completed] Completed repo scan and isolated runtime recovery work.",
+      "thread-1 [completed] human_recovery Completed repo scan and isolated runtime recovery work.",
     );
   });
 });

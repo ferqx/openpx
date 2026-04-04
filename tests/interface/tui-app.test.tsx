@@ -208,6 +208,7 @@ describe("TUI App", () => {
               revision: 4,
               status: "active",
               narrativeSummary: "Current active runtime recovery thread.",
+              pendingApprovalCount: 1,
             },
             {
               threadId: "thread-blocked",
@@ -216,6 +217,7 @@ describe("TUI App", () => {
               revision: 2,
               status: "blocked",
               narrativeSummary: "Manual recovery pending for a risky patch.",
+              blockingReasonKind: "human_recovery",
             },
           ],
           tasks: [],
@@ -237,6 +239,8 @@ describe("TUI App", () => {
     expect(frame).toContain("THREADS");
     expect(frame).toContain("thread-active");
     expect(frame).toContain("thread-blocked");
+    expect(frame).toContain("approval:1");
+    expect(frame).toContain("human_recovery");
     expect(frame).toContain("Current active runtime recovery thread.");
     expect(frame).toContain("Manual recovery pending for a risky patch.");
   });

@@ -27,6 +27,8 @@ export const runtimeThreadSummarySchema = z.object({
   status: threadStatusSchema,
   narrativeSummary: z.string().optional(),
   narrativeRevision: z.number().optional(),
+  pendingApprovalCount: z.number().optional(),
+  blockingReasonKind: z.enum(["waiting_approval", "human_recovery"]).optional(),
 });
 
 export const runtimeTaskSummarySchema = z.object({
