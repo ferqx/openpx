@@ -364,6 +364,21 @@ describe("ThreadStateProjector", () => {
     expect(view.narrativeState?.taskSummaries ?? []).toHaveLength(0);
   });
 
+  test("keeps short tool output out of durable narrative state", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {},
+      {
+        kind: "tool_result",
+        content: "ok",
+      },
+    );
+
+    expect(view.workingSetWindow?.toolResults).toEqual(["ok"]);
+    expect(view.narrativeState?.notableEvents).toEqual([]);
+    expect(view.narrativeState?.threadSummary).toBe("");
+  });
+
   test("projects answers into durable answer recovery facts and thread narrative", () => {
     const projector = createThreadStateProjector();
     const view = projector.project(

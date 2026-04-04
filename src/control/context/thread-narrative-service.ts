@@ -95,6 +95,10 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     return base ? `${base}; ${next}` : next;
   }
 
+  function isStableNarrativeStatus(status: ControlTask["status"]): boolean {
+    return status === "completed" || status === "failed";
+  }
+
   function cloneView(view: DerivedThreadView): DerivedThreadView {
     return {
       recoveryFacts: view.recoveryFacts
@@ -270,15 +274,14 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
           task,
         });
 
-        if (task.status === "blocked") {
-          nextView.narrativeState = cloneView(view).narrativeState;
-        }
-
         const previousTaskSummaries = getTaskSummaries(view);
         const nextTaskSummaries = getTaskSummaries(nextView);
         const narrativeChanged =
-          previousTaskSummaries.length !== nextTaskSummaries.length
-          || previousTaskSummaries.some((summary, index) => summary !== nextTaskSummaries[index]);
+          isStableNarrativeStatus(task.status)
+          && (
+            previousTaskSummaries.length !== nextTaskSummaries.length
+            || previousTaskSummaries.some((summary, index) => summary !== nextTaskSummaries[index])
+          );
 
         derivedViews.set(task.threadId, nextView);
 

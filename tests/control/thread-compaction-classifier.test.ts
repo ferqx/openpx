@@ -50,11 +50,13 @@ describe("ThreadCompactionClassifier", () => {
     ]);
   });
 
-  test("classifies large tool output as working-set only", () => {
+  test("classifies tool output as working-set only", () => {
     const classifier = createThreadCompactionClassifier();
     const longStdout = Array.from({ length: 80 }, (_, index) => `line ${index}`).join("\n");
+    const shortStdout = "ok";
 
     expect(classifier.classifyToolResult(longStdout)).toEqual(["WorkingSetOnly"]);
+    expect(classifier.classifyToolResult(shortStdout)).toEqual(["WorkingSetOnly"]);
   });
 
   test("classifies nonterminal tasks as working-set only", () => {

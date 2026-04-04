@@ -73,7 +73,7 @@ export function createThreadCompactionClassifier(
         return ["DropSafe"];
       }
 
-      return content.length >= largePayloadThreshold ? ["WorkingSetOnly"] : ["NarrativeCandidate"];
+      return ["WorkingSetOnly"];
     },
 
     classifyVerifierFeedback(content) {

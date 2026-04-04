@@ -59,6 +59,62 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.events[0]?.summary).toBe("Stable progress recorded");
   });
 
+  test("persists blocked-task derived narrative while keeping compatibility narrative unchanged", async () => {
+    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const baseThread = createThread("thread-blocked-persisted", "/workspace", "project-1");
+    threads.set(baseThread.threadId, baseThread);
+
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-complete",
+        threadId: baseThread.threadId,
+        summary: "Stable progress recorded",
+        status: "completed",
+      }),
+    );
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-blocked",
+        threadId: baseThread.threadId,
+        summary: "Blocked waiting on approval",
+        status: "blocked",
+      }),
+    );
+
+    const persistedThread = threads.get(baseThread.threadId);
+    expect(persistedThread?.narrativeState?.taskSummaries).toEqual([
+      "Stable progress recorded",
+      "Blocked waiting on approval",
+    ]);
+    expect(persistedThread?.narrativeState?.threadSummary).toBe(
+      "Stable progress recorded; Blocked waiting on approval",
+    );
+    expect(persistedThread?.narrativeSummary).toBe("Stable progress recorded");
+
+    const narrative = await narrativeService.getNarrative(baseThread.threadId);
+    expect(narrative.summary).toBe("Stable progress recorded");
+    expect(narrative.events).toHaveLength(1);
+  });
+
   test("maintains a curated history of stable task outcomes", async () => {
     const narrativeService = createThreadNarrativeService();
     const threadId = "thread-1";

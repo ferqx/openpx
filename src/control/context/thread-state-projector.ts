@@ -284,13 +284,6 @@ export function createThreadStateProjector(
           if (roles.includes("WorkingSetOnly")) {
             nextView.workingSetWindow!.toolResults.push(input.content);
           }
-          if (roles.includes("NarrativeCandidate")) {
-            nextView.narrativeState!.notableEvents.push(input.content);
-            nextView.narrativeState!.threadSummary = appendThreadSummary(
-              nextView.narrativeState!.threadSummary,
-              input.content,
-            );
-          }
           return nextView;
         }
 
