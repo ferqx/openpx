@@ -47,7 +47,13 @@ export function migrateSqlite(db: Database): void {
       project_id TEXT,
       revision INTEGER DEFAULT 1,
       status TEXT NOT NULL,
-      updated_at TEXT
+      updated_at TEXT,
+      recommendation_reason TEXT,
+      narrative_summary TEXT,
+      narrative_revision INTEGER DEFAULT 0,
+      recovery_facts_json TEXT,
+      narrative_state_json TEXT,
+      working_set_window_json TEXT
     )
   `);
 
@@ -71,6 +77,9 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "threads", "recommendation_reason", "TEXT");
   ensureColumn(db, "threads", "narrative_summary", "TEXT");
   ensureColumn(db, "threads", "narrative_revision", "INTEGER DEFAULT 0");
+  ensureColumn(db, "threads", "recovery_facts_json", "TEXT");
+  ensureColumn(db, "threads", "narrative_state_json", "TEXT");
+  ensureColumn(db, "threads", "working_set_window_json", "TEXT");
   ensureColumn(db, "approvals", "request_json", "TEXT");
 
   db.run(`

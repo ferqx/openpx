@@ -1,6 +1,7 @@
 import { threadId as sharedThreadId } from "../shared/ids";
 import { domainError } from "../shared/errors";
 import { threadStatusSchema } from "../shared/schemas";
+import type { DerivedThreadView } from "../control/context/thread-compaction-types";
 import { z } from "zod";
 
 export type ThreadStatus = z.infer<typeof threadStatusSchema>;
@@ -14,7 +15,7 @@ export type Thread = {
   recommendationReason?: string;
   narrativeSummary?: string;
   narrativeRevision?: number;
-};
+} & DerivedThreadView;
 
 const allowedThreadTransitions: Record<ThreadStatus, readonly ThreadStatus[]> = {
   idle: ["active"],

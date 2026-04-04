@@ -70,6 +70,49 @@ describe("SqliteThreadStore Scope", () => {
     expect(reloaded?.narrativeRevision).toBe(3);
   });
 
+  test("persists recovery facts, narrative state, and working set window on the thread record", async () => {
+    const thread = {
+      ...createThread("thread-compaction"),
+      workspaceRoot: "/repo",
+      projectId: "openwenpx",
+      recoveryFacts: {
+        blocking: {
+          sourceTaskId: "task-1",
+          kind: "human_recovery",
+          message: "Manual recovery required.",
+        },
+        pendingApprovals: [],
+        latestDurableAnswer: {
+          answerId: "answer-1",
+          summary: "Executor updated the runtime snapshot path.",
+        },
+        resumeAnchor: {
+          lastEventSeq: 42,
+          narrativeRevision: 2,
+        },
+      },
+      narrativeState: {
+        threadSummary: "Runtime snapshot migration is blocked on manual review.",
+        taskSummaries: [],
+        openLoops: ["Confirm the persisted delete request state."],
+        notableEvents: [],
+      },
+      workingSetWindow: {
+        messages: ["Need to confirm approval resume behavior."],
+        toolResults: [],
+        verifierFeedback: [],
+        retrievedMemories: [],
+      },
+    };
+
+    await store.save(thread);
+
+    const reloaded = await store.get(thread.threadId);
+    expect((reloaded as any)?.recoveryFacts?.blocking?.kind).toBe("human_recovery");
+    expect((reloaded as any)?.narrativeState?.threadSummary).toContain("blocked");
+    expect((reloaded as any)?.workingSetWindow?.messages).toHaveLength(1);
+  });
+
   test("looks up latest thread within a specific workspace and project scope", async () => {
     const thread1 = {
       ...createThread("t1"),
