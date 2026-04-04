@@ -23,6 +23,11 @@ type KernelResult = {
   status?: string;
   summary?: string;
   narrativeSummary?: string;
+  threads?: Array<{
+    threadId: string;
+    status: string;
+    narrativeSummary?: string;
+  }>;
   tasks?: KernelTask[];
   approvals?: KernelApproval[];
   workspaceRoot?: string;
@@ -61,6 +66,7 @@ export function App(input: { kernel: TuiKernel }) {
   const [recommendationReason, setRecommendationReason] = useState<string | undefined>();
   const [blockingReason, setBlockingReason] = useState<KernelResult["blockingReason"]>();
   const [narrativeSummary, setNarrativeSummary] = useState<string | undefined>();
+  const [threads, setThreads] = useState<Array<{ id: string; status: string; narrativeSummary?: string; active?: boolean }>>([]);
   const [answer, setAnswer] = useState({
     summary: "Awaiting answer",
     changes: [] as Array<{ path: string; additions: number; deletions: number }>,
@@ -157,6 +163,14 @@ export function App(input: { kernel: TuiKernel }) {
     setRecommendationReason(result.recommendationReason);
     setBlockingReason(result.blockingReason);
     setNarrativeSummary(result.narrativeSummary);
+    setThreads(
+      (result.threads ?? []).map((thread) => ({
+        id: thread.threadId,
+        status: thread.status,
+        narrativeSummary: thread.narrativeSummary,
+        active: thread.threadId === result.threadId,
+      })),
+    );
 
     if (result.status === "waiting_approval") {
       setComposerMode("confirm");
@@ -235,6 +249,7 @@ export function App(input: { kernel: TuiKernel }) {
       recommendationReason={recommendationReason}
       blockingReason={blockingReason}
       narrativeSummary={narrativeSummary}
+      threads={threads}
       onSubmit={submit}
     />
   );

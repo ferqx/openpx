@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { InteractionStream } from "./components/interaction-stream";
 import { Composer } from "./components/composer";
 import { StatusBar } from "./components/status-bar";
+import { ThreadPanel, type ThreadSummary } from "./components/thread-panel";
 import { theme } from "./theme";
 import type { TuiKernelEvent } from "./hooks/use-kernel";
 import type { TaskSummary } from "./components/task-panel";
@@ -29,6 +30,7 @@ export function Screen(input: {
   runtimeStatus?: string;
   recommendationReason?: string;
   narrativeSummary?: string;
+  threads?: ThreadSummary[];
   onSubmit?: (text: string) => Promise<void> | void;
 }) {
   return (
@@ -49,6 +51,8 @@ export function Screen(input: {
           <Text> {input.narrativeSummary}</Text>
         </Box>
       ) : null}
+
+      <ThreadPanel threads={input.threads ?? []} />
 
       {/* Main Interaction Stream */}
       <Box flexGrow={1} flexDirection="column">

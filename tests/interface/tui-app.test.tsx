@@ -186,6 +186,61 @@ describe("TUI App", () => {
     expect(frame).toContain("Completed repo scan and isolated runtime recovery work.");
   });
 
+  test("renders a thread panel with active and blocked thread summaries", async () => {
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const kernel: TuiKernel = {
+      events: {
+        subscribe() {
+          return () => undefined;
+        },
+      },
+      async hydrateSession() {
+        return {
+          status: "completed",
+          summary: "Awaiting answer",
+          threadId: "thread-active",
+          narrativeSummary: "Current active runtime recovery thread.",
+          threads: [
+            {
+              threadId: "thread-active",
+              workspaceRoot: "/tmp/workspace",
+              projectId: "project-1",
+              revision: 4,
+              status: "active",
+              narrativeSummary: "Current active runtime recovery thread.",
+            },
+            {
+              threadId: "thread-blocked",
+              workspaceRoot: "/tmp/workspace",
+              projectId: "project-1",
+              revision: 2,
+              status: "blocked",
+              narrativeSummary: "Manual recovery pending for a risky patch.",
+            },
+          ],
+          tasks: [],
+          approvals: [],
+        };
+      },
+      async handleCommand() {
+        return { status: "completed" };
+      },
+    };
+
+    const { lastFrame } = render(<App kernel={kernel} />);
+    await tick();
+    await tick();
+    await tick();
+
+    const frame = lastFrame();
+
+    expect(frame).toContain("THREADS");
+    expect(frame).toContain("thread-active");
+    expect(frame).toContain("thread-blocked");
+    expect(frame).toContain("Current active runtime recovery thread.");
+    expect(frame).toContain("Manual recovery pending for a risky patch.");
+  });
+
   test("renders a manual-recovery shell when the hydrated thread is blocked", async () => {
     const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     const kernel: TuiKernel = {
