@@ -1,5 +1,7 @@
 import type { ControlTask } from "../tasks/task-types";
 import type { ThreadStorePort } from "../../persistence/ports/thread-store-port";
+import { createThreadStateProjector } from "./thread-state-projector";
+import type { DerivedThreadView } from "./thread-compaction-types";
 
 export type NarrativeEvent = {
   taskId: string;
@@ -27,36 +29,108 @@ export type NarrativeServiceOptions = {
 
 export function createThreadNarrativeService(options: NarrativeServiceOptions = {}): ThreadNarrativeService {
   const narratives = new Map<string, ThreadNarrative>();
+  const derivedViews = new Map<string, DerivedThreadView>();
+  const projector = createThreadStateProjector();
   const maxEvents = options.maxEvents ?? 50;
   const threadStore = options.threadStore;
 
-  function composeNarrativeSummary(prefix: string, events: NarrativeEvent[]): string {
-    const recentSummary = events.map((event) => event.summary).join("; ");
-    if (prefix && recentSummary) {
-      return `${prefix}; ${recentSummary}`;
-    }
-    return prefix || recentSummary;
+  function createEmptyView(): DerivedThreadView {
+    return {
+      recoveryFacts: {
+        pendingApprovals: [],
+      },
+      narrativeState: {
+        threadSummary: "",
+        taskSummaries: [],
+        openLoops: [],
+        notableEvents: [],
+      },
+      workingSetWindow: {
+        messages: [],
+        toolResults: [],
+        verifierFeedback: [],
+        retrievedMemories: [],
+      },
+    };
+  }
+
+  function createNarrativeFromView(
+    threadId: string,
+    view: DerivedThreadView,
+    revision: number,
+    fallbackSummary: string,
+  ): ThreadNarrative {
+    return {
+      threadId,
+      summary: view.narrativeState?.threadSummary ?? fallbackSummary,
+      events: (view.narrativeState?.taskSummaries ?? []).map((summary, index) => ({
+        taskId: `narrative-${index + 1}`,
+        summary,
+        status: "completed",
+        timestamp: 0,
+      })),
+      revision,
+    };
+  }
+
+  async function loadBaseView(threadId: string): Promise<{
+    narrative: ThreadNarrative;
+    view: DerivedThreadView;
+    revision: number;
+  }> {
+    const inMemoryNarrative = narratives.get(threadId);
+    const inMemoryView = derivedViews.get(threadId);
+    const persistedThread = threadStore ? await threadStore.get(threadId) : undefined;
+    const persistedView = persistedThread
+      ? {
+          recoveryFacts: persistedThread.recoveryFacts,
+          narrativeState: persistedThread.narrativeState,
+          workingSetWindow: persistedThread.workingSetWindow,
+          narrativeSummary: persistedThread.narrativeSummary,
+        }
+      : undefined;
+
+    const view = inMemoryView ?? persistedView ?? createEmptyView();
+    const threadSummary = persistedThread?.narrativeSummary ?? "";
+    const revision = inMemoryNarrative?.revision ?? persistedThread?.narrativeRevision ?? 0;
+    const narrative =
+      inMemoryNarrative
+      ?? createNarrativeFromView(threadId, view, revision, threadSummary);
+
+    return {
+      narrative,
+      view,
+      revision,
+    };
   }
 
   return {
     async processTaskUpdate(task: ControlTask): Promise<void> {
-      // Promotes only stable task outputs into thread narrative state
-      if (task.status !== "completed" && task.status !== "failed") {
+      const { narrative, view, revision } = await loadBaseView(task.threadId);
+      const nextView = projector.project(view, {
+        kind: "task",
+        task,
+      });
+      const narrativeChanged =
+        nextView.narrativeState?.taskSummaries.length !== view.narrativeState?.taskSummaries.length;
+
+      derivedViews.set(task.threadId, nextView);
+
+      if (!narrativeChanged) {
+        if (threadStore) {
+          const thread = await threadStore.get(task.threadId);
+          if (thread) {
+            await threadStore.save({
+              ...thread,
+              recoveryFacts: nextView.recoveryFacts,
+              narrativeState: nextView.narrativeState,
+              workingSetWindow: nextView.workingSetWindow,
+            });
+          }
+        }
         return;
       }
 
-      let narrative = narratives.get(task.threadId);
-      if (!narrative) {
-        const persistedThread = threadStore ? await threadStore.get(task.threadId) : undefined;
-        narrative = {
-          threadId: task.threadId,
-          summary: persistedThread?.narrativeSummary ?? "",
-          events: [],
-          revision: persistedThread?.narrativeRevision ?? 0,
-        };
-      }
-
-      // Add to events
       const newEvent: NarrativeEvent = {
         taskId: task.taskId,
         summary: task.summary,
@@ -65,23 +139,15 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
       };
 
       const updatedEvents = [...narrative.events, newEvent];
-      let updatedSummary = narrative.summary;
-
-      // Handle compression
       if (updatedEvents.length > maxEvents) {
-        const droppedEvents = updatedEvents.splice(0, updatedEvents.length - maxEvents);
-        const dropSummary = droppedEvents.map(e => e.summary).join("; ");
-        updatedSummary = updatedSummary 
-          ? `${updatedSummary}; ${dropSummary}` 
-          : dropSummary;
+        updatedEvents.splice(0, updatedEvents.length - maxEvents);
       }
 
-      const composedSummary = composeNarrativeSummary(updatedSummary, updatedEvents);
       const nextNarrative = {
         ...narrative,
-        summary: composedSummary,
+        summary: nextView.narrativeState?.threadSummary ?? "",
         events: updatedEvents,
-        revision: narrative.revision + 1,
+        revision: revision + 1,
       };
 
       narratives.set(task.threadId, nextNarrative);
@@ -93,30 +159,17 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
             ...thread,
             narrativeSummary: nextNarrative.summary,
             narrativeRevision: nextNarrative.revision,
+            recoveryFacts: nextView.recoveryFacts,
+            narrativeState: nextView.narrativeState,
+            workingSetWindow: nextView.workingSetWindow,
           });
         }
       }
     },
 
     async getNarrative(threadId: string): Promise<ThreadNarrative> {
-      const inMemory = narratives.get(threadId);
-      const persistedThread = threadStore ? await threadStore.get(threadId) : undefined;
-
-      if (!inMemory && !persistedThread) {
-        return {
-          threadId,
-          summary: "",
-          events: [],
-          revision: 0,
-        };
-      }
-
-      return {
-        threadId,
-        summary: inMemory?.summary ?? persistedThread?.narrativeSummary ?? "",
-        events: inMemory?.events ?? [],
-        revision: inMemory?.revision ?? persistedThread?.narrativeRevision ?? 0,
-      };
+      const { narrative } = await loadBaseView(threadId);
+      return narrative;
     },
   };
 }

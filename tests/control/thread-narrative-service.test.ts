@@ -28,6 +28,7 @@ describe("ThreadNarrativeService", () => {
     const narrative = await narrativeService.getNarrative(threadId);
     expect(narrative.events.some(e => e.summary === "User successfully authenticated")).toBe(true);
     expect(narrative.events.some(e => e.summary === "Attempting to connect to database...")).toBe(false);
+    expect(narrative.summary).toBe("User successfully authenticated");
   });
 
   test("maintains a curated history of stable task outcomes", async () => {
@@ -52,9 +53,10 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.events).toHaveLength(2);
     expect(narrative.events[0]!.summary).toBe("Step 1: Done");
     expect(narrative.events[1]!.summary).toBe("Step 2: Done");
+    expect(narrative.summary).toBe("Step 1: Done; Step 2: Done");
   });
 
-  test("persists narrative summary and revision through the thread store when configured", async () => {
+  test("persists narrative state through the thread store when configured", async () => {
     const threads = new Map<string, ReturnType<typeof createThread>>();
     const baseThread = createThread("thread-1", "/workspace", "project-1");
     threads.set(baseThread.threadId, baseThread);
@@ -89,9 +91,54 @@ describe("ThreadNarrativeService", () => {
     const persistedThread = threads.get(baseThread.threadId);
     expect(persistedThread?.narrativeSummary).toBe("Completed repo scan");
     expect(persistedThread?.narrativeRevision).toBe(1);
+    expect(persistedThread?.narrativeState).toEqual({
+      threadSummary: "Completed repo scan",
+      taskSummaries: ["Completed repo scan"],
+      openLoops: [],
+      notableEvents: [],
+    });
 
     const narrative = await narrativeService.getNarrative(baseThread.threadId);
     expect(narrative.summary).toBe("Completed repo scan");
     expect(narrative.revision).toBe(1);
+  });
+
+  test("reads existing narrative state from the thread store", async () => {
+    const baseThread = {
+      ...createThread("thread-2", "/workspace", "project-1"),
+      narrativeSummary: "Stored summary",
+      narrativeRevision: 3,
+      narrativeState: {
+        threadSummary: "Stored summary",
+        taskSummaries: ["Stored summary"],
+        openLoops: ["Need approval on cleanup"],
+        notableEvents: [],
+      },
+    };
+    const threads = new Map([[baseThread.threadId, baseThread]]);
+
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    const narrative = await narrativeService.getNarrative(baseThread.threadId);
+    expect(narrative.summary).toBe("Stored summary");
+    expect(narrative.events).toHaveLength(1);
+    expect(narrative.events[0]?.summary).toBe("Stored summary");
+    expect(narrative.revision).toBe(3);
   });
 });

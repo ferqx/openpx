@@ -36,5 +36,7 @@ describe("ContextCompression", () => {
     expect(narrative.events[0]!.taskId).toBe("task-2");
     expect(narrative.events[1]!.taskId).toBe("task-3");
     expect(narrative.summary).toContain("Task 1 complete");
+    expect(narrative.summary).toContain("Task 2 complete");
+    expect(narrative.summary).toContain("Task 3 complete");
   });
 });

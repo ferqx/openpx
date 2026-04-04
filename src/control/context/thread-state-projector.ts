@@ -1,0 +1,166 @@
+import type { ApprovalRequest } from "../../domain/approval";
+import type { DerivedThreadView, NarrativeState, RecoveryFacts, WorkingSetWindow } from "./thread-compaction-types";
+import {
+  createThreadCompactionClassifier,
+  type ThreadCompactionClassifier,
+} from "./thread-compaction-classifier";
+import type { ControlTask } from "../tasks/task-types";
+
+export type ThreadProjectionInput =
+  | { kind: "task"; task: ControlTask }
+  | { kind: "approval"; approval: ApprovalRequest }
+  | { kind: "tool_result"; content: string }
+  | { kind: "verifier_feedback"; content: string }
+  | { kind: "message"; content: string }
+  | { kind: "retrieved_memory"; content: string };
+
+export interface ThreadStateProjector {
+  project(view: DerivedThreadView, input: ThreadProjectionInput): DerivedThreadView;
+}
+
+export type ThreadStateProjectorOptions = {
+  classifier?: ThreadCompactionClassifier;
+};
+
+function cloneRecoveryFacts(input?: RecoveryFacts): RecoveryFacts {
+  return {
+    activeTask: input?.activeTask ? { ...input.activeTask } : undefined,
+    blocking: input?.blocking ? { ...input.blocking } : undefined,
+    pendingApprovals: [...(input?.pendingApprovals ?? [])],
+    latestDurableAnswer: input?.latestDurableAnswer ? { ...input.latestDurableAnswer } : undefined,
+    resumeAnchor: input?.resumeAnchor ? { ...input.resumeAnchor } : undefined,
+  };
+}
+
+function cloneNarrativeState(input?: NarrativeState): NarrativeState {
+  return {
+    threadSummary: input?.threadSummary ?? "",
+    taskSummaries: [...(input?.taskSummaries ?? [])],
+    openLoops: [...(input?.openLoops ?? [])],
+    notableEvents: [...(input?.notableEvents ?? [])],
+  };
+}
+
+function cloneWorkingSetWindow(input?: WorkingSetWindow): WorkingSetWindow {
+  return {
+    messages: [...(input?.messages ?? [])],
+    toolResults: [...(input?.toolResults ?? [])],
+    verifierFeedback: [...(input?.verifierFeedback ?? [])],
+    retrievedMemories: [...(input?.retrievedMemories ?? [])],
+  };
+}
+
+function composeThreadSummary(narrativeState: NarrativeState): string {
+  return narrativeState.taskSummaries.join("; ");
+}
+
+export function createThreadStateProjector(
+  options: ThreadStateProjectorOptions = {},
+): ThreadStateProjector {
+  const classifier = options.classifier ?? createThreadCompactionClassifier();
+
+  return {
+    project(view, input) {
+      const nextView: DerivedThreadView = {
+        recoveryFacts: cloneRecoveryFacts(view.recoveryFacts),
+        narrativeState: cloneNarrativeState(view.narrativeState),
+        workingSetWindow: cloneWorkingSetWindow(view.workingSetWindow),
+      };
+
+      switch (input.kind) {
+        case "task": {
+          const roles = classifier.classifyTask(input.task);
+
+          if (roles.includes("RecoveryFact")) {
+            nextView.recoveryFacts!.activeTask = {
+              taskId: input.task.taskId,
+              status: input.task.status,
+              summary: input.task.summary,
+            };
+
+            if (input.task.status === "blocked") {
+              nextView.recoveryFacts!.blocking = {
+                sourceTaskId: input.task.taskId,
+                kind: "human_recovery",
+                message: input.task.summary,
+              };
+            } else if (
+              nextView.recoveryFacts?.blocking?.sourceTaskId === input.task.taskId
+            ) {
+              nextView.recoveryFacts!.blocking = undefined;
+            }
+          }
+
+          if (roles.includes("NarrativeCandidate")) {
+            nextView.narrativeState!.taskSummaries.push(input.task.summary);
+            nextView.narrativeState!.threadSummary = composeThreadSummary(nextView.narrativeState!);
+          }
+
+          return nextView;
+        }
+
+        case "approval": {
+          const roles = classifier.classifyApproval(input.approval);
+
+          if (roles.includes("RecoveryFact")) {
+            nextView.recoveryFacts!.pendingApprovals = [
+              ...nextView.recoveryFacts!.pendingApprovals.filter(
+                (approval) => approval.approvalRequestId !== input.approval.approvalRequestId,
+              ),
+              {
+                approvalRequestId: input.approval.approvalRequestId,
+                taskId: input.approval.taskId,
+                toolCallId: input.approval.toolCallId,
+                summary: input.approval.summary,
+                risk: input.approval.risk,
+                status: input.approval.status,
+              },
+            ];
+            nextView.recoveryFacts!.blocking = {
+              sourceTaskId: input.approval.taskId,
+              kind: "waiting_approval",
+              message: input.approval.summary,
+            };
+          }
+
+          return nextView;
+        }
+
+        case "tool_result": {
+          const roles = classifier.classifyToolResult(input.content);
+          if (roles.includes("WorkingSetOnly")) {
+            nextView.workingSetWindow!.toolResults.push(input.content);
+          }
+          if (roles.includes("NarrativeCandidate")) {
+            nextView.narrativeState!.notableEvents.push(input.content);
+          }
+          return nextView;
+        }
+
+        case "verifier_feedback": {
+          const roles = classifier.classifyVerifierFeedback(input.content);
+          if (roles.includes("WorkingSetOnly")) {
+            nextView.workingSetWindow!.verifierFeedback.push(input.content);
+          }
+          return nextView;
+        }
+
+        case "message": {
+          const roles = classifier.classifyMessage(input.content);
+          if (roles.includes("WorkingSetOnly")) {
+            nextView.workingSetWindow!.messages.push(input.content);
+          }
+          return nextView;
+        }
+
+        case "retrieved_memory": {
+          const roles = classifier.classifyRetrievedMemory(input.content);
+          if (roles.includes("WorkingSetOnly")) {
+            nextView.workingSetWindow!.retrievedMemories.push(input.content);
+          }
+          return nextView;
+        }
+      }
+    },
+  };
+}
