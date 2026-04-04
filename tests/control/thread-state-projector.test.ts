@@ -4,7 +4,7 @@ import { createControlTask } from "../../src/control/tasks/task-types";
 import { createApprovalRequest } from "../../src/domain/approval";
 
 describe("ThreadStateProjector", () => {
-  test("promotes completed tasks into recovery facts and narrative summaries", () => {
+  test("promotes completed tasks into stable recovery facts and narrative summaries", () => {
     const projector = createThreadStateProjector();
     const view = projector.project(
       {},
@@ -19,7 +19,8 @@ describe("ThreadStateProjector", () => {
       },
     );
 
-    expect(view.recoveryFacts?.activeTask).toEqual({
+    expect(view.recoveryFacts?.activeTask).toBeUndefined();
+    expect(view.recoveryFacts?.lastStableTask).toEqual({
       taskId: "task-2",
       status: "completed",
       summary: "Executor patched the runtime snapshot path.",
@@ -27,6 +28,34 @@ describe("ThreadStateProjector", () => {
     expect(view.narrativeState?.taskSummaries).toContain(
       "Executor patched the runtime snapshot path.",
     );
+  });
+
+  test("keeps blocked tasks as nonterminal active recovery state", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {},
+      {
+        kind: "task",
+        task: createControlTask({
+          taskId: "task-3",
+          threadId: "thread-1",
+          summary: "Waiting for manual database recovery.",
+          status: "blocked",
+        }),
+      },
+    );
+
+    expect(view.recoveryFacts?.activeTask).toEqual({
+      taskId: "task-3",
+      status: "blocked",
+      summary: "Waiting for manual database recovery.",
+    });
+    expect(view.recoveryFacts?.lastStableTask).toBeUndefined();
+    expect(view.recoveryFacts?.blocking).toEqual({
+      sourceTaskId: "task-3",
+      kind: "human_recovery",
+      message: "Waiting for manual database recovery.",
+    });
   });
 
   test("moves pending approvals into recovery facts instead of narrative-only storage", () => {
@@ -60,6 +89,37 @@ describe("ThreadStateProjector", () => {
       message: "Delete tmp/output.txt",
     });
     expect(view.narrativeState?.threadSummary ?? "").not.toContain("maybe blocked");
+  });
+
+  test("approval resolution clears stale pending and blocking recovery state", () => {
+    const projector = createThreadStateProjector();
+    const pendingApproval = createApprovalRequest({
+      approvalRequestId: "approval-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      toolCallId: "tool-call-1",
+      toolRequest: {
+        toolCallId: "tool-call-1",
+        threadId: "thread-1",
+        taskId: "task-1",
+        toolName: "delete_file",
+        args: { path: "tmp/output.txt" },
+      },
+      summary: "Delete tmp/output.txt",
+      risk: "high",
+    });
+
+    const waitingView = projector.project({}, { kind: "approval", approval: pendingApproval });
+    const resolvedView = projector.project(waitingView, {
+      kind: "approval",
+      approval: {
+        ...pendingApproval,
+        status: "approved",
+      },
+    });
+
+    expect(resolvedView.recoveryFacts?.pendingApprovals).toEqual([]);
+    expect(resolvedView.recoveryFacts?.blocking).toBeUndefined();
   });
 
   test("keeps large tool output in the working set window", () => {

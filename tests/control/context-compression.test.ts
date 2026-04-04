@@ -3,7 +3,7 @@ import { createThreadNarrativeService } from "../../src/control/context/thread-n
 import { createControlTask } from "../../src/control/tasks/task-types";
 
 describe("ContextCompression", () => {
-  test("compresses stale task context into narrative summaries before thread state grows unbounded", async () => {
+  test("limits the compatibility event window without claiming durable compaction", async () => {
     const narrativeService = createThreadNarrativeService({ maxEvents: 2 });
     const threadId = "thread-1";
 
@@ -30,13 +30,11 @@ describe("ContextCompression", () => {
     }));
 
     const narrative = await narrativeService.getNarrative(threadId);
-    
-    // Should have only 2 latest events, plus a summary of what was dropped
+
+    // Task 2 keeps a bounded compatibility event view while the summary still reflects persisted narrative state.
     expect(narrative.events).toHaveLength(2);
     expect(narrative.events[0]!.taskId).toBe("task-2");
     expect(narrative.events[1]!.taskId).toBe("task-3");
-    expect(narrative.summary).toContain("Task 1 complete");
-    expect(narrative.summary).toContain("Task 2 complete");
-    expect(narrative.summary).toContain("Task 3 complete");
+    expect(narrative.summary).toBe("Task 1 complete; Task 2 complete; Task 3 complete");
   });
 });

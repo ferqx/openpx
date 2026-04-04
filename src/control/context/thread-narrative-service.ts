@@ -63,12 +63,7 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     return {
       threadId,
       summary: view.narrativeState?.threadSummary ?? fallbackSummary,
-      events: (view.narrativeState?.taskSummaries ?? []).map((summary, index) => ({
-        taskId: `narrative-${index + 1}`,
-        summary,
-        status: "completed",
-        timestamp: 0,
-      })),
+      events: [],
       revision,
     };
   }

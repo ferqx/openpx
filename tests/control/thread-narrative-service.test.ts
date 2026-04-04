@@ -103,7 +103,7 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.revision).toBe(1);
   });
 
-  test("reads existing narrative state from the thread store", async () => {
+  test("reads existing persisted narrative as summary-only compatibility state", async () => {
     const baseThread = {
       ...createThread("thread-2", "/workspace", "project-1"),
       narrativeSummary: "Stored summary",
@@ -137,8 +137,7 @@ describe("ThreadNarrativeService", () => {
 
     const narrative = await narrativeService.getNarrative(baseThread.threadId);
     expect(narrative.summary).toBe("Stored summary");
-    expect(narrative.events).toHaveLength(1);
-    expect(narrative.events[0]?.summary).toBe("Stored summary");
+    expect(narrative.events).toEqual([]);
     expect(narrative.revision).toBe(3);
   });
 });

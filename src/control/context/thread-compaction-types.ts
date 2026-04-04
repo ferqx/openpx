@@ -4,6 +4,11 @@ export type RecoveryFacts = {
     status: string;
     summary: string;
   };
+  lastStableTask?: {
+    taskId: string;
+    status: string;
+    summary: string;
+  };
   blocking?: {
     sourceTaskId: string;
     kind: "waiting_approval" | "human_recovery";

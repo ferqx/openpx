@@ -27,6 +27,7 @@ export type ThreadStateProjectorOptions = {
 function cloneRecoveryFacts(input?: RecoveryFacts): RecoveryFacts {
   return {
     activeTask: input?.activeTask ? { ...input.activeTask } : undefined,
+    lastStableTask: input?.lastStableTask ? { ...input.lastStableTask } : undefined,
     blocking: input?.blocking ? { ...input.blocking } : undefined,
     pendingApprovals: [...(input?.pendingApprovals ?? [])],
     latestDurableAnswer: input?.latestDurableAnswer ? { ...input.latestDurableAnswer } : undefined,
@@ -56,6 +57,10 @@ function composeThreadSummary(narrativeState: NarrativeState): string {
   return narrativeState.taskSummaries.join("; ");
 }
 
+function isNonterminalTask(status: ControlTask["status"]): boolean {
+  return status === "queued" || status === "running" || status === "blocked";
+}
+
 export function createThreadStateProjector(
   options: ThreadStateProjectorOptions = {},
 ): ThreadStateProjector {
@@ -74,11 +79,23 @@ export function createThreadStateProjector(
           const roles = classifier.classifyTask(input.task);
 
           if (roles.includes("RecoveryFact")) {
-            nextView.recoveryFacts!.activeTask = {
-              taskId: input.task.taskId,
-              status: input.task.status,
-              summary: input.task.summary,
-            };
+            if (isNonterminalTask(input.task.status)) {
+              nextView.recoveryFacts!.activeTask = {
+                taskId: input.task.taskId,
+                status: input.task.status,
+                summary: input.task.summary,
+              };
+            } else {
+              nextView.recoveryFacts!.lastStableTask = {
+                taskId: input.task.taskId,
+                status: input.task.status,
+                summary: input.task.summary,
+              };
+
+              if (nextView.recoveryFacts?.activeTask?.taskId === input.task.taskId) {
+                nextView.recoveryFacts!.activeTask = undefined;
+              }
+            }
 
             if (input.task.status === "blocked") {
               nextView.recoveryFacts!.blocking = {
@@ -91,6 +108,12 @@ export function createThreadStateProjector(
             ) {
               nextView.recoveryFacts!.blocking = undefined;
             }
+          } else if (roles.includes("WorkingSetOnly") && isNonterminalTask(input.task.status)) {
+            nextView.recoveryFacts!.activeTask = {
+              taskId: input.task.taskId,
+              status: input.task.status,
+              summary: input.task.summary,
+            };
           }
 
           if (roles.includes("NarrativeCandidate")) {
@@ -103,12 +126,13 @@ export function createThreadStateProjector(
 
         case "approval": {
           const roles = classifier.classifyApproval(input.approval);
+          nextView.recoveryFacts!.pendingApprovals = nextView.recoveryFacts!.pendingApprovals.filter(
+            (approval) => approval.approvalRequestId !== input.approval.approvalRequestId,
+          );
 
           if (roles.includes("RecoveryFact")) {
             nextView.recoveryFacts!.pendingApprovals = [
-              ...nextView.recoveryFacts!.pendingApprovals.filter(
-                (approval) => approval.approvalRequestId !== input.approval.approvalRequestId,
-              ),
+              ...nextView.recoveryFacts!.pendingApprovals,
               {
                 approvalRequestId: input.approval.approvalRequestId,
                 taskId: input.approval.taskId,
@@ -123,6 +147,14 @@ export function createThreadStateProjector(
               kind: "waiting_approval",
               message: input.approval.summary,
             };
+          } else if (
+            nextView.recoveryFacts?.blocking?.kind === "waiting_approval"
+            && nextView.recoveryFacts.blocking.sourceTaskId === input.approval.taskId
+            && !nextView.recoveryFacts.pendingApprovals.some(
+              (approval) => approval.taskId === input.approval.taskId,
+            )
+          ) {
+            nextView.recoveryFacts!.blocking = undefined;
           }
 
           return nextView;
