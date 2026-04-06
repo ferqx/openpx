@@ -4,7 +4,6 @@ import type { SessionStage } from "../runtime/runtime-session";
 export type ScreenLayout = {
   hasOverlayPane: boolean;
   overlayRows: number;
-  mainHeight: number;
   useAdaptiveWelcomeHeight: boolean;
 };
 
@@ -23,11 +22,7 @@ export function computeScreenLayout(input: {
 }): ScreenLayout {
   const headerRows = 0;
   const threadPanelRows = input.showThreadPanel ? 4 : 0;
-  const composerRows = input.activeUtilityPane === "settings" ? 0 : 4;
   const statusRows = 1;
-  const recommendationRows =
-    input.composerMode === "confirm" && input.recommendationReason ? 3 : 0;
-  const blockedRows = input.composerMode === "blocked" && input.blockingReason ? 4 : 0;
   const overlayRows =
     input.activeUtilityPane === "settings"
       ? Math.max(16, input.terminalRows - (headerRows + threadPanelRows + statusRows + 6))
@@ -36,13 +31,10 @@ export function computeScreenLayout(input: {
         : 0;
   const hasOverlayPane = Boolean(input.activeUtilityPane && input.activeUtilityPane !== "none");
   const useAdaptiveWelcomeHeight = Boolean(input.showWelcome && !hasOverlayPane);
-  const reservedRows =
-    headerRows + threadPanelRows + composerRows + statusRows + recommendationRows + blockedRows + overlayRows;
 
   return {
     hasOverlayPane,
     overlayRows,
-    mainHeight: Math.max(6, input.terminalRows - reservedRows),
     useAdaptiveWelcomeHeight,
   };
 }

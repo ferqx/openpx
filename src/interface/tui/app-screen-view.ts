@@ -51,6 +51,7 @@ export function buildChromeView(input: {
   showThreadPanel: boolean;
   modelName: string;
   thinkingLevel: string;
+  exitConfirmText?: string;
 }): ScreenChromeView {
   return {
     workspaceRoot: input.session?.workspaceRoot,
@@ -64,6 +65,7 @@ export function buildChromeView(input: {
     blockingReason: input.session?.blockingReason,
     threads: input.session?.threads,
     showThreadPanel: input.showThreadPanel,
+    exitConfirmText: input.exitConfirmText,
   };
 }
 
