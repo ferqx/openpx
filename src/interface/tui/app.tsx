@@ -202,6 +202,9 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
   const messageIdRef = useRef(0);
   const [activeTaskIntent, setActiveTaskIntent] = useState<"plan" | "execute" | null>(null);
   const [settingsConfig, setSettingsConfig] = useState<ResolvedSettingsConfig | undefined>();
+  const [isExitConfirming, setIsExitConfirming] = useState(false);
+  const exitConfirmingRef = useRef(false);
+  const exitConfirmTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const activeThreadIdRef = useRef<string | undefined>(undefined);
   const utilitySessionSnapshotRef = useRef<UtilityPaneSessionSnapshot | undefined>(undefined);
   const conversationStateRef = useRef<ConversationDisplayState>(createInitialConversationDisplayState());
@@ -244,6 +247,20 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     pageDown: boolean;
     ctrl: boolean;
   }) => {
+    if (keyValue === "\x1b[Ma" || keyValue === "\x1b[Ma") {
+      updateConversationState((current) => ({
+        ...current,
+        streamScrollOffset: Math.max(0, current.streamScrollOffset + 1),
+      }));
+      return;
+    }
+    if (keyValue === "\x1b[Mb" || keyValue === "\x1b[Mb") {
+      updateConversationState((current) => ({
+        ...current,
+        streamScrollOffset: Math.max(0, current.streamScrollOffset - 1),
+      }));
+      return;
+    }
     if (launchState.activeUtilityPane === "sessions") {
       const sessionsAction = resolveSessionsPaneAction({
         keyValue,
@@ -285,7 +302,41 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     }
   });
 
+  const clearExitConfirmation = useEffectEvent(() => {
+    if (exitConfirmTimeoutRef.current) {
+      clearTimeout(exitConfirmTimeoutRef.current);
+      exitConfirmTimeoutRef.current = undefined;
+    }
+    exitConfirmingRef.current = false;
+    setIsExitConfirming(false);
+  });
+
+  const armExitConfirmation = useEffectEvent(() => {
+    if (exitConfirmTimeoutRef.current) {
+      clearTimeout(exitConfirmTimeoutRef.current);
+    }
+    exitConfirmingRef.current = true;
+    setIsExitConfirming(true);
+    exitConfirmTimeoutRef.current = setTimeout(() => {
+      exitConfirmTimeoutRef.current = undefined;
+      exitConfirmingRef.current = false;
+      setIsExitConfirming(false);
+    }, 3000);
+  });
+
   useInput((keyValue, key) => {
+    // 检测 Ctrl+C
+    if (key.ctrl && keyValue === "c") {
+      if (exitConfirmingRef.current) {
+        // 第二次按下，真正退出
+        clearExitConfirmation();
+        process.exit(0);
+      } else {
+        // 第一次按下，显示提示
+        armExitConfirmation();
+        return;
+      }
+    }
     handleInputNavigation(keyValue, key);
   });
 
@@ -551,6 +602,16 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
 
     return () => { if (interval) clearInterval(interval); };
   }, [conversationState.metricsStart.thinking, conversationState.modelStatus]);
+
+  // 清理退出确认超时
+  useEffect(() => {
+    return () => {
+      if (exitConfirmTimeoutRef.current) {
+        clearTimeout(exitConfirmTimeoutRef.current);
+        exitConfirmTimeoutRef.current = undefined;
+      }
+    };
+  }, []);
 
   function nextMessageId(prefix: "user" | "assistant") {
     messageIdRef.current += 1;
@@ -824,6 +885,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
       showThreadPanel,
       modelName: process.env.OPENAI_MODEL ?? "unknown",
       thinkingLevel: process.env.OPENPX_THINKING ?? "default",
+      exitConfirmText: isExitConfirming ? "Press Ctrl+C again to exit" : undefined,
     });
   }, [
     runtimeStatus,
@@ -835,6 +897,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     session?.workspaceRoot,
     showThreadPanel,
     stage,
+    isExitConfirming,
   ]);
 
   const composerView = useMemo<ScreenComposerView>(() => {
