@@ -7,16 +7,22 @@ describe("ThreadPanel", () => {
   test("renders active and blocked threads with their durable summaries", () => {
     const { lastFrame } = render(
       <ThreadPanel
+        activeThreadId="thread-active"
         threads={[
           {
-            id: "thread-active",
+            threadId: "thread-active",
+            workspaceRoot: "/tmp/workspace",
+            projectId: "project-1",
+            revision: 4,
             status: "active",
             narrativeSummary: "Current active runtime recovery thread.",
-            active: true,
             pendingApprovalCount: 1,
           },
           {
-            id: "thread-blocked",
+            threadId: "thread-blocked",
+            workspaceRoot: "/tmp/workspace",
+            projectId: "project-1",
+            revision: 2,
             status: "blocked",
             narrativeSummary: "Manual recovery pending for a risky patch.",
             blockingReasonKind: "human_recovery",

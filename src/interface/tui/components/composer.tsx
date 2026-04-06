@@ -47,7 +47,7 @@ export function Composer(input: {
 
   if (mode === "confirm") {
     return (
-      <Box paddingX={1}>
+      <Box paddingX={0}>
         <Text color={theme.colors.user} bold>{theme.symbols.prompt} Confirm work? </Text>
         <Text color="yellow">[Y/n]</Text>
       </Box>
@@ -56,14 +56,14 @@ export function Composer(input: {
 
   if (mode === "blocked") {
     return (
-      <Box paddingX={1}>
+      <Box paddingX={0}>
         <Text color="yellow" bold>{theme.symbols.warning} Input disabled for this thread</Text>
       </Box>
     );
   }
 
   return (
-    <Box paddingX={1} gap={1}>
+    <Box paddingX={0} gap={1}>
       <Text color={theme.colors.user} bold>{theme.symbols.prompt}</Text>
       <Box flexGrow={1}>
         {value.length > 0 ? (

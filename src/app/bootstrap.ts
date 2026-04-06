@@ -16,6 +16,7 @@ import { SqliteMemoryStore } from "../persistence/sqlite/sqlite-memory-store";
 import { SqliteTaskStore } from "../persistence/sqlite/sqlite-task-store";
 import { SqliteThreadStore } from "../persistence/sqlite/sqlite-thread-store";
 import { SqliteExecutionLedger } from "../persistence/sqlite/sqlite-execution-ledger";
+import { SqliteWorkerStore } from "../persistence/sqlite/sqlite-worker-store";
 import { createRootGraph } from "../runtime/graph/root/graph";
 import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
 import { resolveConfig } from "../shared/config";
@@ -25,11 +26,12 @@ import { MemoryConsolidator } from "../control/context/memory-consolidator";
 import { transitionThread } from "../domain/thread";
 import { createEvent } from "../domain/event";
 import { compactThreadView } from "../control/context/thread-compaction-policy";
+import type { ResumeControl } from "../runtime/graph/root/resume-control";
 
 type AppStores = ReturnType<typeof createStores>;
 
 type ControlPlane = {
-  startRootTask(threadId: string, text: string): Promise<SessionControlPlaneResult>;
+  startRootTask(threadId: string, input: string | ResumeControl): Promise<SessionControlPlaneResult>;
   approveRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   rejectRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
 };
@@ -42,6 +44,7 @@ function createStores(path: string | ReturnType<typeof createSqlite>) {
     eventLog: new SqliteEventLog(path),
     memoryStore: new SqliteMemoryStore(path),
     executionLedger: new SqliteExecutionLedger(path),
+    workerStore: new SqliteWorkerStore(path),
   };
 }
 
@@ -400,15 +403,24 @@ async function createControlPlane(input: {
         mode: "execute",
       };
     },
+    responder: async ({ input: text, threadId, taskId }) => {
+      const result = await input.modelGateway.respond({ prompt: text, threadId, taskId });
+      return {
+        summary: result.summary,
+        mode: "respond",
+      };
+    },
   });
 
   return {
-    async startRootTask(threadId: string, text: string) {
+    async startRootTask(threadId: string, inputValue: string | ResumeControl) {
       const thread = await input.stores.threadStore.get(threadId);
       const isResume = thread?.status === "waiting_approval";
       
       let task: ControlTask;
-      let graphInput: any;
+      let graphResult:
+        | Awaited<ReturnType<typeof rootGraph.invoke>>
+        | undefined;
 
       if (isResume) {
         const tasks = await input.stores.taskStore.listByThread(threadId);
@@ -418,27 +430,31 @@ async function createControlPlane(input: {
         }
         task = ensureControlTask(lastTask);
         task = await saveTaskStatus(input.stores, task, "running");
-        
-        // When resuming with 'yes', we want the graph to continue with the PREVIOUS input
-        // but the intake node will overwrite it if we provide a resumeValue.
-        // So for 'yes', we'll just resume without changing the input if possible, 
-        // or re-provide the original task summary.
-        graphInput = new Command({ resume: text });
+
+        graphResult = await rootGraph.invoke(
+          new Command({ resume: inputValue }),
+          {
+            configurable: {
+              thread_id: threadId,
+              task_id: task.taskId,
+            },
+          },
+        );
       } else {
+        const text = typeof inputValue === "string" ? inputValue : inputValue.reason ?? "";
         task = await taskManager.createRootTask(threadId, text);
         task = await saveTaskStatus(input.stores, task, "running");
-        graphInput = { input: text };
-      }
 
-      const graphResult = await rootGraph.invoke(
-        graphInput,
-        {
-          configurable: {
-            thread_id: threadId,
-            task_id: task.taskId,
+        graphResult = await rootGraph.invoke(
+          { input: text },
+          {
+            configurable: {
+              thread_id: threadId,
+              task_id: task.taskId,
+            },
           },
-        },
-      );
+        );
+      }
       const approvalsForThread = await input.stores.approvalStore.listPendingByThread(threadId);
       
       let status: "waiting_approval" | "completed" = "completed";
@@ -459,11 +475,11 @@ async function createControlPlane(input: {
           ? (graphResult as { recommendationReason?: string }).recommendationReason
           : undefined;
       const summary = isInterrupted(graphResult)
-        ? String(interruptValue?.summary ?? text)
+        ? String(interruptValue?.summary ?? (typeof inputValue === "string" ? inputValue : inputValue.reason ?? ""))
         : String(
             (graphResult as { summary?: string; recommendationReason?: string }).summary ??
             recommendationReason ??
-            text,
+            (typeof inputValue === "string" ? inputValue : inputValue.reason ?? ""),
           );
 
       return {
@@ -520,7 +536,7 @@ async function createControlPlane(input: {
     async rejectRequest(approvalRequestId: string) {
       const approval = await approvals.get(approvalRequestId);
       if (!approval) {
-        throw new Error(`approval request ${approvalRequestId} not found`);
+      throw new Error(`approval request ${approvalRequestId} not found`);
       }
 
       await approvals.updateStatus(approvalRequestId, "rejected");
@@ -591,5 +607,9 @@ export async function createAppContext(input: {
     });
   });
 
-  return { config, stores, controlPlane, kernel, narrativeService, scratchPolicy, memoryConsolidator };
+  modelGateway.onEvent((event) => {
+    kernel.events.publish(event);
+  });
+
+  return { config, stores, controlPlane, kernel, narrativeService, scratchPolicy, memoryConsolidator, modelGateway };
   }

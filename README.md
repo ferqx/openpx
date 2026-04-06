@@ -44,7 +44,7 @@ Expected results:
 - `bun test` passes
 - `bun run typecheck` passes
 - `bun run src/app/main.ts --help` prints usage and exits without launching the TUI
-- `bun run smoke:planner` prints a real planner summary when `OPENAI_*` variables are configured
+- `bun run smoke:planner` prints a real planner summary when `OPENAI_*` variables are configured; expect a real model call that can take around 1-2 minutes in local use
 
 ## SQLite Data
 

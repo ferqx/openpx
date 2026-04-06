@@ -1,15 +1,9 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme";
+import type { RuntimeSessionState } from "../../runtime/runtime-session";
 
-export type ThreadSummary = {
-  id: string;
-  status: string;
-  narrativeSummary?: string;
-  active?: boolean;
-  pendingApprovalCount?: number;
-  blockingReasonKind?: "waiting_approval" | "human_recovery";
-};
+export type ThreadSummary = RuntimeSessionState["threads"][number];
 
 function getStatusIndicator(status: string) {
   switch (status) {
@@ -27,18 +21,18 @@ function getStatusIndicator(status: string) {
   }
 }
 
-export function ThreadPanel(input: { threads: ThreadSummary[] }) {
+export function ThreadPanel(input: { threads: ThreadSummary[]; activeThreadId?: string }) {
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1} marginBottom={1}>
       <Text bold>THREADS</Text>
       {input.threads.length === 0 ? <Text color="gray">No threads yet</Text> : null}
       {input.threads.map((thread) => (
-        <Box key={thread.id} flexDirection="column" marginBottom={1}>
+        <Box key={thread.threadId} flexDirection="column" marginBottom={1}>
           <Box gap={1}>
             {getStatusIndicator(thread.status)}
             <Text>
-              {thread.id}
-              {thread.active ? " (active)" : ""} [{thread.status}]
+              {thread.threadId}
+              {thread.threadId === input.activeThreadId ? " (active)" : ""} [{thread.status}]
             </Text>
             {thread.pendingApprovalCount ? <Text color="yellow">approval:{thread.pendingApprovalCount}</Text> : null}
             {thread.blockingReasonKind ? <Text color="yellow">{thread.blockingReasonKind}</Text> : null}

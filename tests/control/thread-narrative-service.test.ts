@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createThreadNarrativeService } from "../../src/control/context/thread-narrative-service";
 import { createControlTask } from "../../src/control/tasks/task-types";
-import { createThread } from "../../src/domain/thread";
+import { createThread, type Thread } from "../../src/domain/thread";
+import type { NarrativeState } from "../../src/control/context/thread-compaction-types";
 
 describe("ThreadNarrativeService", () => {
+  const now = new Date().toISOString();
+
   test("promotes only stable task outputs into thread narrative state", async () => {
     const narrativeService = createThreadNarrativeService();
     const threadId = "thread-1";
@@ -60,7 +63,7 @@ describe("ThreadNarrativeService", () => {
   });
 
   test("persists blocked-task derived narrative while keeping compatibility narrative unchanged across restart", async () => {
-    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const threads = new Map<string, Thread>();
     const baseThread = createThread("thread-blocked-persisted", "/workspace", "project-1");
     threads.set(baseThread.threadId, baseThread);
 
@@ -101,6 +104,7 @@ describe("ThreadNarrativeService", () => {
     );
 
     const persistedThread = threads.get(baseThread.threadId);
+    expect(persistedThread?.recoveryFacts).toBeUndefined();
     expect(persistedThread?.narrativeState?.taskSummaries).toEqual([
       "Stable progress recorded",
       "Blocked waiting on approval",
@@ -134,6 +138,44 @@ describe("ThreadNarrativeService", () => {
     expect(narrative.revision).toBe(1);
   });
 
+  test("does not create lifecycle recovery facts for running-only updates", async () => {
+    const threads = new Map<string, Thread>();
+    const baseThread = createThread("thread-running-only", "/workspace", "project-1");
+    threads.set(baseThread.threadId, baseThread);
+
+    const narrativeService = createThreadNarrativeService({
+      threadStore: {
+        async save(thread) {
+          threads.set(thread.threadId, thread);
+        },
+        async get(threadId) {
+          return threads.get(threadId);
+        },
+        async getLatest() {
+          return undefined;
+        },
+        async listByScope() {
+          return [];
+        },
+        async close() {},
+      },
+    });
+
+    await narrativeService.processTaskUpdate(
+      createControlTask({
+        taskId: "task-running-only",
+        threadId: baseThread.threadId,
+        summary: "Still preparing changes.",
+        status: "running",
+      }),
+    );
+
+    const persistedThread = threads.get(baseThread.threadId);
+    expect(persistedThread?.recoveryFacts).toBeUndefined();
+    expect(persistedThread?.narrativeSummary).toBeUndefined();
+    expect(persistedThread?.narrativeState?.threadSummary ?? "").toBe("");
+  });
+
   test("maintains a curated history of stable task outcomes", async () => {
     const narrativeService = createThreadNarrativeService();
     const threadId = "thread-1";
@@ -160,7 +202,7 @@ describe("ThreadNarrativeService", () => {
   });
 
   test("persists narrative state through the thread store when configured", async () => {
-    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const threads = new Map<string, Thread>();
     const baseThread = createThread("thread-1", "/workspace", "project-1");
     threads.set(baseThread.threadId, baseThread);
 
@@ -194,12 +236,8 @@ describe("ThreadNarrativeService", () => {
     const persistedThread = threads.get(baseThread.threadId);
     expect(persistedThread?.narrativeSummary).toBe("Completed repo scan");
     expect(persistedThread?.narrativeRevision).toBe(1);
-    expect(persistedThread?.narrativeState).toEqual({
-      threadSummary: "Completed repo scan",
-      taskSummaries: ["Completed repo scan"],
-      openLoops: [],
-      notableEvents: [],
-    });
+    expect(persistedThread?.narrativeState?.threadSummary).toBe("Completed repo scan");
+    expect(persistedThread?.narrativeState?.taskSummaries).toEqual(["Completed repo scan"]);
 
     const narrative = await narrativeService.getNarrative(baseThread.threadId);
     expect(narrative.summary).toBe("Completed repo scan");
@@ -212,20 +250,22 @@ describe("ThreadNarrativeService", () => {
       narrativeSummary: "Stored summary",
       narrativeRevision: 3,
       narrativeState: {
+        revision: 3,
+        updatedAt: now,
         threadSummary: "Stored summary; Blocked follow-up",
         taskSummaries: ["Stored summary", "Blocked follow-up"],
         openLoops: ["Need approval on cleanup"],
         notableEvents: [],
       },
     };
-    const threads = new Map([[baseThread.threadId, baseThread]]);
+    const threads = new Map<string, Thread>([[baseThread.threadId, baseThread]]);
 
     const narrativeService = createThreadNarrativeService({
       threadStore: {
         async save(thread) {
           threads.set(thread.threadId, thread);
         },
-        async get(threadId) {
+        async get(threadId: string) {
           return threads.get(threadId);
         },
         async getLatest() {
@@ -250,14 +290,14 @@ describe("ThreadNarrativeService", () => {
       narrativeSummary: "Legacy summary",
       narrativeRevision: 4,
     };
-    const threads = new Map([[baseThread.threadId, baseThread]]);
+    const threads = new Map<string, Thread>([[baseThread.threadId, baseThread]]);
 
     const narrativeService = createThreadNarrativeService({
       threadStore: {
         async save(thread) {
           threads.set(thread.threadId, thread);
         },
-        async get(threadId) {
+        async get(threadId: string) {
           return threads.get(threadId);
         },
         async getLatest() {
@@ -290,7 +330,7 @@ describe("ThreadNarrativeService", () => {
   });
 
   test("does not let a stale in-memory derived view wipe newer persisted derived state", async () => {
-    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const threads = new Map<string, Thread>();
     const baseThread = createThread("thread-4", "/workspace", "project-1");
     threads.set(baseThread.threadId, baseThread);
 
@@ -324,14 +364,21 @@ describe("ThreadNarrativeService", () => {
     const externallyUpdated = {
       ...threads.get(baseThread.threadId)!,
       recoveryFacts: {
-        ...(threads.get(baseThread.threadId)?.recoveryFacts ?? { pendingApprovals: [] }),
-        pendingApprovals: threads.get(baseThread.threadId)?.recoveryFacts?.pendingApprovals ?? [],
+        threadId: baseThread.threadId,
+        revision: 2,
+        schemaVersion: 1,
+        status: "active",
+        updatedAt: now,
+        pendingApprovals: [],
         latestDurableAnswer: {
           answerId: "answer-external-1",
           summary: "External answer persisted.",
+          createdAt: now
         },
       },
       narrativeState: {
+        revision: 2,
+        updatedAt: now,
         threadSummary: "First stable task complete.; External answer persisted.",
         taskSummaries: ["First stable task complete."],
         openLoops: [],
@@ -350,10 +397,7 @@ describe("ThreadNarrativeService", () => {
     );
 
     const persistedThread = threads.get(baseThread.threadId);
-    expect(persistedThread?.recoveryFacts?.latestDurableAnswer).toEqual({
-      answerId: "answer-external-1",
-      summary: "External answer persisted.",
-    });
+    expect(persistedThread?.recoveryFacts?.latestDurableAnswer?.summary).toBe("External answer persisted.");
     expect(persistedThread?.narrativeState?.notableEvents).toEqual(["External answer persisted."]);
     expect(persistedThread?.narrativeState?.threadSummary).toBe(
       "First stable task complete.; External answer persisted.; Second stable task complete.",
@@ -361,7 +405,7 @@ describe("ThreadNarrativeService", () => {
   });
 
   test("prefers newer persisted narrative summary and revision over stale in-memory narrative", async () => {
-    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const threads = new Map<string, Thread>();
     const baseThread = createThread("thread-5", "/workspace", "project-1");
     threads.set(baseThread.threadId, baseThread);
 
@@ -397,6 +441,8 @@ describe("ThreadNarrativeService", () => {
       narrativeSummary: "Newer persisted summary",
       narrativeRevision: 7,
       narrativeState: {
+        revision: 7,
+        updatedAt: now,
         threadSummary: "Newer persisted summary",
         taskSummaries: ["Newer persisted summary"],
         openLoops: [],
@@ -428,14 +474,14 @@ describe("ThreadNarrativeService", () => {
       narrativeSummary: "Legacy summary",
       narrativeRevision: 2,
     };
-    const threads = new Map([[baseThread.threadId, baseThread]]);
+    const threads = new Map<string, Thread>([[baseThread.threadId, baseThread]]);
 
     const narrativeService = createThreadNarrativeService({
       threadStore: {
         async save(thread) {
           threads.set(thread.threadId, thread);
         },
-        async get(threadId) {
+        async get(threadId: string) {
           return threads.get(threadId);
         },
         async getLatest() {
@@ -473,14 +519,14 @@ describe("ThreadNarrativeService", () => {
       narrativeSummary: "Legacy summary",
       narrativeRevision: 5,
     };
-    const threads = new Map([[baseThread.threadId, baseThread]]);
+    const threads = new Map<string, Thread>([[baseThread.threadId, baseThread]]);
 
     const narrativeService = createThreadNarrativeService({
       threadStore: {
         async save(thread) {
           threads.set(thread.threadId, thread);
         },
-        async get(threadId) {
+        async get(threadId: string) {
           return threads.get(threadId);
         },
         async getLatest() {
@@ -518,7 +564,7 @@ describe("ThreadNarrativeService", () => {
   });
 
   test("blocked then completed flow only exposes the stable completed narrative", async () => {
-    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const threads = new Map<string, Thread>();
     const baseThread = createThread("thread-blocked-then-completed", "/workspace", "project-1");
     threads.set(baseThread.threadId, baseThread);
 
@@ -565,7 +611,7 @@ describe("ThreadNarrativeService", () => {
   });
 
   test("serializes overlapping updates per thread so both stable updates survive", async () => {
-    const threads = new Map<string, ReturnType<typeof createThread>>();
+    const threads = new Map<string, Thread>();
     const baseThread = createThread("thread-serial", "/workspace", "project-1");
     threads.set(baseThread.threadId, baseThread);
 

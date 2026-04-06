@@ -2,6 +2,7 @@ import type { Event } from "../../domain/event";
 import type { Task } from "../../domain/task";
 import type { Thread } from "../../domain/thread";
 import type { ApprovalRequest } from "../../domain/approval";
+import type { WorkerRecord } from "../../control/workers/worker-types";
 import type { RuntimeScope } from "./runtime-scope";
 import { PROTOCOL_VERSION, type RuntimeSnapshot } from "./runtime-types";
 import { getStoredEventSequence } from "./runtime-events";
@@ -17,6 +18,7 @@ export function buildRuntimeSnapshot(input: {
   threads: RuntimeThreadView[];
   tasks: Task[];
   pendingApprovals: ApprovalRequest[];
+  workers: WorkerRecord[];
   events: Event[];
   fallbackLastEventSeq: number;
   narrativeSummary?: string;
@@ -54,21 +56,39 @@ export function buildRuntimeSnapshot(input: {
     })),
     tasks: input.tasks.map((task) => ({
       taskId: task.taskId,
+      threadId: task.threadId,
       status: task.status,
       summary: task.summary ?? "",
       blockingReason: task.blockingReason,
     })),
     pendingApprovals: input.pendingApprovals.map((approval) => ({
       approvalRequestId: approval.approvalRequestId,
+      threadId: approval.threadId,
+      taskId: approval.taskId,
+      toolCallId: approval.toolCallId,
       summary: approval.summary,
       risk: approval.risk,
       status: approval.status,
     })),
-    answers: input.events
-      .filter((event) => event.type === "answer.updated")
-      .map((event) => ({
-        answerId: event.eventId,
-        content: typeof event.payload?.summary === "string" ? event.payload.summary : "",
-      })),
+    answers: input.activeThread.recoveryFacts?.latestDurableAnswer
+      ? [
+          {
+            answerId: input.activeThread.recoveryFacts.latestDurableAnswer.answerId,
+            threadId: input.activeThread.threadId,
+            content: input.activeThread.recoveryFacts.latestDurableAnswer.summary,
+          },
+        ]
+      : [],
+    workers: input.workers.map((worker) => ({
+      workerId: worker.workerId,
+      threadId: worker.threadId,
+      taskId: worker.taskId,
+      role: worker.role,
+      status: worker.status,
+      spawnReason: worker.spawnReason,
+      startedAt: worker.startedAt,
+      endedAt: worker.endedAt,
+      resumeToken: worker.resumeToken,
+    })),
   };
 }

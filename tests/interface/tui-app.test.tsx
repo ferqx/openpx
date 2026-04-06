@@ -5,22 +5,38 @@ import { main } from "../../src/app/main";
 import { App } from "../../src/interface/tui/app";
 import type { TuiKernel } from "../../src/interface/tui/hooks/use-kernel";
 import type { ApprovalCommand, SubmitInputCommand, ThreadCommand } from "../../src/interface/tui/commands";
+import type { RuntimeSessionState } from "../../src/interface/runtime/runtime-session";
 
 describe("TUI App", () => {
-  test("renders the core task shell regions and submits composer input", async () => {
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-    async function waitFor(check: () => boolean, message: string, attempts = 20) {
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        if (check()) {
-          return;
-        }
+  const tick = (delayMs = 0) => new Promise((resolve) => setTimeout(resolve, delayMs));
+  function createCompletedSessionResult(overrides: Partial<RuntimeSessionState> = {}): RuntimeSessionState {
+    return {
+      status: "completed",
+      summary: "Awaiting answer",
+      workspaceRoot: "/tmp/workspace",
+      projectId: "project-1",
+      tasks: [],
+      approvals: [],
+      answers: [],
+      workers: [],
+      threads: [],
+      ...overrides,
+    };
+  }
 
-        await tick();
+  async function waitFor(check: () => boolean, message: string, attempts = 20, delayMs = 10) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (check()) {
+        return;
       }
 
-      throw new Error(message);
+      await tick(delayMs);
     }
 
+    throw new Error(message);
+  }
+
+  test("renders the core task shell regions and submits composer input", async () => {
     let receivedCommand: SubmitInputCommand | ApprovalCommand | ThreadCommand | undefined;
     const kernel: TuiKernel = {
       events: {
@@ -30,7 +46,7 @@ describe("TUI App", () => {
       },
       async handleCommand(command) {
         receivedCommand = command;
-        return { status: "completed" };
+        return createCompletedSessionResult();
       },
     };
     const { lastFrame, stdin } = render(<App kernel={kernel} />);
@@ -49,11 +65,11 @@ describe("TUI App", () => {
     );
 
     const frame = lastFrame();
+    const expectedModelName = process.env.OPENAI_MODEL ?? "unknown";
 
     expect(frame).toContain("openpx");
-    expect(frame).toContain("›");
-    expect(frame).toContain("PROJECT");
-    expect(frame).toContain("THREAD");
+    expect(frame).toContain("❯");
+    expect(frame).toContain(expectedModelName);
     expect(receivedCommand).toEqual({
       type: "submit_input",
       payload: { text: "plan the repo" },
@@ -61,7 +77,6 @@ describe("TUI App", () => {
   });
 
   test("renders task and approval state returned by the kernel", async () => {
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -72,20 +87,39 @@ describe("TUI App", () => {
         return {
           status: "waiting_approval",
           summary: "Approval required before deleting src/old.ts",
+          threadId: "thread_1",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          blockingReason: {
+            kind: "waiting_approval",
+            message: "apply_patch delete_file src/old.ts",
+          },
           tasks: [
             {
               taskId: "task_1",
-              summary: "delete src/old.ts",
+              threadId: "thread_1",
               status: "blocked",
+              summary: "delete src/old.ts",
+              blockingReason: {
+                kind: "waiting_approval",
+                message: "apply_patch delete_file src/old.ts",
+              },
             },
           ],
           approvals: [
             {
               approvalRequestId: "approval_1",
+              threadId: "thread_1",
+              taskId: "task_1",
+              toolCallId: "tool_1",
               summary: "apply_patch delete_file src/old.ts",
+              risk: "apply_patch.delete_file",
               status: "pending",
             },
           ],
+          answers: [],
+          workers: [],
+          threads: [],
         };
       },
     };
@@ -101,14 +135,14 @@ describe("TUI App", () => {
 
     const frame = lastFrame();
 
-    expect(frame).toContain("Agent:");
+    expect(frame).toContain("Action Required:");
     expect(frame).toContain("Approval required before deleting src/old.ts");
-    expect(frame).toMatch(/Action Required:.*apply_patch delete_file src\/old\.ts/);
+    expect(frame).toContain("Action Required:");
+    expect(frame).toContain("apply_patch delete_file src/old.ts");
     expect(frame).toMatch(/Confirm work\?.*\[Y\/n\]/);
   });
 
   test("hydrates the latest blocked session state on mount", async () => {
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -119,42 +153,62 @@ describe("TUI App", () => {
         return {
           status: "waiting_approval",
           summary: "Approval required before deleting src/resume-me.ts",
+          threadId: "thread_resume",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          blockingReason: {
+            kind: "waiting_approval",
+            message: "apply_patch delete_file src/resume-me.ts",
+          },
           tasks: [
             {
               taskId: "task_resume",
-              summary: "delete src/resume-me.ts",
+              threadId: "thread_resume",
               status: "blocked",
+              summary: "delete src/resume-me.ts",
+              blockingReason: {
+                kind: "waiting_approval",
+                message: "apply_patch delete_file src/resume-me.ts",
+              },
             },
           ],
           approvals: [
             {
               approvalRequestId: "approval_resume",
+              threadId: "thread_resume",
+              taskId: "task_resume",
+              toolCallId: "tool_resume",
               summary: "apply_patch delete_file src/resume-me.ts",
+              risk: "apply_patch.delete_file",
               status: "pending",
             },
           ],
+          answers: [],
+          workers: [],
+          threads: [],
         };
       },
       async handleCommand() {
-        return { status: "completed" };
+        return createCompletedSessionResult();
       },
     };
 
     const { lastFrame } = render(<App kernel={kernel} />);
-    await tick();
-    await tick();
-    await tick();
+    await waitFor(
+      () => (lastFrame() ?? "").includes("apply_patch delete_file src/resume-me.ts"),
+      "expected hydrated approval shell to render",
+    );
 
     const frame = lastFrame();
 
-    expect(frame).toContain("Agent:");
+    expect(frame).toContain("Action Required:");
     expect(frame).toContain("Approval required before deleting src/resume-me.ts");
-    expect(frame).toMatch(/Action Required:.*apply_patch delete_file src\/resume-me\.ts/);
+    expect(frame).toContain("Action Required:");
+    expect(frame).toContain("apply_patch delete_file src/resume-me.ts");
     expect(frame).toMatch(/Confirm work\?.*\[Y\/n\]/);
   });
 
   test("shows the active thread narrative summary when no fresh answer is available", async () => {
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -165,29 +219,35 @@ describe("TUI App", () => {
         return {
           status: "completed",
           summary: "Awaiting answer",
+          threadId: "thread-narrative",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
           narrativeSummary: "Completed repo scan and isolated runtime recovery work.",
           tasks: [],
           approvals: [],
+          answers: [],
+          workers: [],
+          threads: [],
         };
       },
       async handleCommand() {
-        return { status: "completed" };
+        return createCompletedSessionResult();
       },
     };
 
     const { lastFrame } = render(<App kernel={kernel} />);
-    await tick();
-    await tick();
-    await tick();
+    await waitFor(
+      () => (lastFrame() ?? "").includes("Completed repo scan and isolated runtime recovery work."),
+      "expected narrative summary to render when no fresh answer is available",
+    );
 
     const frame = lastFrame();
 
-    expect(frame).toContain("Thread:");
+    expect(frame).not.toContain("Thread:");
     expect(frame).toContain("Completed repo scan and isolated runtime recovery work.");
   });
 
-  test("renders a thread panel with active and blocked thread summaries", async () => {
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  test("keeps the thread panel hidden by default", async () => {
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -198,6 +258,8 @@ describe("TUI App", () => {
         return {
           status: "completed",
           summary: "Awaiting answer",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
           threadId: "thread-active",
           narrativeSummary: "Current active runtime recovery thread.",
           threads: [
@@ -222,31 +284,28 @@ describe("TUI App", () => {
           ],
           tasks: [],
           approvals: [],
+          answers: [],
+          workers: [],
         };
       },
       async handleCommand() {
-        return { status: "completed" };
+        return createCompletedSessionResult();
       },
     };
 
     const { lastFrame } = render(<App kernel={kernel} />);
-    await tick();
-    await tick();
-    await tick();
+    await waitFor(
+      () => (lastFrame() ?? "").includes("Current active runtime recovery thread."),
+      "expected hydrated thread summary to render before checking panel visibility",
+    );
 
     const frame = lastFrame();
 
-    expect(frame).toContain("THREADS");
-    expect(frame).toContain("thread-active");
-    expect(frame).toContain("thread-blocked");
-    expect(frame).toContain("approval:1");
-    expect(frame).toContain("human_recovery");
-    expect(frame).toContain("Current active runtime recovery thread.");
-    expect(frame).toContain("Manual recovery pending for a risky patch.");
+    expect(frame).not.toContain("THREADS");
+    expect(frame).not.toContain("thread-blocked");
   });
 
   test("renders a manual-recovery shell when the hydrated thread is blocked", async () => {
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -257,6 +316,9 @@ describe("TUI App", () => {
         return {
           status: "blocked",
           summary: "Awaiting answer",
+          threadId: "thread_recovery",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
           blockingReason: {
             kind: "human_recovery",
             message: "Manual recovery required for apply_patch; previous execution outcome is uncertain after a crash.",
@@ -264,22 +326,31 @@ describe("TUI App", () => {
           tasks: [
             {
               taskId: "task_recovery",
-              summary: "Apply risky patch",
+              threadId: "thread_recovery",
               status: "blocked",
+              summary: "Apply risky patch",
+              blockingReason: {
+                kind: "human_recovery",
+                message: "Manual recovery required for apply_patch; previous execution outcome is uncertain after a crash.",
+              },
             },
           ],
           approvals: [],
+          answers: [],
+          workers: [],
+          threads: [],
         };
       },
       async handleCommand() {
-        return { status: "completed" };
+        return createCompletedSessionResult();
       },
     };
 
     const { lastFrame } = render(<App kernel={kernel} />);
-    await tick();
-    await tick();
-    await tick();
+    await waitFor(
+      () => (lastFrame() ?? "").includes("Manual recovery required for apply_patch"),
+      "expected blocked recovery shell to render",
+    );
 
     const frame = lastFrame();
 
@@ -291,7 +362,6 @@ describe("TUI App", () => {
   });
 
   test("reacts to live blocked recovery events without a hydrate refresh", async () => {
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
 
     const kernel: TuiKernel = {
@@ -302,7 +372,7 @@ describe("TUI App", () => {
         },
       },
       async handleCommand() {
-        return { status: "completed" };
+        return createCompletedSessionResult();
       },
     };
 
@@ -310,25 +380,33 @@ describe("TUI App", () => {
     await tick();
 
     emit?.({
-      type: "task.updated",
+      type: "session.updated",
       payload: {
-        taskId: "task_live_recovery",
-        summary: "Recover risky patch",
         status: "blocked",
-        blockingReason: {
-          kind: "human_recovery",
-          message: "Manual recovery required from live event.",
-        },
-      },
-    });
-    emit?.({
-      type: "thread.blocked",
-      payload: {
         threadId: "thread_live_recovery",
+        summary: "Manual recovery required from live event.",
+        workspaceRoot: "/tmp/workspace",
+        projectId: "project-1",
         blockingReason: {
-          kind: "human_recovery",
+          kind: "human_recovery" as const,
           message: "Manual recovery required from live event.",
         },
+        tasks: [
+          {
+            taskId: "task_live_recovery",
+            threadId: "thread_live_recovery",
+            status: "blocked",
+            summary: "Recover risky patch",
+            blockingReason: {
+              kind: "human_recovery" as const,
+              message: "Manual recovery required from live event.",
+            },
+          },
+        ],
+        approvals: [],
+        answers: [],
+        workers: [],
+        threads: [],
       },
     });
     await tick();

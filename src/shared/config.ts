@@ -10,6 +10,7 @@ export type AppConfig = {
     apiKey?: string;
     baseURL?: string;
     name?: string;
+    thinking?: "high" | "medium" | "low" | "off";
   };
 };
 
@@ -31,9 +32,11 @@ export function resolveConfig(input: {
   dataDir: string;
   projectId?: string;
 }): AppConfig {
-  const projectId = input.projectId ?? resolveProjectId(input.workspaceRoot);
+  const workspaceRoot = resolve(input.workspaceRoot);
+  const projectId = input.projectId ?? resolveProjectId(workspaceRoot);
+  const thinkingEnv = process.env.OPENPX_THINKING as AppConfig["model"]["thinking"];
   return {
-    workspaceRoot: input.workspaceRoot,
+    workspaceRoot,
     projectId,
     dataDir: input.dataDir,
     checkpointConnString: input.dataDir,
@@ -41,6 +44,7 @@ export function resolveConfig(input: {
       apiKey: process.env.OPENAI_API_KEY,
       baseURL: process.env.OPENAI_BASE_URL,
       name: process.env.OPENAI_MODEL,
+      thinking: thinkingEnv,
     },
   };
 }

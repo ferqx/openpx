@@ -1,3 +1,6 @@
+import { ulid } from "ulid";
+
 export function prefixedUuid(prefix: string): string {
-  return `${prefix}_${crypto.randomUUID()}`;
+  // We use ULID for better sortability and cloud-sync readiness
+  return `${prefix}_${ulid()}`;
 }

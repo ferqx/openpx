@@ -7,6 +7,7 @@ import { postTurnGuardNode } from "./nodes/post-turn-guard";
 import { createPlannerWorkerGraph } from "../../workers/planner/graph";
 import { createExecutorWorkerGraph } from "../../workers/executor/graph";
 import { createVerifierWorkerGraph } from "../../workers/verifier/graph";
+import type { ResumeControl } from "./resume-control";
 
 export async function createRootGraph(context: RootGraphContext) {
   const plannerGraph = await createPlannerWorkerGraph(context.planner);
@@ -19,11 +20,16 @@ export async function createRootGraph(context: RootGraphContext) {
       const view = threadId && context.getThreadView ? await context.getThreadView(threadId) : undefined;
       
       let input = state.input;
-      if (state.resumeValue && typeof state.resumeValue === "string") {
+      if (typeof state.resumeValue === "string") {
         const resumeText = state.resumeValue.toLowerCase();
         const isConfirmation = /\b(yes|ok|approve|confirm|start|proceed)\b/.test(resumeText);
         if (!isConfirmation) {
           input = state.resumeValue;
+        }
+      } else if (state.resumeValue) {
+        const resumeControl = state.resumeValue as ResumeControl;
+        if (resumeControl.kind === "approval_resolution" && resumeControl.decision === "rejected" && resumeControl.reason) {
+          input = resumeControl.reason;
         }
       }
 
@@ -39,11 +45,24 @@ export async function createRootGraph(context: RootGraphContext) {
     })
     .addNode("route", routeNode)
     .addNode("planner", async (state, config) => {
-      console.log("[DEBUG] node: planner");
       return plannerGraph.invoke({ input: state.input }, config);
     })
+    .addNode("responder", async (state, config) => {
+      if (!context.responder) {
+        return { summary: state.input, mode: "done" };
+      }
+      const result = await context.responder({
+        input: state.input,
+        threadId: config.configurable?.thread_id as string | undefined,
+        taskId: config.configurable?.task_id as string | undefined,
+        configurable: config.configurable,
+      });
+      return {
+        summary: result.summary,
+        mode: "done" as const,
+      };
+    })
     .addNode("executor", (state, config) => {
-      console.log("[DEBUG] node: executor");
       return context.executor({
         input: state.input,
         threadId: config.configurable?.thread_id as string | undefined,
@@ -52,20 +71,16 @@ export async function createRootGraph(context: RootGraphContext) {
       });
     })
     .addNode("verifier", async (state, config) => {
-      console.log("[DEBUG] node: verifier");
       const result = await verifierGraph.invoke({ input: state.input }, config);
       return {
-        // summary is gone, so map it? 
-        // wait, I need to see what I should do with summary. 
+        summary: result.summary,
         verifierPassed: result.isValid,
         verifierFeedback: result.feedback,
       };
     })
     .addNode("post-turn-guard", postTurnGuardNode)
     .addNode("compact", (state, config) => {
-      console.log("[DEBUG] node: compact");
       if (context.compactionPolicy && state.compactionTrigger) {
-        // Wait, compactionPolicy.compact takes DerivedThreadView.
         const view = {
           recoveryFacts: state.recoveryFacts,
           narrativeState: state.narrativeState,
@@ -89,6 +104,8 @@ export async function createRootGraph(context: RootGraphContext) {
       switch (state.mode) {
         case "plan":
           return "planner";
+        case "respond":
+          return "responder";
         case "verify":
           return "verifier";
         case "waiting_approval":
@@ -100,6 +117,7 @@ export async function createRootGraph(context: RootGraphContext) {
       }
     })
     .addEdge("planner", END)
+    .addEdge("responder", END)
     .addConditionalEdges("verifier", (state) => {
       if (state.verifierPassed === false) {
         return "route";
@@ -110,9 +128,9 @@ export async function createRootGraph(context: RootGraphContext) {
     .addConditionalEdges("post-turn-guard", (state) => {
       if (state.compactionTrigger) return "compact";
       if (state.mode === "done") return END;
-      return "intake";
+      return END; 
     })
-    .addEdge("compact", "intake");
+    .addEdge("compact", END);
 
   return graph.compile({
     checkpointer: context.checkpointer,

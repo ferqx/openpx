@@ -1,7 +1,26 @@
 # OpenWENPX Current System Architecture (V1)
 
 **Date:** 2026-04-03
-**Status:** Baseline Established
+**Status:** Historical Baseline Under Reset
+
+## Reset Notice
+
+This document remains useful as a historical baseline, but it is no longer the top-level architecture authority.
+
+Active reset documents:
+
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+Use the reset design and plan for current implementation decisions.
+
+Reset implementation status as of 2026-04-06:
+
+- stable runtime protocol modules are in place
+- kernel responsibilities are split across command handling, background execution, and view projection
+- workers are first-class persisted runtime entities
+- TUI state is reduced to shell/presentation concerns and stable session consumption
+- narrative and compaction are auxiliary systems rather than lifecycle authorities
 
 ## 1. Top-Level Topology
 
@@ -31,6 +50,20 @@ OpenWENPX operates as a local "Agent OS" split into two distinct tiers:
     - `GET /v1/snapshot`: Returns full state for client hydration.
     - `POST /v1/commands`: Routes user actions (submit input, approve, reject).
     - `GET /v1/events`: SSE stream for real-time state updates.
+
+### Event Layering Note
+
+As of the reset implementation, the system uses three separate event layers:
+
+- **Durable events**: persisted recovery and narrative support events in the thread event log
+- **Kernel events**: in-process coordination events on the control-plane event bus
+- **Runtime events**: stable external protocol events emitted to clients
+
+Important consequences:
+
+- `stream.*` belongs to the runtime event layer, not the durable event log
+- `thread.view_updated` may be emitted externally and persisted for compatibility, but it is not the TUI hydration channel
+- TUI hydration uses session-state transfer, not overloaded runtime SSE semantics
 
 ## 3. Orchestration & Graph Logic
 

@@ -30,6 +30,7 @@ describe("Runtime snapshot", () => {
       ],
       tasks: [],
       pendingApprovals: [],
+      workers: [],
       events: [],
       fallbackLastEventSeq: 0,
       narrativeSummary: "Completed repo scan and isolated the runtime recovery path.",
@@ -39,6 +40,7 @@ describe("Runtime snapshot", () => {
     expect(snapshot.threads[0]?.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
     expect(snapshot.threads[0]?.pendingApprovalCount).toBe(1);
     expect(snapshot.threads[0]?.blockingReasonKind).toBe("human_recovery");
+    expect(snapshot.workers).toEqual([]);
   });
 
   test("prefers recovery facts and narrative state over loose event reconstruction", () => {
@@ -50,6 +52,7 @@ describe("Runtime snapshot", () => {
       threads: [],
       tasks: [],
       pendingApprovals: [],
+      workers: [],
       events: [],
       fallbackLastEventSeq: 0,
       activeThread: {
@@ -59,6 +62,11 @@ describe("Runtime snapshot", () => {
         revision: 2,
         status: "blocked",
         recoveryFacts: {
+          threadId: "thread-1",
+          revision: 2,
+          schemaVersion: 1,
+          status: "blocked",
+          updatedAt: new Date().toISOString(),
           pendingApprovals: [],
           blocking: {
             sourceTaskId: "task-1",
@@ -68,18 +76,28 @@ describe("Runtime snapshot", () => {
           latestDurableAnswer: {
             answerId: "answer-1",
             summary: "Runtime snapshot migration is paused.",
+            createdAt: new Date().toISOString(),
           },
         },
         narrativeState: {
+          revision: 1,
           threadSummary: "Runtime snapshot migration is paused.",
           taskSummaries: [],
           openLoops: [],
           notableEvents: [],
+          updatedAt: new Date().toISOString(),
         },
       },
     });
 
     expect(snapshot.blockingReason?.kind).toBe("human_recovery");
     expect(snapshot.narrativeSummary).toBe("Runtime snapshot migration is paused.");
+    expect(snapshot.answers).toEqual([
+      {
+        answerId: "answer-1",
+        threadId: "thread-1",
+        content: "Runtime snapshot migration is paused.",
+      },
+    ]);
   });
 });

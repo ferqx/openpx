@@ -13,7 +13,13 @@ describe("verifier model integration", () => {
         verifyCalled = true;
         return { summary: "verified", isValid: true };
       },
+      async respond() {
+        return { summary: "responded" };
+      },
       onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
         return () => {};
       },
     };

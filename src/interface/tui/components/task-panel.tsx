@@ -1,11 +1,8 @@
 import React from "react";
 import { Box, Text } from "ink";
+import type { RuntimeSessionState } from "../../runtime/runtime-session";
 
-export type TaskSummary = {
-  id: string;
-  title: string;
-  status: string;
-};
+export type TaskSummary = RuntimeSessionState["tasks"][number];
 
 export function TaskPanel(input: { tasks: TaskSummary[] }) {
   const getStatusIndicator = (status: string) => {
@@ -29,9 +26,9 @@ export function TaskPanel(input: { tasks: TaskSummary[] }) {
       <Text bold>TASKS</Text>
       {input.tasks.length === 0 ? <Text color="gray">No active tasks</Text> : null}
       {input.tasks.map((task) => (
-        <Box key={task.id} gap={1}>
+        <Box key={task.taskId} gap={1}>
           {getStatusIndicator(task.status)}
-          <Text>{task.title}</Text>
+          <Text>{task.summary}</Text>
         </Box>
       ))}
     </Box>

@@ -1,6 +1,7 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test";
 import { RuntimeRouter } from "../../src/runtime/service/runtime-router";
-import { PROTOCOL_VERSION, schemas } from "../../src/runtime/service/runtime-types";
+import { PROTOCOL_VERSION, PROTOCOL_VERSION_HEADER, schemas } from "../../src/runtime/service/runtime-types";
+import type { RuntimeCommand } from "../../src/runtime/service/runtime-types";
 import type { RuntimeService } from "../../src/runtime/service/runtime-service";
 
 describe("Stable Control API Compliance", () => {
@@ -18,8 +19,9 @@ describe("Stable Control API Compliance", () => {
         tasks: [],
         pendingApprovals: [],
         answers: [],
+        workers: [],
       })),
-      handleCommand: mock(async () => {}),
+      handleCommand: mock(async (_command: RuntimeCommand) => {}),
       subscribeEvents: mock(() => {
         async function* gen() {
           yield {
@@ -27,7 +29,13 @@ describe("Stable Control API Compliance", () => {
             seq: 1,
             timestamp: new Date().toISOString(),
             traceId: "test-trace-id",
-            event: { type: "test" },
+            event: {
+              type: "thread.view_updated",
+              payload: {
+                threadId: "thread-1",
+                status: "active",
+              },
+            },
           };
         }
         return gen();
@@ -40,7 +48,7 @@ describe("Stable Control API Compliance", () => {
     const req = new Request("http://localhost/v1/health");
     const res = await router.handle(req);
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
+    const body = await res.json() as { protocolVersion: string };
     const result = schemas.HealthResponse.safeParse(body);
     expect(result.success).toBe(true);
     expect(body.protocolVersion).toBe(PROTOCOL_VERSION);
@@ -63,10 +71,20 @@ describe("Stable Control API Compliance", () => {
     });
     const res = await router.handle(req);
     expect(res.status).toBe(202);
-    expect(runtime.handleCommand).toHaveBeenCalledWith(command as any, {
+    expect(runtime.handleCommand).toHaveBeenCalledWith(command, {
       workspaceRoot: "/test",
       projectId: "test-project",
     });
+  });
+
+  test("runtime command schema accepts explicit approval decision commands", () => {
+    expect(
+      schemas.RuntimeCommand.safeParse({
+        kind: "resolve_approval",
+        approvalRequestId: "approval-1",
+        decision: "approved",
+      }).success,
+    ).toBe(true);
   });
 
   test("POST /v1/commands rejects invalid commands", async () => {
@@ -96,6 +114,38 @@ describe("Stable Control API Compliance", () => {
     const event = JSON.parse(dataMatch[1]!);
     const result = schemas.RuntimeEventEnvelope.safeParse(event);
     expect(result.success).toBe(true);
+  });
+
+  test("GET /v1/snapshot rejects unsupported protocol versions", async () => {
+    const req = new Request("http://localhost/v1/snapshot", {
+      headers: {
+        [PROTOCOL_VERSION_HEADER]: "9.9.9",
+      },
+    });
+    const res = await router.handle(req);
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error?: string; supportedVersions?: string[] };
+    expect(body.error).toContain("Unsupported protocol version");
+    expect(body.supportedVersions).toContain(PROTOCOL_VERSION);
+  });
+
+  test("runtime event schema rejects unknown event names", () => {
+    expect(
+      schemas.RuntimeEvent.safeParse({
+        type: "test",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("runtime event schema rejects invalid payloads for stable event types", () => {
+    expect(
+      schemas.RuntimeEvent.safeParse({
+        type: "thread.view_updated",
+        payload: {
+          threadId: "thread-1",
+        },
+      }).success,
+    ).toBe(false);
   });
 
   test("legacy endpoints still work for backward compatibility", async () => {

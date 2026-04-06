@@ -71,6 +71,11 @@ describe("root graph", () => {
       verifier: async () => ({ summary: "verified", mode: "verify" }),
       getThreadView: async () => ({
         recoveryFacts: {
+          threadId: "thread_derived",
+          revision: 1,
+          schemaVersion: 1,
+          status: "blocked",
+          updatedAt: new Date().toISOString(),
           pendingApprovals: [],
           blocking: {
             sourceTaskId: "1",
@@ -79,12 +84,16 @@ describe("root graph", () => {
           },
         },
         narrativeState: {
+          revision: 1,
+          updatedAt: new Date().toISOString(),
           threadSummary: "",
           taskSummaries: [],
           openLoops: [],
           notableEvents: [],
         },
         workingSetWindow: {
+          revision: 1,
+          updatedAt: new Date().toISOString(),
           messages: ["Need to inspect the previous patch."],
           toolResults: [],
           verifierFeedback: [],

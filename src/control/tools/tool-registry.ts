@@ -213,14 +213,12 @@ export function createToolRegistry(input: {
       }
 
       try {
-        console.log(`[TELEMETRY] tool.started: ${normalizedRequest.toolName} (callId: ${normalizedRequest.toolCallId})`);
         const startTime = Date.now();
         const output = await tool.execute({
           ...normalizedRequest,
           request: normalizedRequest,
         });
         const duration = Date.now() - startTime;
-        console.log(`[TELEMETRY] tool.completed: ${normalizedRequest.toolName} in ${duration}ms`);
 
         if (ledgerEntry) {
           await input.executionLedger.save({
@@ -315,14 +313,12 @@ export function createToolRegistry(input: {
       }
 
       try {
-        console.log(`[TELEMETRY] tool.started: ${normalizedRequest.toolName} (callId: ${normalizedRequest.toolCallId})`);
         const startTime = Date.now();
         const output = await tool.execute({
           ...normalizedRequest,
           request: normalizedRequest,
         });
         const duration = Date.now() - startTime;
-        console.log(`[TELEMETRY] tool.completed: ${normalizedRequest.toolName} in ${duration}ms`);
 
         if (ledgerEntry) {
           await input.executionLedger.save({

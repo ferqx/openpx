@@ -1,17 +1,26 @@
-import type { TuiKernel, TuiKernelEvent } from "../tui/hooks/use-kernel";
+import type { RuntimeStatusEvent, TuiKernel, TuiKernelEvent } from "../tui/hooks/use-kernel";
 import type { RuntimeClient } from "./runtime-client";
 import type { SubmitInputCommand, ApprovalCommand, ThreadCommand } from "../tui/commands";
-import { deriveRuntimeSession } from "./runtime-session";
+import { deriveRuntimeSession, formatThreadListSummary } from "./runtime-session";
+import type { SessionUpdatedEvent } from "./tui-session-event";
 
-export function createRemoteKernel(client: RuntimeClient): TuiKernel {
+type RemoteRuntimeClient = Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents">;
+
+export function createRemoteKernel(client: RemoteRuntimeClient): TuiKernel {
   const handlers = new Set<(event: TuiKernelEvent) => void>();
   let lastRuntimeStatus: "connected" | "disconnected" = "disconnected";
   let eventLoopStarted = false;
 
+  const hydrateSession = async () => {
+    const snapshot = await client.getSnapshot();
+    return deriveRuntimeSession(snapshot);
+  };
+
   function emitRuntimeStatus(status: "connected" | "disconnected") {
     lastRuntimeStatus = status;
+    const event: RuntimeStatusEvent = { type: "runtime.status", payload: { status } };
     for (const handler of handlers) {
-      handler({ type: "runtime.status", payload: { status } });
+      handler(event);
     }
   }
 
@@ -27,6 +36,26 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
         try {
           const events = client.subscribeEvents();
           emitRuntimeStatus("connected");
+          
+          // Whenever we connect/reconnect, trigger a hydration to sync state
+          // This ensures we catch up on events missed during disconnect.
+          void (async () => {
+            try {
+              const result = await hydrateSession();
+              if (result) {
+                const hydrationEvent: SessionUpdatedEvent = {
+                  type: "session.updated",
+                  payload: result,
+                };
+                for (const handler of handlers) {
+                  handler(hydrationEvent);
+                }
+              }
+            } catch (e) {
+              // Ignore hydration errors during initial connection
+            }
+          })();
+
           for await (const envelope of events) {
             for (const handler of handlers) {
               handler(envelope.event);
@@ -34,8 +63,8 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
           }
         } catch (e) {
           emitRuntimeStatus("disconnected");
-          // Wait before retrying
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          // Wait briefly before retrying
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
     })();
@@ -47,7 +76,11 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
         ensureEventLoop();
         handlers.add(handler);
         // Immediately notify of current status
-        handler({ type: "runtime.status", payload: { status: lastRuntimeStatus } });
+        const event: RuntimeStatusEvent = {
+          type: "runtime.status",
+          payload: { status: lastRuntimeStatus },
+        };
+        handler(event);
         return () => handlers.delete(handler);
       },
     },
@@ -66,34 +99,21 @@ export function createRemoteKernel(client: RuntimeClient): TuiKernel {
         const snapshot = await client.getSnapshot();
         const threadId = command.payload.threadId ?? snapshot.activeThreadId;
         if (!threadId) {
-          return deriveRuntimeSession(snapshot);
+          return hydrateSession();
         }
         await client.sendCommand({ kind: "continue", threadId });
       } else if (command.type === "thread_list") {
         const snapshot = await client.getSnapshot();
         const session = deriveRuntimeSession(snapshot);
-        const lines = session.threads.map((thread) =>
-          [
-            `${thread.threadId}${thread.threadId === session.threadId ? " (active)" : ""} [${thread.status}]`,
-            thread.pendingApprovalCount ? `approval:${thread.pendingApprovalCount}` : undefined,
-            thread.blockingReasonKind,
-            thread.narrativeSummary,
-          ]
-            .filter(Boolean)
-            .join(" "),
-        );
         return {
           ...session,
-          summary: lines.length > 0 ? lines.join("\n") : "No threads available.",
+          summary: formatThreadListSummary(session),
         };
       }
       
       // After command, return a full hydration to update UI state immediately
-      return this.hydrateSession?.();
+      return hydrateSession();
     },
-    async hydrateSession() {
-      const snapshot = await client.getSnapshot();
-      return deriveRuntimeSession(snapshot);
-    },
+    hydrateSession,
   };
 }

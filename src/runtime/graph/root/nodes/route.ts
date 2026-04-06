@@ -1,4 +1,4 @@
-import type { RootMode, WorkerMode } from "../context";
+import type { RootMode } from "../context";
 import { createRecommendationEngine } from "../../../../control/policy/recommendation-engine";
 
 export function routeNode(state: { 
@@ -7,32 +7,38 @@ export function routeNode(state: {
   verifierFeedback?: string; 
   mode?: RootMode;
 }): { mode: RootMode; input?: string; verifierPassed?: boolean; recommendationReason?: string } {
-  const input = state.input.toLowerCase();
+  const input = state.input.toLowerCase().trim();
 
+  // 1. Verifier Feedback Loop
   if (state.verifierPassed === false) {
-    // If verifier failed, route back to executor with feedback
     return {
       mode: "execute",
       input: `${state.input}\n\nVerification failed: ${state.verifierFeedback}. Please fix these issues and verify again.`,
-      verifierPassed: undefined, // Reset so we don't loop forever
+      verifierPassed: undefined,
       recommendationReason: undefined,
     };
   }
 
+  // 2. Explicit Termination
   if (/\b(completed|done|finished)\b/.test(input)) {
     return { mode: "done", recommendationReason: undefined };
   }
 
-  // If it's a simple confirmation and we were waiting, continue with previous intent
-  if (state.mode === "waiting_approval" && /\b(yes|ok|approve|confirm|start|proceed)\b/.test(input)) {
-    // If the input was something that would trigger plan/verify, it will still trigger it below.
-    // But 'yes' needs to know what to do. 
-    // For now, let's assume if it's not explicitly plan/verify, it's execute.
-    // In a more robust version, we'd store 'intendedMode' in the state.
+  // 3. Explicit Mode Triggers
+  if (/\bverify\b/.test(input)) {
+    return { mode: "verify", recommendationReason: undefined };
+  }
+  if (/\bplan\b/.test(input)) {
+    return { mode: "plan", recommendationReason: undefined };
   }
 
-  // Check for team recommendation only if we are starting a new execution/plan
-  // and NOT already in waiting_approval mode (to avoid loops)
+  // 4. CHAT/RESPOND HEURISTICS: Direct Response for simple talk
+  const isSimpleChat = /^(hi|hello|hey|hola|你好|您好|谁|who are you|what can you do|你是谁|天气)/i.test(input);
+  if (isSimpleChat) {
+    return { mode: "respond", recommendationReason: undefined };
+  }
+
+  // 5. POLICY CHECK: Check for team recommendation only if we are starting a new work turn
   if (state.mode !== "waiting_approval") {
     const recommendationEngine = createRecommendationEngine();
     const recommendation = recommendationEngine.evaluate(state.input);
@@ -44,12 +50,6 @@ export function routeNode(state: {
     }
   }
 
-  if (/\bverify\b/.test(input)) {
-    return { mode: "verify", recommendationReason: undefined };
-  }
-  if (/\bplan\b/.test(input)) {
-    return { mode: "plan", recommendationReason: undefined };
-  }
-
-  return { mode: "execute", recommendationReason: undefined };
+  // 6. DEFAULT: All other technical inputs go to planner for goal-setting
+  return { mode: "plan", recommendationReason: undefined };
 }

@@ -2,12 +2,13 @@ import { createAppContext } from "../../app/bootstrap";
 import { type RuntimeCommand, type RuntimeEventEnvelope, type RuntimeSnapshot } from "./runtime-types";
 import { normalizeScope, scopeKey, type RuntimeScope, type RuntimeServiceOptions } from "./runtime-scope";
 import { RuntimeScopedSession } from "./runtime-scoped-session";
+import type { SessionCommandResult } from "../../kernel/session-kernel";
 
 export type { RuntimeScope, RuntimeServiceOptions } from "./runtime-scope";
 
 export interface RuntimeService {
   getSnapshot(scope?: RuntimeScope): Promise<RuntimeSnapshot>;
-  handleCommand(command: RuntimeCommand, scope?: RuntimeScope): Promise<void>;
+  handleCommand(command: RuntimeCommand, scope?: RuntimeScope): Promise<SessionCommandResult>;
   subscribeEvents(scope?: RuntimeScope | number, afterSeq?: number): AsyncIterable<RuntimeEventEnvelope>;
 }
 
@@ -43,8 +44,8 @@ class DeviceRuntimeService implements RuntimeService {
     return (await this.getScopedRuntime(this.getScope(scope))).getSnapshot();
   }
 
-  async handleCommand(command: RuntimeCommand, scope?: RuntimeScope): Promise<void> {
-    await (await this.getScopedRuntime(this.getScope(scope))).handleCommand(command);
+  async handleCommand(command: RuntimeCommand, scope?: RuntimeScope): Promise<SessionCommandResult> {
+    return (await this.getScopedRuntime(this.getScope(scope))).handleCommand(command);
   }
 
   async *subscribeEvents(scopeOrAfterSeq?: RuntimeScope | number, afterSeq?: number): AsyncIterable<RuntimeEventEnvelope> {

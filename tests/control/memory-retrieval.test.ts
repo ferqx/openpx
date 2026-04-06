@@ -12,6 +12,7 @@ describe("Memory Retrieval", () => {
       }),
       verify: mock(async () => ({ summary: "verified", isValid: true })),
       onStatusChange: mock(() => () => {}),
+      onEvent: mock(() => () => {}),
     };
 
     const context = await createAppContext({
@@ -30,10 +31,21 @@ describe("Memory Retrieval", () => {
     }));
 
     // 2. Trigger planning
+    const waitForUpdate = new Promise<void>((resolve) => {
+      const unsubscribe = context.kernel.events.subscribe((event) => {
+        if (event.type === "thread.view_updated") {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+
     await context.kernel.handleCommand({
       type: "submit_input",
       payload: { text: "plan start new feature" },
     });
+
+    await waitForUpdate;
 
     // 3. Verify prompt contains memory
     expect(capturedPrompt).toContain("Project Memory:");

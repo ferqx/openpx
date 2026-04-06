@@ -2,6 +2,7 @@ import { createAppContext } from "../../app/bootstrap";
 import { createThread, type Thread } from "../../domain/thread";
 import type { RuntimeScope } from "./runtime-scope";
 import type { RuntimeCommand } from "./runtime-types";
+import type { SessionCommandResult } from "../../kernel/session-kernel";
 
 type AppContext = Awaited<ReturnType<typeof createAppContext>>;
 
@@ -18,18 +19,22 @@ function scopeKey(scope: RuntimeScope): string {
 }
 
 export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
-  return async function handleRuntimeCommand(command: RuntimeCommand): Promise<void> {
+  return async function handleRuntimeCommand(command: RuntimeCommand): Promise<SessionCommandResult> {
     if (command.kind === "new_thread") {
       const thread = createThread(crypto.randomUUID(), deps.scope.workspaceRoot, deps.scope.projectId);
       await deps.context.stores.threadStore.save(thread);
       deps.setActiveThreadId(thread.threadId);
-      return;
+      
+      const result = await deps.context.kernel.hydrateSession();
+      if (!result) throw new Error("failed to hydrate new thread");
+      return result;
     }
 
     if (command.kind === "switch_thread" || command.kind === "continue") {
-      const thread = await deps.context.stores.threadStore.get(command.threadId);
+      const threadId = command.threadId ?? (await deps.ensureActiveThread()).threadId;
+      const thread = await deps.context.stores.threadStore.get(threadId);
       if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
-        throw new Error(`thread ${command.threadId} not found in scope ${scopeKey(deps.scope)}`);
+        throw new Error(`thread ${threadId} not found in scope ${scopeKey(deps.scope)}`);
       }
 
       const nextStatus =
@@ -37,7 +42,10 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
           ? "active"
           : undefined;
       await deps.touchThread(thread, nextStatus);
-      return;
+      
+      const result = await deps.context.kernel.hydrateSession();
+      if (!result) throw new Error("failed to hydrate thread");
+      return result;
     }
 
     if (command.kind === "add_task") {
@@ -50,23 +58,35 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
         },
       });
       deps.setActiveThreadId(result.threadId);
-      return;
+      return result;
     }
 
     if (command.kind === "approve") {
-      await deps.context.kernel.handleCommand({
+      return await deps.context.kernel.handleCommand({
         type: "approve_request",
         payload: { approvalRequestId: command.approvalRequestId },
       });
-      return;
     }
 
     if (command.kind === "reject") {
-      await deps.context.kernel.handleCommand({
+      return await deps.context.kernel.handleCommand({
         type: "reject_request",
         payload: { approvalRequestId: command.approvalRequestId },
       });
-      return;
+    }
+
+    if (command.kind === "resolve_approval") {
+      if (command.decision === "approved") {
+        return await deps.context.kernel.handleCommand({
+          type: "approve_request",
+          payload: { approvalRequestId: command.approvalRequestId },
+        });
+      }
+
+      return await deps.context.kernel.handleCommand({
+        type: "reject_request",
+        payload: { approvalRequestId: command.approvalRequestId },
+      });
     }
 
     throw new Error("command not implemented");

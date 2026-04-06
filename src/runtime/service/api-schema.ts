@@ -1,5 +1,23 @@
 import { z } from "zod";
-import { threadStatusSchema, taskStatusSchema, approvalStatusSchema } from "../../shared/schemas";
+export { answerViewSchema } from "./protocol/answer-view";
+export { approvalViewSchema } from "./protocol/approval-view";
+export { protocolVersionSchema } from "./protocol/protocol-version";
+export { runtimeCommandSchema } from "./protocol/runtime-command-schema";
+export { runtimeEventEnvelopeSchema, runtimeEventSchema } from "./protocol/runtime-event-schema";
+export { runtimeSnapshotSchema } from "./protocol/runtime-snapshot-schema";
+export { taskViewSchema } from "./protocol/task-view";
+export { threadViewSchema } from "./protocol/thread-view";
+export { workerViewSchema } from "./protocol/worker-view";
+
+import { answerViewSchema } from "./protocol/answer-view";
+import { approvalViewSchema } from "./protocol/approval-view";
+import { protocolVersionSchema } from "./protocol/protocol-version";
+import { runtimeCommandSchema } from "./protocol/runtime-command-schema";
+import { runtimeEventEnvelopeSchema, runtimeEventSchema } from "./protocol/runtime-event-schema";
+import { runtimeSnapshotSchema } from "./protocol/runtime-snapshot-schema";
+import { taskViewSchema } from "./protocol/task-view";
+import { threadViewSchema } from "./protocol/thread-view";
+import { workerViewSchema } from "./protocol/worker-view";
 
 /**
  * Metadata for the Stable Control API.
@@ -14,89 +32,23 @@ export const apiMetadata = {
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
   version: z.string(),
-  protocolVersion: z.string(),
+  protocolVersion: protocolVersionSchema,
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
-export const runtimeThreadSummarySchema = z.object({
-  threadId: z.string(),
-  workspaceRoot: z.string(),
-  projectId: z.string(),
-  revision: z.number(),
-  status: threadStatusSchema,
-  narrativeSummary: z.string().optional(),
-  narrativeRevision: z.number().optional(),
-  pendingApprovalCount: z.number().optional(),
-  blockingReasonKind: z.enum(["waiting_approval", "human_recovery"]).optional(),
-});
+export const runtimeThreadSummarySchema = threadViewSchema;
 
-export const runtimeTaskSummarySchema = z.object({
-  taskId: z.string(),
-  status: taskStatusSchema,
-  summary: z.string(),
-  blockingReason: z
-    .object({
-      kind: z.enum(["waiting_approval", "human_recovery"]),
-      message: z.string(),
-    })
-    .optional(),
-});
+export const runtimeTaskSummarySchema = taskViewSchema;
 
-export const runtimePendingApprovalSchema = z.object({
-  approvalRequestId: z.string(),
-  summary: z.string(),
-  risk: z.string(),
-  status: approvalStatusSchema,
-});
+export const runtimePendingApprovalSchema = approvalViewSchema;
 
-export const runtimeAnswerSchema = z.object({
-  answerId: z.string(),
-  content: z.string(),
-});
-
-export const runtimeSnapshotSchema = z.object({
-  protocolVersion: z.string(),
-  workspaceRoot: z.string(),
-  projectId: z.string(),
-  lastEventSeq: z.number(),
-  activeThreadId: z.string().optional(),
-  recommendationReason: z.string().optional(),
-  narrativeSummary: z.string().optional(),
-  blockingReason: z
-    .object({
-      kind: z.enum(["waiting_approval", "human_recovery"]),
-      message: z.string(),
-    })
-    .optional(),
-  threads: z.array(runtimeThreadSummarySchema),
-  tasks: z.array(runtimeTaskSummarySchema),
-  pendingApprovals: z.array(runtimePendingApprovalSchema),
-  answers: z.array(runtimeAnswerSchema),
-});
+export const runtimeAnswerSchema = answerViewSchema;
+export const runtimeWorkerSchema = workerViewSchema;
 
 export type RuntimeSnapshot = z.infer<typeof runtimeSnapshotSchema>;
-
-export const runtimeCommandSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("new_thread") }),
-  z.object({ kind: z.literal("switch_thread"), threadId: z.string() }),
-  z.object({ kind: z.literal("continue"), threadId: z.string() }),
-  z.object({ kind: z.literal("add_task"), content: z.string(), background: z.boolean().optional() }),
-  z.object({ kind: z.literal("approve"), approvalRequestId: z.string() }),
-  z.object({ kind: z.literal("reject"), approvalRequestId: z.string(), reason: z.string().optional() }),
-]);
-
 export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>;
-
-export const runtimeEventEnvelopeSchema = z.object({
-  protocolVersion: z.string(),
-  seq: z.number(),
-  timestamp: z.string(),
-  traceId: z.string().optional(),
-  clientId: z.string().optional(),
-  event: z.any(), // Keeping this broad for now, but in a real API we'd want more structure
-});
-
+export type RuntimeEvent = z.infer<typeof runtimeEventSchema>;
 export type RuntimeEventEnvelope = z.infer<typeof runtimeEventEnvelopeSchema>;
 
 /**
@@ -106,5 +58,6 @@ export const schemas = {
   HealthResponse: healthResponseSchema,
   RuntimeSnapshot: runtimeSnapshotSchema,
   RuntimeCommand: runtimeCommandSchema,
+  RuntimeEvent: runtimeEventSchema,
   RuntimeEventEnvelope: runtimeEventEnvelopeSchema,
 };

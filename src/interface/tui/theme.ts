@@ -11,7 +11,7 @@ export const theme = {
     bg: "black",
   },
   symbols: {
-    prompt: "›",
+    prompt: "❯",
     thinking: "●",
     success: "✔",
     failure: "✖",

@@ -1,15 +1,15 @@
 import type { KernelEvent } from "./event-bus";
 
-type EventBus<TEvent extends KernelEvent> = {
-  publish: (event: TEvent) => void;
+type EventBus = {
+  publish: (event: KernelEvent) => void;
 };
 
-export function createInterruptService<TEvent extends KernelEvent = KernelEvent>(deps: {
-  events: EventBus<TEvent>;
+export function createInterruptService(deps: {
+  events: EventBus;
 }) {
   return {
     async interruptThread(threadId: string, reason?: string) {
-      deps.events.publish({ type: "thread.interrupted", payload: { threadId, reason } } as TEvent);
+      deps.events.publish({ type: "thread.interrupted", payload: { threadId, reason } });
     },
   };
 }

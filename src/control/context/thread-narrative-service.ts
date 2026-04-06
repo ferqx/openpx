@@ -1,6 +1,5 @@
 import type { ControlTask } from "../tasks/task-types";
 import type { ThreadStorePort } from "../../persistence/ports/thread-store-port";
-import { createThreadStateProjector } from "./thread-state-projector";
 import type { DerivedThreadView } from "./thread-compaction-types";
 
 export type NarrativeEvent = {
@@ -31,26 +30,35 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
   const narratives = new Map<string, ThreadNarrative>();
   const derivedViews = new Map<string, DerivedThreadView>();
   const threadUpdateLocks = new Map<string, Promise<void>>();
-  const projector = createThreadStateProjector();
   const maxEvents = options.maxEvents ?? 50;
   const threadStore = options.threadStore;
 
   function createEmptyView(): DerivedThreadView {
+    const now = new Date().toISOString();
     return {
       recoveryFacts: {
+        threadId: "",
+        revision: 0,
+        schemaVersion: 1,
+        status: "active",
+        updatedAt: now,
         pendingApprovals: [],
       },
       narrativeState: {
+        revision: 0,
         threadSummary: "",
         taskSummaries: [],
         openLoops: [],
         notableEvents: [],
+        updatedAt: now,
       },
       workingSetWindow: {
+        revision: 0,
         messages: [],
         toolResults: [],
         verifierFeedback: [],
         retrievedMemories: [],
+        updatedAt: now,
       },
     };
   }
@@ -76,16 +84,25 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
     return base ? `${base}; ${next}` : next;
   }
 
+  function shouldProjectIntoNarrativeState(task: ControlTask): boolean {
+    return task.status === "blocked" || task.status === "completed" || task.status === "failed";
+  }
+
+  function shouldAffectCompatibilityNarrative(task: ControlTask): boolean {
+    return task.status === "completed" || task.status === "failed";
+  }
+
   function mergeViews(
     persistedView: DerivedThreadView | undefined,
     inMemoryView: DerivedThreadView | undefined,
   ): DerivedThreadView {
-    if (!persistedView && !inMemoryView) {
-      return createEmptyView();
-    }
+    const base = createEmptyView();
+    const source = persistedView || inMemoryView;
 
     return {
       recoveryFacts: {
+        ...base.recoveryFacts!,
+        ...source?.recoveryFacts,
         pendingApprovals:
           persistedView?.recoveryFacts?.pendingApprovals
           ?? inMemoryView?.recoveryFacts?.pendingApprovals
@@ -107,6 +124,8 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
           ?? inMemoryView?.recoveryFacts?.resumeAnchor,
       },
       narrativeState: {
+        ...base.narrativeState!,
+        ...source?.narrativeState,
         threadSummary:
           persistedView?.narrativeState?.threadSummary
           ?? inMemoryView?.narrativeState?.threadSummary
@@ -125,6 +144,8 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
           ?? [],
       },
       workingSetWindow: {
+        ...base.workingSetWindow!,
+        ...source?.workingSetWindow,
         messages:
           persistedView?.workingSetWindow?.messages
           ?? inMemoryView?.workingSetWindow?.messages
@@ -205,15 +226,56 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
           view,
           revision,
         } = await loadBaseView(task.threadId);
-        const nextView = projector.project(view, {
-          kind: "task",
-          task,
-        });
+        const nextView: DerivedThreadView = {
+          recoveryFacts: view.recoveryFacts ? {
+            ...view.recoveryFacts,
+            pendingApprovals: [...view.recoveryFacts.pendingApprovals],
+            activeTask: view.recoveryFacts.activeTask ? { ...view.recoveryFacts.activeTask } : undefined,
+            lastStableTask: view.recoveryFacts.lastStableTask ? { ...view.recoveryFacts.lastStableTask } : undefined,
+            blocking: view.recoveryFacts.blocking ? { ...view.recoveryFacts.blocking } : undefined,
+            latestDurableAnswer: view.recoveryFacts.latestDurableAnswer ? { ...view.recoveryFacts.latestDurableAnswer } : undefined,
+            resumeAnchor: view.recoveryFacts.resumeAnchor ? { ...view.recoveryFacts.resumeAnchor } : undefined,
+            environment: view.recoveryFacts.environment ? {
+              ...view.recoveryFacts.environment,
+              fingerprints: { ...view.recoveryFacts.environment.fingerprints },
+            } : undefined,
+            ledgerState: view.recoveryFacts.ledgerState ? { ...view.recoveryFacts.ledgerState } : undefined,
+          } : undefined,
+          narrativeState: view.narrativeState ? {
+            ...view.narrativeState,
+            taskSummaries: [...view.narrativeState.taskSummaries],
+            openLoops: [...view.narrativeState.openLoops],
+            notableEvents: [...view.narrativeState.notableEvents],
+          } : undefined,
+          workingSetWindow: view.workingSetWindow ? {
+            ...view.workingSetWindow,
+            messages: [...view.workingSetWindow.messages],
+            toolResults: [...view.workingSetWindow.toolResults],
+            verifierFeedback: [...view.workingSetWindow.verifierFeedback],
+            retrievedMemories: [...view.workingSetWindow.retrievedMemories],
+          } : undefined,
+        };
+
+        if (shouldProjectIntoNarrativeState(task)) {
+          const taskSummaries = nextView.narrativeState?.taskSummaries ?? [];
+          const lastSummary = taskSummaries.at(-1);
+          if (task.summary !== lastSummary) {
+            const narrativeState = nextView.narrativeState ?? createEmptyView().narrativeState!;
+            narrativeState.taskSummaries = [...taskSummaries, task.summary];
+            narrativeState.threadSummary = appendSummary(
+              narrativeState.threadSummary,
+              task.summary,
+            );
+            narrativeState.updatedAt = new Date().toISOString();
+            narrativeState.revision = Math.max(narrativeState.revision, revision + 1);
+            nextView.narrativeState = narrativeState;
+          }
+        }
 
         const previousTaskSummaries = getTaskSummaries(view);
         const nextTaskSummaries = getTaskSummaries(nextView);
         const narrativeChanged =
-          (task.status === "completed" || task.status === "failed")
+          shouldAffectCompatibilityNarrative(task)
           && (
             previousTaskSummaries.length !== nextTaskSummaries.length
             || previousTaskSummaries.some((summary, index) => summary !== nextTaskSummaries[index])
@@ -222,14 +284,17 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
         derivedViews.set(task.threadId, nextView);
 
         if (!narrativeChanged) {
-          if (threadStore) {
+          const narrativeStateChanged =
+            previousTaskSummaries.length !== nextTaskSummaries.length
+            || previousTaskSummaries.some((summary, index) => summary !== nextTaskSummaries[index])
+            || (view.narrativeState?.threadSummary ?? "") !== (nextView.narrativeState?.threadSummary ?? "");
+
+          if (threadStore && narrativeStateChanged) {
             const thread = await threadStore.get(task.threadId);
             if (thread) {
               await threadStore.save({
                 ...thread,
-                recoveryFacts: nextView.recoveryFacts,
                 narrativeState: nextView.narrativeState,
-                workingSetWindow: nextView.workingSetWindow,
               });
             }
           }
@@ -261,17 +326,15 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
 
         if (threadStore) {
           const thread = await threadStore.get(task.threadId);
-          if (thread) {
-            await threadStore.save({
-              ...thread,
-              narrativeSummary: nextNarrative.summary,
-              narrativeRevision: nextNarrative.revision,
-              recoveryFacts: nextView.recoveryFacts,
-              narrativeState: nextView.narrativeState,
-              workingSetWindow: nextView.workingSetWindow,
-            });
+            if (thread) {
+              await threadStore.save({
+                ...thread,
+                narrativeSummary: nextNarrative.summary,
+                narrativeRevision: nextNarrative.revision,
+                narrativeState: nextView.narrativeState,
+              });
+            }
           }
-        }
       } finally {
         releaseLock();
         if (threadUpdateLocks.get(task.threadId) === queuedLock) {

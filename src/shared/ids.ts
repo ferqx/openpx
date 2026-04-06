@@ -1,3 +1,4 @@
+import { ulid } from "ulid";
 import { domainError } from "./errors";
 
 export type Id = string;
@@ -10,30 +11,34 @@ export function ensureId(value: string): Id {
   return value;
 }
 
-export function threadId(value: string): Id {
-  return ensureId(value);
+export function nextId(): Id {
+  return ulid();
 }
 
-export function taskId(value: string): Id {
-  return ensureId(value);
+export function threadId(value?: string): Id {
+  return value ? ensureId(value) : nextId();
 }
 
-export function workerId(value: string): Id {
-  return ensureId(value);
+export function taskId(value?: string): Id {
+  return value ? ensureId(value) : nextId();
 }
 
-export function eventId(value: string): Id {
-  return ensureId(value);
+export function workerId(value?: string): Id {
+  return value ? ensureId(value) : nextId();
 }
 
-export function approvalRequestId(value: string): Id {
-  return ensureId(value);
+export function eventId(value?: string): Id {
+  return value ? ensureId(value) : nextId();
 }
 
-export function memoryId(value: string): Id {
-  return ensureId(value);
+export function approvalRequestId(value?: string): Id {
+  return value ? ensureId(value) : nextId();
 }
 
-export function toolCallId(value: string): Id {
-  return ensureId(value);
+export function memoryId(value?: string): Id {
+  return value ? ensureId(value) : nextId();
+}
+
+export function toolCallId(value?: string): Id {
+  return value ? ensureId(value) : nextId();
 }

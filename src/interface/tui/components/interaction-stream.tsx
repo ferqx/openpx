@@ -1,111 +1,100 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import type { TuiKernelEvent } from "../hooks/use-kernel";
 import type { TaskSummary } from "./task-panel";
 import type { ApprovalSummary } from "./approval-panel";
 import { theme } from "../theme";
+import { Markdown } from "./markdown";
+
+type Message = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  thinking?: string;
+  thinkingDuration?: number;
+  timestamp: number;
+};
 
 export interface InteractionStreamProps {
-  events: TuiKernelEvent[];
+  messages: Message[];
   tasks: TaskSummary[];
   approvals: ApprovalSummary[];
-  answer: {
-    summary: string;
-    changes: Array<{ path: string; additions: number; deletions: number }>;
-    verification: string[];
-  };
   modelStatus?: string;
+  performance?: { waitMs: number; genMs: number };
+  narrativeSummary?: string;
 }
 
-export function InteractionStream({ events, tasks, approvals, answer, modelStatus }: InteractionStreamProps) {
-  const [elapsed, setElapsed] = useState(0);
-  const AnySpinner = Spinner as any;
+function formatDuration(ms?: number): string {
+  if (!ms) return "";
+  return ` (${(ms / 1000).toFixed(1)}s)`;
+}
 
-  useEffect(() => {
-    let timer: Timer | undefined;
-    if (modelStatus === "thinking" || modelStatus === "responding") {
-      timer = setInterval(() => setElapsed(e => e + 1), 1000);
-    } else {
-      setElapsed(0);
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [modelStatus]);
-
-  // Filter events to show meaningful activity
-  const filteredEvents = events.filter(e => 
-    e.type === "task.created" || 
-    e.type === "thread.started" ||
-    e.type === "tool.executed" ||
-    e.type === "answer.updated"
-  );
+export function InteractionStream({
+  messages,
+  tasks,
+  approvals,
+  modelStatus,
+  performance,
+  narrativeSummary,
+}: InteractionStreamProps) {
+  const SpinnerComponent = Spinner as React.ComponentType<{ type?: string }>;
+  const shouldRenderNarrativeFallback =
+    messages.length === 0 && approvals.length === 0 && tasks.length === 0 && Boolean(narrativeSummary);
 
   return (
     <Box flexDirection="column">
-      {/* Interaction History */}
+      {/* Conversation History */}
       <Box flexDirection="column" marginBottom={1}>
-        {filteredEvents.map((event, index) => {
-          switch (event.type) {
-            case "thread.started":
-              return (
-                <Box key={index} marginBottom={1}>
-                  <Text color={theme.colors.dim}>{theme.symbols.info} New session started.</Text>
-                </Box>
-              );
-            case "tool.executed":
-              const payload = event.payload as any;
-              return (
-                <Box key={index} marginLeft={theme.spacing.indent}>
-                  <Text color={theme.colors.tool}>
-                    {theme.symbols.step} Executing {payload.toolName}...
-                  </Text>
-                </Box>
-              );
-            case "answer.updated":
-              return null; // Handled by current answer
-            default:
-              return (
-                <Box key={index}>
-                  <Text color={theme.colors.dim}>· {event.type}</Text>
-                </Box>
-              );
+        {messages.map((msg) => {
+          if (msg.role === "user") {
+            return (
+              <Box key={msg.id} marginBottom={1}>
+                <Text color={theme.colors.primary}>{theme.symbols.prompt} </Text>
+                <Text>{msg.content}</Text>
+              </Box>
+            );
           }
-        })}
-      </Box>
 
-      {/* Current Active Output */}
-      {answer.summary && answer.summary !== "Awaiting answer" && (
-        <Box flexDirection="column" paddingX={1} marginBottom={1}>
-          <Text bold color={theme.colors.agent}>Agent:</Text>
-          <Box paddingLeft={theme.spacing.indent}>
-            <Text>{answer.summary}</Text>
-          </Box>
-          {answer.changes.length > 0 && (
-            <Box flexDirection="column" marginTop={1} paddingLeft={theme.spacing.indent}>
-              <Text bold color={theme.colors.dim}>Changes:</Text>
-              {answer.changes.map((change, i) => (
-                <Text key={i} color="gray">
-                  {theme.symbols.arrowRight} {change.path} 
-                  <Text color="green"> +{change.additions}</Text> 
-                  <Text color="red"> -{change.deletions}</Text>
-                </Text>
-              ))}
+          return (
+            <Box key={msg.id} flexDirection="column" marginBottom={1}>
+              {/* Thinking section */}
+              {msg.thinking && (
+                <Box flexDirection="column" marginBottom={1} paddingLeft={theme.spacing.indent}>
+                  <Text color={theme.colors.dim}>
+                    Thinking{formatDuration(msg.thinkingDuration)}
+                  </Text>
+                  <Text color={theme.colors.dim}>{msg.thinking}</Text>
+                </Box>
+              )}
+
+              {/* Agent response with markdown rendering */}
+              <Box paddingLeft={theme.spacing.indent}>
+                <Text color={theme.colors.secondary}>Agent: </Text>
+              </Box>
+              <Box paddingLeft={theme.spacing.indent * 2} flexDirection="column">
+                <Markdown>{msg.content}</Markdown>
+              </Box>
             </Box>
-          )}
-        </Box>
-      )}
+          );
+        })}
+        {shouldRenderNarrativeFallback ? (
+          <Box flexDirection="column" marginBottom={1}>
+            <Box paddingLeft={theme.spacing.indent}>
+              <Text color={theme.colors.secondary}>Agent: </Text>
+            </Box>
+            <Box paddingLeft={theme.spacing.indent * 2} flexDirection="column">
+              <Markdown>{narrativeSummary ?? ""}</Markdown>
+            </Box>
+          </Box>
+        ) : null}
+      </Box>
 
       {/* Real-time Status / Thinking State */}
       {(modelStatus === "thinking" || modelStatus === "responding") && (
-        <Box marginLeft={theme.spacing.indent} marginBottom={1} gap={1}>
-          <Text color={theme.colors.primary}>
-            <AnySpinner type="dots" />
-          </Text>
+        <Box marginBottom={1} gap={1}>
           <Text color={theme.colors.dim}>
-            {modelStatus === "thinking" ? "Thinking..." : "Responding..."}
-            {elapsed > 0 && ` (${elapsed}s)`}
+            ● {modelStatus === "thinking" ? "Thinking..." : "Responding..."}
+            {performance && ` (${( (modelStatus === "thinking" ? performance.waitMs : performance.genMs) / 1000).toFixed(1)}s)`}
           </Text>
         </Box>
       )}
@@ -113,16 +102,22 @@ export function InteractionStream({ events, tasks, approvals, answer, modelStatu
       {/* Active Tasks & Approvals */}
       <Box flexDirection="column">
         {tasks.filter(t => t.status === "running").map(task => (
-          <Box key={task.id} marginLeft={theme.spacing.indent}>
+          <Box key={task.taskId} marginLeft={0} gap={1}>
             <Text color={theme.colors.primary}>
-              <AnySpinner type="simpleDots" /> {task.title}...
+              <SpinnerComponent type="dots" />
             </Text>
+            <Text color={theme.colors.primary}>{task.summary}...</Text>
           </Box>
         ))}
         {approvals.map(approval => (
-          <Box key={approval.id} paddingX={1} borderStyle="round" borderColor="yellow" marginBottom={1}>
-            <Text bold color="yellow">{theme.symbols.warning} Action Required: </Text>
-            <Text>{approval.title}</Text>
+          <Box key={approval.approvalRequestId} paddingX={1} borderStyle="round" borderColor="yellow" marginBottom={1} flexDirection="column">
+            <Box gap={1}>
+              <Text bold color="yellow">{theme.symbols.warning} Action Required:</Text>
+              <Text>{approval.summary}</Text>
+            </Box>
+            <Box marginLeft={2}>
+              <Text color={theme.colors.dim}>Type 'yes' to approve or 'no' to reject.</Text>
+            </Box>
           </Box>
         ))}
       </Box>

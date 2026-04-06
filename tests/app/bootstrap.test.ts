@@ -14,7 +14,13 @@ function createTestModelGateway() {
     async verify() {
       return { summary: "verified", isValid: true };
     },
+    async respond() {
+      return { summary: "responded" };
+    },
     onStatusChange() {
+      return () => {};
+    },
+    onEvent() {
       return () => {};
     },
   };

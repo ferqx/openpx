@@ -1,15 +1,21 @@
 import { createEventBus, type KernelEvent } from "./event-bus";
 import { createInterruptService } from "./interrupt-service";
 import { createThreadService } from "./thread-service";
-import { transitionThread } from "../domain/thread";
 import { createEvent } from "../domain/event";
 import type { ApprovalRequest } from "../domain/approval";
 import type { Task } from "../domain/task";
+import { resolveSubmitTargetThread } from "./session-command-handler";
+import { runSessionInBackground } from "./session-background-runner";
+import { projectSessionResult, type ProjectedSessionResult, type SessionThreadSummary } from "./session-view-projector";
 import type { ThreadStorePort } from "../persistence/ports/thread-store-port";
 import type { TaskStorePort } from "../persistence/ports/task-store-port";
 import type { EventLogPort } from "../persistence/ports/event-log-port";
 import { prefixedUuid } from "../shared/id-generators";
 import type { ThreadNarrativeService } from "../control/context/thread-narrative-service";
+import { createThreadStateProjector } from "../control/context/thread-state-projector";
+import type { DerivedThreadView } from "../control/context/thread-compaction-types";
+import { createControlTask } from "../control/tasks/task-types";
+import type { ResumeControl } from "../runtime/graph/root/resume-control";
 
 export type SubmitInputCommand = {
   type: "submit_input";
@@ -43,18 +49,11 @@ export type SessionControlPlaneResult = {
   recommendationReason?: string;
 };
 
-export type SessionCommandResult = {
-  status: SessionControlPlaneResult["status"];
-  threadId: string;
-  summary: string;
-  tasks: Task[];
-  approvals: ApprovalRequest[];
-  recommendationReason?: string;
-};
+export type SessionCommandResult = ProjectedSessionResult;
 
 export type SessionKernel = {
   events: ReturnType<typeof createEventBus<KernelEvent>>;
-  interrupts: ReturnType<typeof createInterruptService<KernelEvent>>;
+  interrupts: ReturnType<typeof createInterruptService>;
   handleCommand: (command: SessionCommand, expectedRevision?: number) => Promise<SessionCommandResult>;
   hydrateSession: () => Promise<SessionCommandResult | undefined>;
 };
@@ -65,11 +64,12 @@ export function createSessionKernel(deps: {
     taskStore: TaskStorePort;
     approvalStore: {
       listPendingByThread(threadId: string): Promise<ApprovalRequest[]>;
+      get(id: string): Promise<ApprovalRequest | undefined>;
     };
     eventLog?: EventLogPort;
   };
   controlPlane: {
-    startRootTask: (threadId: string, text: string) => Promise<SessionControlPlaneResult>;
+    startRootTask: (threadId: string, input: string | ResumeControl) => Promise<SessionControlPlaneResult>;
     approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
   };
@@ -85,6 +85,26 @@ export function createSessionKernel(deps: {
     projectId: deps.projectId,
   });
   const interrupts = createInterruptService({ events });
+  const projector = createThreadStateProjector();
+
+  const currentScope = { 
+    workspaceRoot: deps.workspaceRoot ?? "", 
+    projectId: deps.projectId ?? "" 
+  };
+
+  async function getThreadSummaries(): Promise<SessionThreadSummary[]> {
+    const threads = await deps.stores.threadStore.listByScope(currentScope);
+    return Promise.all(threads.map(async (t) => {
+      const approvals = await deps.stores.approvalStore.listPendingByThread(t.threadId);
+      return {
+        threadId: t.threadId,
+        status: t.status,
+        narrativeSummary: t.narrativeState?.threadSummary,
+        pendingApprovalCount: approvals.length,
+        blockingReasonKind: t.recoveryFacts?.blocking?.kind
+      };
+    }));
+  }
 
   async function checkRevision(threadId: string, expectedRevision?: number) {
     if (expectedRevision === undefined) return;
@@ -94,46 +114,13 @@ export function createSessionKernel(deps: {
     }
   }
 
-  async function incrementRevision(threadId: string) {
-    const thread = await deps.stores.threadStore.get(threadId);
-    if (thread) {
-      const nextThread = { ...thread, revision: (thread.revision ?? 1) + 1 };
-      await deps.stores.threadStore.save(nextThread);
-      return nextThread;
-    }
-    return undefined;
-  }
-
-  async function persistAnswerUpdated(result: SessionCommandResult): Promise<void> {
-    if (!deps.stores.eventLog) {
-      return;
-    }
-
-    await deps.stores.eventLog.append(
-      createEvent({
-        eventId: prefixedUuid("event"),
-        threadId: result.threadId,
-        taskId: result.tasks[0]?.taskId,
-        type: "answer.updated",
-        payload: {
-          threadId: result.threadId,
-          status: result.status,
-          summary: result.summary,
-        },
-      }),
-    );
-  }
-
   async function appendRuntimeEvent(input: {
     threadId: string;
     taskId?: string;
     type: string;
     payload?: Record<string, unknown>;
   }): Promise<void> {
-    if (!deps.stores.eventLog) {
-      return;
-    }
-
+    if (!deps.stores.eventLog) return;
     await deps.stores.eventLog.append(
       createEvent({
         eventId: prefixedUuid("event"),
@@ -145,229 +132,201 @@ export function createSessionKernel(deps: {
     );
   }
 
-  async function hydrateThread(threadId: string): Promise<SessionCommandResult> {
-    const thread = await deps.stores.threadStore.get(threadId);
-    const tasks = await deps.stores.taskStore.listByThread(threadId);
-    const approvals = await deps.stores.approvalStore.listPendingByThread(threadId);
-    const loggedEvents = deps.stores.eventLog ? await deps.stores.eventLog.listByThread(threadId) : [];
-    const blockedTask = tasks.find((task) => task.status === "blocked");
-    const lastAnswer = [...loggedEvents]
-      .reverse()
-      .find((event) => event.type === "answer.updated" && typeof event.payload?.summary === "string");
-
-    return {
-      status: approvals.length > 0 ? "waiting_approval" : blockedTask ? "blocked" : "completed",
-      threadId,
-      summary: blockedTask?.blockingReason?.message ??
-        (typeof lastAnswer?.payload?.summary === "string" ? lastAnswer.payload.summary : undefined) ??
-        tasks.at(-1)?.summary ??
-        approvals[0]?.summary ??
-        "Awaiting answer",
-      tasks,
-      approvals,
-      recommendationReason: thread?.recommendationReason,
-    };
+  function toControlTask(task: Task) {
+    return createControlTask({
+      taskId: task.taskId,
+      threadId: task.threadId,
+      summary: task.summary ?? task.taskId,
+      status: task.status,
+      blockingReason: task.blockingReason,
+    });
   }
 
   async function finalize(threadId: string, result: SessionControlPlaneResult): Promise<SessionCommandResult> {
-    const currentThread = await incrementRevision(threadId);
-    if (!currentThread) {
-      throw new Error(`missing thread ${threadId}`);
-    }
+    const thread = await deps.stores.threadStore.get(threadId);
+    if (!thread) throw new Error(`missing thread ${threadId}`);
 
-    const targetStatus =
-      result.status === "waiting_approval"
-        ? "waiting_approval"
-        : result.status === "blocked"
-          ? "blocked"
-          : "completed";
-    const transitionedThread = currentThread.status === targetStatus ? currentThread : transitionThread(currentThread, targetStatus);
+    // Project the results into the structured ThreadView (V1.4)
+    let view: DerivedThreadView = {
+      recoveryFacts: thread.recoveryFacts,
+      narrativeState: thread.narrativeState,
+      workingSetWindow: thread.workingSetWindow
+    };
+
+    if (result.task) {
+      const controlTask = toControlTask(result.task);
+      view = projector.project(view, { kind: "task", task: controlTask });
+      if (deps.narrativeService) {
+        await deps.narrativeService.processTaskUpdate(controlTask);
+      }
+    }
+    for (const approval of result.approvals) {
+      view = projector.project(view, { kind: "approval", approval });
+    }
+    view = projector.project(view, { kind: "answer", answerId: prefixedUuid("ans"), summary: result.summary });
+
+    // Persist the updated view back to the thread
     const nextThread = {
-      ...transitionedThread,
-      recommendationReason: result.recommendationReason,
+      ...thread,
+      ...view,
+      status: result.status,
+      revision: (view.recoveryFacts?.revision ?? thread.revision ?? 1),
     };
     await deps.stores.threadStore.save(nextThread);
 
-    const threadEventType =
-      result.status === "waiting_approval"
-        ? "thread.waiting_approval"
-        : result.status === "blocked"
-          ? "thread.blocked"
-          : "thread.completed";
-    const threadEventPayload =
-      result.status === "blocked"
-        ? {
-            threadId: nextThread.threadId,
-            status: nextThread.status,
-            blockingReason: result.task?.blockingReason,
-            recommendationReason: result.recommendationReason,
-          }
-        : nextThread;
-
-    events.publish({
-      type: threadEventType,
-      payload: threadEventPayload,
-    });
-    await appendRuntimeEvent({
-      threadId: nextThread.threadId,
-      type: threadEventType,
-      payload: threadEventPayload as Record<string, unknown>,
-    });
-    if (result.task) {
-      events.publish({
-        type: "task.updated",
-        payload: result.task,
-      });
-      await appendRuntimeEvent({
-        threadId: nextThread.threadId,
-        taskId: result.task.taskId,
-        type: "task.updated",
-        payload: result.task as unknown as Record<string, unknown>,
-      });
-      await deps.narrativeService?.processTaskUpdate(result.task as any);
-    }
-    for (const approval of result.approvals) {
-      events.publish({
-        type: "approval.pending",
-        payload: approval,
-      });
-      await appendRuntimeEvent({
-        threadId: nextThread.threadId,
-        taskId: approval.taskId,
-        type: "approval.pending",
-        payload: approval as unknown as Record<string, unknown>,
-      });
-    }
-
-    const commandResult = {
-      status: result.status,
-      threadId: nextThread.threadId,
-      summary: result.summary,
-      tasks: result.task ? [result.task] : [],
-      approvals: result.approvals,
-      recommendationReason: result.recommendationReason,
-    } satisfies SessionCommandResult;
-
-    if (deps.stores.eventLog) {
-      await deps.stores.eventLog.append({
-        eventId: `event_${crypto.randomUUID()}`,
-        threadId: nextThread.threadId,
-        type: "answer.updated",
-        payload: { summary: result.summary },
-        createdAt: new Date().toISOString(),
-      });
-    }
-
-    events.publish({
-      type: "answer.updated",
-      payload: {
-        threadId: nextThread.threadId,
+    const threadList = await getThreadSummaries();
+    // Emit the structured update event that the TUI expects
+    const commandResult = await projectSessionResult({
+      thread: {
+        threadId,
         status: result.status,
-        summary: result.summary,
+        recoveryFacts: view.recoveryFacts,
+        narrativeState: view.narrativeState,
+        workingSetWindow: view.workingSetWindow,
       },
+      status: result.status,
+      summary: result.summary,
+      approvals: result.approvals,
+      tasks: [result.task],
+      recommendationReason: result.recommendationReason,
+      workspaceRoot: deps.workspaceRoot,
+      projectId: deps.projectId,
+      threads: threadList,
     });
-    await persistAnswerUpdated(commandResult);
+
+    events.publish({
+      type: "thread.view_updated",
+      payload: commandResult,
+    });
+
+    await appendRuntimeEvent({
+      threadId,
+      type: "thread.view_updated",
+      payload: commandResult as unknown as Record<string, unknown>,
+    });
 
     return commandResult;
+  }
+
+  async function hydrateSession(): Promise<SessionCommandResult | undefined> {
+    const thread = await deps.stores.threadStore.getLatest(currentScope);
+    if (!thread) return undefined;
+
+    const threadList = await getThreadSummaries();
+    const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
+    const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
+
+    return projectSessionResult({
+      thread,
+      status: thread.status,
+      tasks,
+      approvals,
+      workspaceRoot: deps.workspaceRoot,
+      projectId: deps.projectId,
+      threads: threadList,
+    });
   }
 
   return {
     events,
     interrupts,
-    async hydrateSession() {
-      const latestThread = await deps.stores.threadStore.getLatest();
-      if (!latestThread) {
-        return undefined;
-      }
-
-      return hydrateThread(latestThread.threadId);
-    },
+    hydrateSession,
     async handleCommand(command, expectedRevision) {
       if (command.type === "submit_input") {
-        const latestThread = await deps.stores.threadStore.getLatest();
-        if (latestThread?.status === "waiting_approval") {
-          await checkRevision(latestThread.threadId, expectedRevision);
-          
-          if (command.payload.background) {
-            // Background resume: don't await finalize
-            void deps.controlPlane.startRootTask(latestThread.threadId, command.payload.text)
-              .then(result => finalize(latestThread.threadId, result))
-              .catch(err => console.error("Background task failed", err));
-            
-            const tasks = await deps.stores.taskStore.listByThread(latestThread.threadId);
-            return {
-              threadId: latestThread.threadId,
-              status: "active" as any, // "running" basically
-              summary: "Task started in background",
-              tasks,
-              approvals: [],
-            };
-          }
+        const latestThread = await deps.stores.threadStore.getLatest(currentScope);
+        const { thread } = await resolveSubmitTargetThread({
+          latestThread,
+          expectedRevision,
+          startThread: async () => threadService.startThread(),
+          saveThread: async (nextThread) => deps.stores.threadStore.save(nextThread),
+          ensureRevision: checkRevision,
+        });
 
-          // Instead of just hydrating, resume the graph with the new input
-          const result = await deps.controlPlane.startRootTask(latestThread.threadId, command.payload.text);
-          return finalize(latestThread.threadId, result);
-        }
-
-        if (latestThread?.status === "blocked") {
-          await checkRevision(latestThread.threadId, expectedRevision);
-          return hydrateThread(latestThread.threadId);
-        }
-
-        const thread = await threadService.startThread();
-        
-        if (command.payload.background) {
-          // Background start: don't await startRootTask or finalize
-          void deps.controlPlane.startRootTask(thread.threadId, command.payload.text)
-            .then(result => finalize(thread.threadId, result))
-            .catch(err => console.error("Background task failed", err));
-          
-          return {
-            status: "active" as any,
-            threadId: thread.threadId,
-            summary: "Task started in background",
-            tasks: [],
-            approvals: [],
-          };
-        }
-
-        const result =
-          (await deps.controlPlane.startRootTask(thread.threadId, command.payload.text)) ??
-          ({
-            status: "completed",
-            task: undefined,
-            approvals: [],
-            summary: command.payload.text,
-          } satisfies {
-            status: SessionControlPlaneResult["status"];
-            task?: Task;
-            approvals: SessionControlPlaneResult["approvals"];
-            summary: string;
+        if (thread.status === "blocked") {
+          const threadList = await getThreadSummaries();
+          const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
+          const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
+          return projectSessionResult({
+            thread,
+            status: thread.status,
+            tasks,
+            approvals,
+            workspaceRoot: deps.workspaceRoot,
+            projectId: deps.projectId,
+            threads: threadList,
           });
+        }
 
-        return finalize(thread.threadId, result as SessionControlPlaneResult);
+        void runSessionInBackground({
+          threadId: thread.threadId,
+          execute: () => deps.controlPlane.startRootTask(thread.threadId, command.payload.text),
+          finalize: async (result) => {
+            await finalize(thread.threadId, result);
+          },
+          publishFailure: (failedThreadId, errorMessage) => {
+            events.publish({
+              type: "task.failed",
+              payload: { threadId: failedThreadId, error: errorMessage }
+            });
+          },
+        });
+
+        const threadList = await getThreadSummaries();
+        const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
+        const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
+        return projectSessionResult({
+          thread,
+          status: thread.status,
+          tasks,
+          approvals,
+          workspaceRoot: deps.workspaceRoot,
+          projectId: deps.projectId,
+          threads: threadList,
+        });
       }
 
       if (command.type === "approve_request") {
-        // Need to find threadId for approval
-        const approval = await (deps.stores.approvalStore as any).get(command.payload.approvalRequestId);
-        if (approval) {
-          await checkRevision(approval.threadId, expectedRevision);
+        const approval = await deps.stores.approvalStore.get(command.payload.approvalRequestId);
+        if (!approval) throw new Error(`Approval request ${command.payload.approvalRequestId} not found`);
+
+        void runSessionInBackground({
+          threadId: approval.threadId,
+          execute: () => deps.controlPlane.approveRequest(command.payload.approvalRequestId),
+          finalize: async (result) => {
+            await finalize(approval.threadId, result);
+          },
+          publishFailure: (failedThreadId, errorMessage) => {
+            events.publish({
+              type: "task.failed",
+              payload: { threadId: failedThreadId, error: errorMessage }
+            });
+          },
+        });
+
+        const approvalThread = await deps.stores.threadStore.get(approval.threadId);
+        if (!approvalThread) {
+          throw new Error(`Thread ${approval.threadId} not found for approval`);
         }
-        const result = await deps.controlPlane.approveRequest(command.payload.approvalRequestId);
-        return finalize(result.task.threadId, result);
+        const threadList = await getThreadSummaries();
+        const tasks = await deps.stores.taskStore.listByThread(approvalThread.threadId);
+        const approvals = await deps.stores.approvalStore.listPendingByThread(approvalThread.threadId);
+        return projectSessionResult({
+          thread: approvalThread,
+          status: approvalThread.status,
+          tasks,
+          approvals,
+          workspaceRoot: deps.workspaceRoot,
+          projectId: deps.projectId,
+          threads: threadList,
+        });
       }
 
       if (command.type === "reject_request") {
-        const approval = await (deps.stores.approvalStore as any).get(command.payload.approvalRequestId);
-        if (approval) {
-          await checkRevision(approval.threadId, expectedRevision);
-        }
         const result = await deps.controlPlane.rejectRequest(command.payload.approvalRequestId);
         return finalize(result.task.threadId, result);
       }
 
-      throw new Error(`no command handler registered for ${(command as { type: string }).type}`);
+      throw new Error("no command handler registered");
     },
   };
 }

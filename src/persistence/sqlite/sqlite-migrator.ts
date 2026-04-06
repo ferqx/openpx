@@ -83,6 +83,20 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "approvals", "request_json", "TEXT");
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS workers (
+      worker_id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      status TEXT NOT NULL,
+      spawn_reason TEXT NOT NULL,
+      started_at TEXT,
+      ended_at TEXT,
+      resume_token TEXT
+    )
+  `);
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS execution_ledger (
       execution_id TEXT PRIMARY KEY,
       thread_id TEXT NOT NULL,
@@ -103,6 +117,7 @@ export function migrateSqlite(db: Database): void {
   db.run("CREATE INDEX IF NOT EXISTS idx_memories_thread_id ON memories (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_events_thread_sequence ON events (thread_id, sequence)");
   db.run("CREATE INDEX IF NOT EXISTS idx_approvals_thread_id ON approvals (thread_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_workers_thread_id ON workers (thread_id)");
 }
 
 function ensureColumn(db: Database, tableName: string, columnName: string, columnDefinition: string): void {

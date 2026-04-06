@@ -1,7 +1,8 @@
 import type { CheckpointPort } from "../../../persistence/ports/checkpoint-port";
+import type { DerivedThreadView } from "../../../control/context/thread-compaction-types";
 import type { compactThreadView } from "../../../control/context/thread-compaction-policy";
 
-export type RootMode = "plan" | "execute" | "verify" | "done" | "waiting_approval";
+export type RootMode = "plan" | "execute" | "verify" | "done" | "waiting_approval" | "respond";
 
 export type WorkerMode = Exclude<RootMode, "done">;
 
@@ -28,9 +29,10 @@ export type RootGraphContext = {
   planner: WorkerHandler<"plan">;
   executor: WorkerHandler<"execute">;
   verifier: WorkerHandler<"verify">;
+  responder?: WorkerHandler<"respond">;
   memoryMaintainer?: WorkerHandler<"execute">;
   compactionPolicy?: {
     compact: typeof compactThreadView;
   };
-  getThreadView?: (threadId: string) => Promise<any>;
+  getThreadView?: (threadId: string) => Promise<DerivedThreadView | undefined>;
 };

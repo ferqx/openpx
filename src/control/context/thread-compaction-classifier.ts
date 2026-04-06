@@ -12,7 +12,7 @@ export interface ThreadCompactionClassifier {
   classifyApproval(approval: ApprovalRequest): CompactionRole[];
   classifyAnswer(summary: string): CompactionRole[];
   classifyEvent(event: { type: string; summary: string }): CompactionRole[];
-  classifyToolResult(content: string): CompactionRole[];
+  classifyToolResult(content: string, toolCallId?: string): CompactionRole[];
   classifyVerifierFeedback(content: string): CompactionRole[];
   classifyMessage(content: string): CompactionRole[];
   classifyRetrievedMemory(content: string): CompactionRole[];
@@ -38,6 +38,7 @@ export function createThreadCompactionClassifier(
         || task.status === "completed"
         || task.status === "failed"
       ) {
+        // These affect RecoveryFacts (blocked/activeTask) and Narrative (summary)
         return ["RecoveryFact", "NarrativeCandidate"];
       }
 
@@ -45,10 +46,12 @@ export function createThreadCompactionClassifier(
     },
 
     classifyApproval(approval) {
+      // Pending approvals are critical RecoveryFacts
       return approval.status === "pending" ? ["RecoveryFact"] : ["DropSafe"];
     },
 
     classifyAnswer(summary) {
+      // Durable answers are both facts and narrative
       return isBlank(summary) ? ["DropSafe"] : ["RecoveryFact", "NarrativeCandidate"];
     },
 
@@ -68,11 +71,14 @@ export function createThreadCompactionClassifier(
       return ["WorkingSetOnly"];
     },
 
-    classifyToolResult(content) {
+    classifyToolResult(content, toolCallId) {
       if (isBlank(content)) {
         return ["DropSafe"];
       }
 
+      // Tool results are WorkingSetOnly by default to keep facts lean.
+      // If a result is critical for recovery (e.g. a state check), 
+      // it should be promoted via task summaries or explicit recovery facts.
       return ["WorkingSetOnly"];
     },
 

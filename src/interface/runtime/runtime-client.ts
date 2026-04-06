@@ -1,5 +1,7 @@
-import type { RuntimeSnapshot, RuntimeCommand, RuntimeEventEnvelope } from "../../runtime/service/runtime-types";
+import type { RuntimeSnapshot, RuntimeCommand, RuntimeEventEnvelope, ProtocolVersion } from "../../runtime/service/runtime-types";
+import type { StreamEvent } from "../../domain/stream-events";
 import { dispatchRuntimeRequest } from "../../runtime/service/runtime-http-server";
+import { PROTOCOL_VERSION, PROTOCOL_VERSION_HEADER } from "../../runtime/service/runtime-types";
 
 type RuntimeClientScope = {
   workspaceRoot: string;
@@ -10,6 +12,7 @@ export class RuntimeClient {
   constructor(
     private baseUrl: string,
     private scope?: RuntimeClientScope,
+    private protocolVersion: ProtocolVersion = PROTOCOL_VERSION,
   ) {}
 
   private scopedUrl(path: string, afterSeq?: number): string {
@@ -25,30 +28,54 @@ export class RuntimeClient {
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
-    const res = await dispatchRuntimeRequest(this.scopedUrl("/snapshot"));
+    const res = await dispatchRuntimeRequest(this.scopedUrl("/snapshot"), {
+      headers: {
+        [PROTOCOL_VERSION_HEADER]: this.protocolVersion,
+      },
+    });
     if (!res.ok) {
       throw new Error(`Failed to get snapshot: ${res.statusText}`);
     }
-    return res.json() as Promise<RuntimeSnapshot>;
+    const snapshot = await res.json() as RuntimeSnapshot;
+    this.assertProtocolVersion(snapshot.protocolVersion);
+    return snapshot;
   }
 
-  async sendCommand(command: RuntimeCommand): Promise<void> {
+  async sendCommand(command: RuntimeCommand): Promise<unknown> {
     const res = await dispatchRuntimeRequest(this.scopedUrl("/commands"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        [PROTOCOL_VERSION_HEADER]: this.protocolVersion,
+      },
       body: JSON.stringify(command),
     });
+
     if (!res.ok) {
-      throw new Error(`Failed to send command: ${res.statusText}`);
+      let details = res.statusText;
+      try {
+        const errBody = await res.json() as { error?: string };
+        details = errBody.error ?? details;
+      } catch {
+        // ignore
+      }
+      throw new Error(`Command Failed (${res.status}): ${details}`);
     }
+
+    return res.json();
   }
 
   subscribeEvents(afterSeq?: number): AsyncIterable<RuntimeEventEnvelope> {
+    const client = this;
     const url = this.scopedUrl("/events", afterSeq);
 
     return {
       async *[Symbol.asyncIterator]() {
-        const res = await dispatchRuntimeRequest(url);
+        const res = await dispatchRuntimeRequest(url, {
+          headers: {
+            [PROTOCOL_VERSION_HEADER]: client.protocolVersion,
+          },
+        });
         if (!res.ok || !res.body) {
           throw new Error(`Failed to subscribe to events: ${res.statusText}`);
         }
@@ -67,11 +94,36 @@ export class RuntimeClient {
 
           for (const line of lines) {
             if (line.startsWith("data: ")) {
-              yield JSON.parse(line.slice(6));
+              try {
+                const envelope = JSON.parse(line.slice(6)) as RuntimeEventEnvelope;
+                client.assertProtocolVersion(envelope.protocolVersion);
+                yield envelope;
+              } catch (e) {
+                console.error("Failed to parse SSE event", line, e);
+              }
             }
           }
         }
       }
     };
+  }
+
+  subscribeStreamEvents(afterSeq?: number): AsyncIterable<RuntimeEventEnvelope & { event: StreamEvent }> {
+    const client = this;
+    return {
+      async *[Symbol.asyncIterator]() {
+        for await (const envelope of client.subscribeEvents(afterSeq)) {
+          if (envelope.event?.type?.startsWith("stream.")) {
+            yield envelope as RuntimeEventEnvelope & { event: StreamEvent };
+          }
+        }
+      }
+    };
+  }
+
+  private assertProtocolVersion(version: string) {
+    if (version !== this.protocolVersion) {
+      throw new Error(`Protocol version mismatch: expected ${this.protocolVersion}, received ${version}`);
+    }
   }
 }

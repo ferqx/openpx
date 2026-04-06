@@ -5,6 +5,7 @@ import { createRuntimeEventEnvelope, getStoredEventSequence, mapStoredEventToEnv
 import { buildRuntimeSnapshot } from "./runtime-snapshot";
 import type { RuntimeScope } from "./runtime-scope";
 import type { RuntimeCommand, RuntimeEventEnvelope, RuntimeSnapshot } from "./runtime-types";
+import type { SessionCommandResult } from "../../kernel/session-kernel";
 
 type AppContext = Awaited<ReturnType<typeof createAppContext>>;
 
@@ -13,7 +14,7 @@ export class RuntimeScopedSession {
   private readonly maxBufferSize = 100;
   private liveSeq = 0;
   private activeThreadId?: string;
-  private readonly commandHandler: (command: RuntimeCommand) => Promise<void>;
+  private readonly commandHandler: (command: RuntimeCommand) => Promise<SessionCommandResult>;
 
   constructor(
     readonly scope: RuntimeScope,
@@ -33,6 +34,18 @@ export class RuntimeScopedSession {
       const envelope = createRuntimeEventEnvelope({
         seq: ++this.liveSeq,
         event,
+      });
+
+      this.eventBuffer.push(envelope);
+      if (this.eventBuffer.length > this.maxBufferSize) {
+        this.eventBuffer.shift();
+      }
+    });
+
+    this.context.kernel.events.subscribeStream((event) => {
+      const envelope = createRuntimeEventEnvelope({
+        seq: ++this.liveSeq,
+        event: { type: event.type, payload: event.payload },
       });
 
       this.eventBuffer.push(envelope);
@@ -107,6 +120,7 @@ export class RuntimeScopedSession {
     );
     const tasks = await this.context.stores.taskStore.listByThread(activeThread.threadId);
     const pendingApprovals = await this.context.stores.approvalStore.listPendingByThread(activeThread.threadId);
+    const workers = await this.context.stores.workerStore.listByThread(activeThread.threadId);
     const events = await this.context.stores.eventLog.listByThread(activeThread.threadId);
     const narrative = await this.context.narrativeService.getNarrative(activeThread.threadId);
 
@@ -116,14 +130,15 @@ export class RuntimeScopedSession {
       threads: threadViews,
       tasks,
       pendingApprovals,
+      workers,
       events,
       fallbackLastEventSeq: this.liveSeq,
       narrativeSummary: narrative.summary || undefined,
     });
   }
 
-  async handleCommand(command: RuntimeCommand): Promise<void> {
-    await this.commandHandler(command);
+  async handleCommand(command: RuntimeCommand): Promise<SessionCommandResult> {
+    return await this.commandHandler(command);
   }
 
   async *subscribeEvents(afterSeq = 0): AsyncIterable<RuntimeEventEnvelope> {

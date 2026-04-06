@@ -6,6 +6,8 @@ export type RuntimeSessionState = {
   summary: string;
   tasks: RuntimeSnapshot["tasks"];
   approvals: RuntimeSnapshot["pendingApprovals"];
+  answers: RuntimeSnapshot["answers"];
+  workers: RuntimeSnapshot["workers"];
   workspaceRoot: string;
   projectId: string;
   blockingReason?: RuntimeSnapshot["blockingReason"];
@@ -13,6 +15,21 @@ export type RuntimeSessionState = {
   narrativeSummary?: string;
   threads: RuntimeSnapshot["threads"];
 };
+
+export function formatThreadListSummary(session: Pick<RuntimeSessionState, "threadId" | "threads">): string {
+  const lines = session.threads.map((thread) =>
+    [
+      `${thread.threadId}${thread.threadId === session.threadId ? " (active)" : ""} [${thread.status}]`,
+      thread.pendingApprovalCount ? `approval:${thread.pendingApprovalCount}` : undefined,
+      thread.blockingReasonKind,
+      thread.narrativeSummary,
+    ]
+      .filter((part): part is string => Boolean(part))
+      .join(" "),
+  );
+
+  return lines.length > 0 ? lines.join("\n") : "No threads available.";
+}
 
 export function deriveRuntimeSession(snapshot: RuntimeSnapshot): RuntimeSessionState {
   const blockingReason =
@@ -26,6 +43,8 @@ export function deriveRuntimeSession(snapshot: RuntimeSnapshot): RuntimeSessionS
     summary: snapshot.answers.at(-1)?.content ?? blockingReason?.message ?? snapshot.narrativeSummary ?? "Awaiting answer",
     tasks: snapshot.tasks,
     approvals: snapshot.pendingApprovals,
+    answers: snapshot.answers,
+    workers: snapshot.workers,
     workspaceRoot: snapshot.workspaceRoot,
     projectId: snapshot.projectId,
     blockingReason,

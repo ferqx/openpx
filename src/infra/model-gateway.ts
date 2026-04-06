@@ -21,12 +21,57 @@ export type VerifierModelOutput = {
   isValid: boolean;
 };
 
+export type RespondModelInput = {
+  prompt: string;
+  threadId?: string;
+  taskId?: string;
+};
+
+export type RespondModelOutput = {
+  summary: string;
+};
+
 export type ModelStatus = "idle" | "thinking" | "responding";
+
+export type ModelGatewayEvent =
+  | {
+      type: "model.invocation_started";
+      payload: { timestamp: number };
+    }
+  | {
+      type: "model.first_token_received";
+      payload: { timestamp: number };
+    }
+  | {
+      type: "model.completed";
+      payload: {
+        timestamp: number;
+        duration: number;
+        waitDuration: number;
+        genDuration: number;
+      };
+    }
+  | {
+      type: "model.failed";
+      payload: {
+        timestamp: number;
+        duration: number;
+        error: string;
+      };
+    };
+
+type ModelMessage = ["system" | "human", string];
+
+type ModelInvocationResponse = {
+  content: unknown;
+} & Record<string, unknown>;
 
 export type ModelGateway = {
   plan(input: PlannerModelInput): Promise<PlannerModelOutput>;
   verify(input: VerifierModelInput): Promise<VerifierModelOutput>;
+  respond(input: RespondModelInput): Promise<RespondModelOutput>;
   onStatusChange(handler: (status: ModelStatus) => void): () => void;
+  onEvent(handler: (event: ModelGatewayEvent) => void): () => void;
 };
 
 export type ModelGatewayErrorKind = 
@@ -38,7 +83,7 @@ export type ModelGatewayErrorKind =
   | "invalid_response_error";
 
 export class ModelGatewayError extends Error {
-  constructor(public kind: ModelGatewayErrorKind, message: string, public originalError?: any) {
+  constructor(public kind: ModelGatewayErrorKind, message: string, public originalError?: unknown) {
     super(message);
     this.name = "ModelGatewayError";
   }
@@ -81,64 +126,142 @@ function normalizeModelText(content: unknown): string {
   return "";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (isRecord(error) && typeof error.message === "string") {
+    return error.message;
+  }
+
+  return "unknown model gateway error";
+}
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (!isRecord(error)) {
+    return undefined;
+  }
+
+  if (typeof error.status === "number") {
+    return error.status;
+  }
+
+  const response = error.response;
+  if (isRecord(response) && typeof response.status === "number") {
+    return response.status;
+  }
+
+  return undefined;
+}
+
 class SingleProviderGateway {
   private model: ChatOpenAI;
   private timeoutMs: number;
 
   constructor(config: ModelProviderConfig) {
-    this.timeoutMs = config.timeoutMs ?? 30000;
+    this.timeoutMs = config.timeoutMs ?? 120000;
     this.model = new ChatOpenAI({
       apiKey: config.apiKey,
       model: config.modelName,
       temperature: 0,
-      maxRetries: 0, // We handle retries/failover at the gateway level
+      maxRetries: 0,
       configuration: {
         baseURL: config.baseURL,
       },
     });
   }
 
-  async invoke(messages: any[], onStatus: (status: ModelStatus) => void): Promise<any> {
+  async invoke(
+    messages: ModelMessage[],
+    onStatus: (status: ModelStatus) => void,
+    onEvent: (event: ModelGatewayEvent) => void,
+  ): Promise<ModelInvocationResponse> {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), this.timeoutMs);
     const startTime = Date.now();
 
+    onEvent({ type: "model.invocation_started", payload: { timestamp: startTime } });
+    onStatus("thinking");
+
     try {
-      onStatus("thinking");
-      const response = await this.model.invoke(messages, { signal: controller.signal });
-      onStatus("responding");
-      const duration = Date.now() - startTime;
-      console.log(`[TELEMETRY] model.invoked: duration=${duration}ms`);
-      return response;
-    } catch (e: any) {
-      const duration = Date.now() - startTime;
-      console.error(`[TELEMETRY] model.failed: duration=${duration}ms error=${e.message}`);
+      const stream = await this.model.stream(messages, { signal: controller.signal });
       
-      if (e.name === "AbortError") {
+      let firstTokenTime: number | undefined;
+      let fullContent = "";
+      let lastChunk: ModelInvocationResponse | undefined;
+
+      for await (const chunk of stream) {
+        if (!firstTokenTime) {
+          firstTokenTime = Date.now();
+          onEvent({ type: "model.first_token_received", payload: { timestamp: firstTokenTime } });
+          onStatus("responding");
+        }
+        
+        const chunkContent = isRecord(chunk) ? chunk.content : undefined;
+        if (typeof chunkContent === "string") {
+          fullContent += chunkContent;
+        } else if (Array.isArray(chunkContent)) {
+          // Handle complex content if necessary
+        }
+        lastChunk = isRecord(chunk)
+          ? { ...chunk, content: chunkContent }
+          : { content: chunkContent };
+      }
+
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      
+      onEvent({ 
+        type: "model.completed", 
+        payload: { 
+          timestamp: endTime, 
+          duration,
+          waitDuration: firstTokenTime ? firstTokenTime - startTime : duration,
+          genDuration: firstTokenTime ? endTime - firstTokenTime : 0
+        } 
+      });
+
+      // Wrap the reconstructed content into an object that matches ChatOpenAI's response format
+      return {
+        ...(lastChunk ?? {}),
+        content: fullContent,
+      };
+    } catch (error: unknown) {
+      const duration = Date.now() - startTime;
+      onEvent({ type: "model.failed", payload: { timestamp: Date.now(), duration, error: getErrorMessage(error) } });
+      
+      if (error instanceof Error && error.name === "AbortError") {
         throw new ModelGatewayError("timeout_error", `request timed out after ${this.timeoutMs}ms`);
       }
       
-      const status = e.status || e.response?.status;
+      const status = getErrorStatus(error);
       if (status === 429) {
-        throw new ModelGatewayError("rate_limit_error", "rate limit exceeded", e);
+        throw new ModelGatewayError("rate_limit_error", "rate limit exceeded", error);
       }
-      if (status >= 500) {
-        throw new ModelGatewayError("provider_error", `provider error: ${status}`, e);
+      if (typeof status === "number" && status >= 500) {
+        throw new ModelGatewayError("provider_error", `provider error: ${status}`, error);
       }
-      if (status >= 400) {
-        throw new ModelGatewayError("config_error", `invalid request: ${status}`, e);
+      if (typeof status === "number" && status >= 400) {
+        throw new ModelGatewayError("config_error", `invalid request: ${status}`, error);
       }
 
-      throw new ModelGatewayError("network_error", e.message, e);
+      throw new ModelGatewayError("network_error", getErrorMessage(error), error);
     } finally {
       clearTimeout(id);
+      onStatus("idle");
     }
   }
 }
 
 class MultiModelGateway implements ModelGateway {
   private providers: SingleProviderGateway[];
-  private handlers = new Set<(status: ModelStatus) => void>();
+  private statusHandlers = new Set<(status: ModelStatus) => void>();
+  private eventHandlers = new Set<(event: ModelGatewayEvent) => void>();
 
   constructor(options: ModelGatewayOptions) {
     this.providers = [
@@ -148,16 +271,25 @@ class MultiModelGateway implements ModelGateway {
   }
 
   onStatusChange(handler: (status: ModelStatus) => void) {
-    this.handlers.add(handler);
-    return () => this.handlers.delete(handler);
+    this.statusHandlers.add(handler);
+    return () => this.statusHandlers.delete(handler);
+  }
+
+  onEvent(handler: (event: ModelGatewayEvent) => void) {
+    this.eventHandlers.add(handler);
+    return () => this.eventHandlers.delete(handler);
   }
 
   private emitStatus(status: ModelStatus) {
-    this.handlers.forEach(h => h(status));
+    this.statusHandlers.forEach(h => h(status));
   }
 
-  private async tryAllProviders(messages: any[]): Promise<any> {
-    let lastError: any;
+  private emitEvent(event: ModelGatewayEvent) {
+    this.eventHandlers.forEach(h => h(event));
+  }
+
+  private async tryAllProviders(messages: ModelMessage[]): Promise<ModelInvocationResponse> {
+    let lastError: unknown;
     for (let i = 0; i < this.providers.length; i++) {
       const provider = this.providers[i];
       if (!provider) continue;
@@ -166,18 +298,19 @@ class MultiModelGateway implements ModelGateway {
         if (i > 0) {
           console.warn(`[TELEMETRY] model.failover: switching to fallback provider ${i}`);
         }
-        const result = await provider.invoke(messages, s => this.emitStatus(s));
-        this.emitStatus("idle");
+        const result = await provider.invoke(
+          messages, 
+          s => this.emitStatus(s),
+          e => this.emitEvent(e)
+        );
         return result;
       } catch (e) {
         lastError = e;
-        // Only failover on transient errors (network, timeout, rate limit, provider 5xx)
         if (e instanceof ModelGatewayError && e.kind === "config_error") {
-          break; // Don't failover on bad config
+          break;
         }
       }
     }
-    this.emitStatus("idle");
     throw lastError;
   }
 
@@ -208,6 +341,19 @@ class MultiModelGateway implements ModelGateway {
     const isValid = text.toUpperCase().startsWith("VALID");
     const summary = text.replace(/^(VALID|INVALID):\s*/i, "");
     return { summary, isValid };
+  }
+
+  async respond(input: RespondModelInput): Promise<RespondModelOutput> {
+    const response = await this.tryAllProviders([
+      ["system", "You are a helpful AI assistant. Respond naturally and concisely."],
+      ["human", input.prompt],
+    ]);
+
+    const summary = normalizeModelText(response.content);
+    if (!summary) {
+      throw new ModelGatewayError("invalid_response_error", "model returned an empty response");
+    }
+    return { summary };
   }
 }
 

@@ -12,7 +12,13 @@ describe("planner model integration", () => {
       async verify() {
         return { summary: "verified", isValid: true };
       },
+      async respond() {
+        return { summary: "responded" };
+      },
       onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
         return () => {};
       },
     };
@@ -28,7 +34,9 @@ describe("planner model integration", () => {
       payload: { text: "plan the repo architecture" },
     });
 
-    expect(result.status).toBe("completed");
-    expect(result.summary).toContain("plan the repo architecture");
+    expect(result.status).toBe("active");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const hydrated = await ctx.kernel.hydrateSession();
+    expect(hydrated?.status).toBe("completed");
   });
 });

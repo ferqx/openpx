@@ -1,22 +1,19 @@
-import { taskId as sharedTaskId, threadId as sharedThreadId, workerId as sharedWorkerId } from "../../shared/ids";
+import {
+  createWorker,
+  transitionWorker,
+  type Worker as WorkerRecord,
+  type WorkerRole,
+  type WorkerStatus,
+} from "../../domain/worker";
 
-export type WorkerRole = "planner" | "executor" | "verifier" | "memory_maintainer";
-export type WorkerStatus = "created" | "starting" | "running" | "stopping" | "exited" | "failed";
-
-export type WorkerRecord = {
-  workerId: ReturnType<typeof sharedWorkerId>;
-  taskId: ReturnType<typeof sharedTaskId>;
-  threadId: ReturnType<typeof sharedThreadId>;
-  role: WorkerRole;
-  spawnReason: string;
-  status: WorkerStatus;
-};
+export { createWorker, transitionWorker, type WorkerRecord, type WorkerRole, type WorkerStatus };
 
 export type SpawnWorkerInput = {
   role: WorkerRole;
   taskId: string;
   threadId: string;
   spawnReason: string;
+  resumeToken?: string;
 };
 
 export function createWorkerRecord(input: {
@@ -26,13 +23,30 @@ export function createWorkerRecord(input: {
   role: WorkerRole;
   spawnReason: string;
   status?: WorkerStatus;
+  startedAt?: string;
+  endedAt?: string;
+  resumeToken?: string;
 }): WorkerRecord {
-  return {
-    workerId: sharedWorkerId(input.workerId),
-    taskId: sharedTaskId(input.taskId),
-    threadId: sharedThreadId(input.threadId),
+  const created = createWorker({
+    workerId: input.workerId,
+    taskId: input.taskId,
+    threadId: input.threadId,
     role: input.role,
     spawnReason: input.spawnReason,
-    status: input.status ?? "created",
-  };
+    resumeToken: input.resumeToken,
+  });
+
+  if (!input.status || input.status === "created") {
+    return {
+      ...created,
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+    };
+  }
+
+  return transitionWorker(created, input.status, {
+    startedAt: input.startedAt,
+    endedAt: input.endedAt,
+    resumeToken: input.resumeToken,
+  });
 }

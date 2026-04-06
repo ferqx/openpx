@@ -2,7 +2,7 @@ import React from "react";
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { App } from "../../src/interface/tui/app";
-import { createEventBus } from "../../src/kernel/event-bus";
+import type { TuiKernel } from "../../src/interface/tui/hooks/use-kernel";
 
 describe("Confirmation Flow", () => {
   test("shows 'Agent team ready. Start? [Y/n]' after plan", async () => {
@@ -17,21 +17,57 @@ describe("Confirmation Flow", () => {
       throw new Error(message);
     }
 
-    const events = createEventBus();
     let commandCalled = false;
-    const kernel = {
-      events,
+    const kernel: TuiKernel = {
+      events: {
+        subscribe() {
+          return () => undefined;
+        },
+      },
       handleCommand: async () => {
         commandCalled = true;
         return {
           status: "waiting_approval",
-          tasks: [{ taskId: "t1", summary: "The Plan", status: "queued" }],
+          threadId: "thread-1",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          summary: "Agent team ready to start",
+          blockingReason: {
+            kind: "waiting_approval",
+            message: "Agent team ready to start",
+          },
+          tasks: [
+            {
+              taskId: "t1",
+              threadId: "thread-1",
+              summary: "The Plan",
+              status: "blocked",
+              blockingReason: {
+                kind: "waiting_approval",
+                message: "Agent team ready to start",
+              },
+            },
+          ],
+          approvals: [
+            {
+              approvalRequestId: "approval-1",
+              threadId: "thread-1",
+              taskId: "t1",
+              toolCallId: "tool-1",
+              summary: "Agent team ready to start",
+              risk: "team.start",
+              status: "pending",
+            },
+          ],
+          answers: [],
+          workers: [],
+          threads: [],
         };
       },
       hydrateSession: async () => undefined,
     };
 
-    const { lastFrame, stdin } = render(<App kernel={kernel as any} />);
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
     
     // Submit some input
     for (const char of "new task") {

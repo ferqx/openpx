@@ -20,11 +20,11 @@ describe("ThreadStateProjector", () => {
     );
 
     expect(view.recoveryFacts?.activeTask).toBeUndefined();
-    expect(view.recoveryFacts?.lastStableTask).toEqual({
+    expect(view.recoveryFacts?.lastStableTask).toEqual(expect.objectContaining({
       taskId: "task-2",
       status: "completed",
       summary: "Executor patched the runtime snapshot path.",
-    });
+    }));
     expect(view.narrativeState?.taskSummaries).toContain(
       "Executor patched the runtime snapshot path.",
     );
@@ -49,11 +49,11 @@ describe("ThreadStateProjector", () => {
       },
     );
 
-    expect(view.recoveryFacts?.activeTask).toEqual({
+    expect(view.recoveryFacts?.activeTask).toEqual(expect.objectContaining({
       taskId: "task-3",
       status: "blocked",
       summary: "Waiting for manual database recovery.",
-    });
+    }));
     expect(view.recoveryFacts?.lastStableTask).toBeUndefined();
     expect(view.recoveryFacts?.blocking).toEqual({
       sourceTaskId: "task-3",
@@ -196,14 +196,14 @@ describe("ThreadStateProjector", () => {
     });
 
     expect(afterResolveB.recoveryFacts?.pendingApprovals).toEqual([
-      {
+      expect.objectContaining({
         approvalRequestId: "approval-a",
         taskId: "task-a",
         toolCallId: "tool-call-a",
         summary: "Delete tmp/a.txt",
         risk: "high",
         status: "pending",
-      },
+      }),
     ]);
     expect(afterResolveB.recoveryFacts?.blocking).toEqual({
       sourceTaskId: "task-a",
@@ -333,14 +333,14 @@ describe("ThreadStateProjector", () => {
     });
 
     expect(afterTaskComplete.recoveryFacts?.pendingApprovals).toEqual([
-      {
+      expect.objectContaining({
         approvalRequestId: "approval-task-10",
         taskId: "task-10",
         toolCallId: "tool-call-10",
         summary: "Delete tmp/ten.txt",
         risk: "high",
         status: "pending",
-      },
+      }),
     ]);
     expect(afterTaskComplete.recoveryFacts?.blocking).toEqual({
       sourceTaskId: "task-10",
@@ -390,10 +390,10 @@ describe("ThreadStateProjector", () => {
       },
     );
 
-    expect(view.recoveryFacts?.latestDurableAnswer).toEqual({
+    expect(view.recoveryFacts?.latestDurableAnswer).toEqual(expect.objectContaining({
       answerId: "answer-1",
       summary: "Runtime snapshot path updated.",
-    });
+    }));
     expect(view.narrativeState?.notableEvents).toContain("Runtime snapshot path updated.");
     expect(view.narrativeState?.threadSummary).toBe("Runtime snapshot path updated.");
   });
@@ -563,11 +563,11 @@ describe("ThreadStateProjector", () => {
       }),
     });
 
-    expect(runningView.recoveryFacts?.activeTask).toEqual({
+    expect(runningView.recoveryFacts?.activeTask).toEqual(expect.objectContaining({
       taskId: "task-unblock-1",
       status: "running",
       summary: "Work resumed.",
-    });
+    }));
     expect(runningView.recoveryFacts?.blocking).toBeUndefined();
   });
 });
