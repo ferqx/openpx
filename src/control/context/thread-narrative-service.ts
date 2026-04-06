@@ -43,6 +43,7 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
         status: "active",
         updatedAt: now,
         pendingApprovals: [],
+        conversationHistory: [],
       },
       narrativeState: {
         revision: 0,
@@ -106,6 +107,10 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
         pendingApprovals:
           persistedView?.recoveryFacts?.pendingApprovals
           ?? inMemoryView?.recoveryFacts?.pendingApprovals
+          ?? [],
+        conversationHistory:
+          persistedView?.recoveryFacts?.conversationHistory
+          ?? inMemoryView?.recoveryFacts?.conversationHistory
           ?? [],
         activeTask:
           persistedView?.recoveryFacts?.activeTask
@@ -230,6 +235,7 @@ export function createThreadNarrativeService(options: NarrativeServiceOptions = 
           recoveryFacts: view.recoveryFacts ? {
             ...view.recoveryFacts,
             pendingApprovals: [...view.recoveryFacts.pendingApprovals],
+            conversationHistory: [...(view.recoveryFacts.conversationHistory ?? [])],
             activeTask: view.recoveryFacts.activeTask ? { ...view.recoveryFacts.activeTask } : undefined,
             lastStableTask: view.recoveryFacts.lastStableTask ? { ...view.recoveryFacts.lastStableTask } : undefined,
             blocking: view.recoveryFacts.blocking ? { ...view.recoveryFacts.blocking } : undefined,

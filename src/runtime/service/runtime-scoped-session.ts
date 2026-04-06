@@ -75,6 +75,23 @@ export class RuntimeScopedSession {
     return thread;
   }
 
+  private async getExistingActiveThread(): Promise<Thread | undefined> {
+    if (this.activeThreadId) {
+      const active = await this.context.stores.threadStore.get(this.activeThreadId);
+      if (active && active.workspaceRoot === this.scope.workspaceRoot && active.projectId === this.scope.projectId) {
+        return active;
+      }
+    }
+
+    const existing = await this.context.stores.threadStore.getLatest(this.scope);
+    if (existing) {
+      this.activeThreadId = existing.threadId;
+      return existing;
+    }
+
+    return undefined;
+  }
+
   private async syncLiveSeqWithEventLog(): Promise<void> {
     const threads = await this.context.stores.threadStore.listByScope(this.scope);
     if (threads.length === 0) {
@@ -100,7 +117,7 @@ export class RuntimeScopedSession {
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
-    const activeThread = await this.ensureActiveThread();
+    const activeThread = await this.getExistingActiveThread();
     await this.syncLiveSeqWithEventLog();
     const threads = await this.context.stores.threadStore.listByScope(this.scope);
     const threadViews = await Promise.all(
@@ -118,11 +135,11 @@ export class RuntimeScopedSession {
         };
       }),
     );
-    const tasks = await this.context.stores.taskStore.listByThread(activeThread.threadId);
-    const pendingApprovals = await this.context.stores.approvalStore.listPendingByThread(activeThread.threadId);
-    const workers = await this.context.stores.workerStore.listByThread(activeThread.threadId);
-    const events = await this.context.stores.eventLog.listByThread(activeThread.threadId);
-    const narrative = await this.context.narrativeService.getNarrative(activeThread.threadId);
+    const tasks = activeThread ? await this.context.stores.taskStore.listByThread(activeThread.threadId) : [];
+    const pendingApprovals = activeThread ? await this.context.stores.approvalStore.listPendingByThread(activeThread.threadId) : [];
+    const workers = activeThread ? await this.context.stores.workerStore.listByThread(activeThread.threadId) : [];
+    const events = activeThread ? await this.context.stores.eventLog.listByThread(activeThread.threadId) : [];
+    const narrative = activeThread ? await this.context.narrativeService.getNarrative(activeThread.threadId) : { summary: "", events: [], revision: 0, threadId: "" };
 
     return buildRuntimeSnapshot({
       scope: this.scope,
@@ -142,7 +159,7 @@ export class RuntimeScopedSession {
   }
 
   async *subscribeEvents(afterSeq = 0): AsyncIterable<RuntimeEventEnvelope> {
-    const activeThread = await this.ensureActiveThread();
+    const activeThread = await this.getExistingActiveThread();
     await this.syncLiveSeqWithEventLog();
     const buffered = this.eventBuffer.filter((envelope) => envelope.seq > afterSeq);
 
@@ -150,7 +167,7 @@ export class RuntimeScopedSession {
       yield envelope;
     }
 
-    if (buffered.length === 0) {
+    if (buffered.length === 0 && activeThread) {
       const existing = await this.context.stores.eventLog.listByThreadAfter(activeThread.threadId, afterSeq);
       this.liveSeq = Math.max(this.liveSeq, getStoredEventSequence(existing.at(-1)) ?? 0);
       for (const event of existing) {

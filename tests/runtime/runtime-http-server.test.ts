@@ -27,7 +27,8 @@ describe("Runtime HTTP Server", () => {
       expect(res.status).toBe(200);
       const snapshot = await res.json() as RuntimeSnapshot;
       expect(snapshot.workspaceRoot).toBe(testDir);
-      expect(snapshot.activeThreadId).toBeString();
+      expect(snapshot.activeThreadId).toBeUndefined();
+      expect(snapshot.threads).toEqual([]);
     } finally {
       server.stop();
     }
@@ -43,6 +44,23 @@ describe("Runtime HTTP Server", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: "add_task", content: "test task" }),
+      });
+      expect(res.status).toBe(202);
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("POST /commands accepts interrupt commands", async () => {
+    await fs.mkdir(testDir, { recursive: true });
+    const runtime = await createRuntimeService({ dataDir: ":memory:", workspaceRoot: testDir });
+    const server = createHttpServer(runtime);
+
+    try {
+      const res = await server.fetch(`/commands?workspaceRoot=${encodeURIComponent(testDir)}&projectId=test-project`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "interrupt" }),
       });
       expect(res.status).toBe(202);
     } finally {

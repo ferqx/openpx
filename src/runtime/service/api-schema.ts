@@ -1,6 +1,7 @@
 import { z } from "zod";
 export { answerViewSchema } from "./protocol/answer-view";
 export { approvalViewSchema } from "./protocol/approval-view";
+export { messageViewSchema } from "./protocol/message-view";
 export { protocolVersionSchema } from "./protocol/protocol-version";
 export { runtimeCommandSchema } from "./protocol/runtime-command-schema";
 export { runtimeEventEnvelopeSchema, runtimeEventSchema } from "./protocol/runtime-event-schema";
@@ -11,6 +12,7 @@ export { workerViewSchema } from "./protocol/worker-view";
 
 import { answerViewSchema } from "./protocol/answer-view";
 import { approvalViewSchema } from "./protocol/approval-view";
+import { messageViewSchema } from "./protocol/message-view";
 import { protocolVersionSchema } from "./protocol/protocol-version";
 import { runtimeCommandSchema } from "./protocol/runtime-command-schema";
 import { runtimeEventEnvelopeSchema, runtimeEventSchema } from "./protocol/runtime-event-schema";
@@ -44,6 +46,7 @@ export const runtimeTaskSummarySchema = taskViewSchema;
 export const runtimePendingApprovalSchema = approvalViewSchema;
 
 export const runtimeAnswerSchema = answerViewSchema;
+export const runtimeMessageSchema = messageViewSchema;
 export const runtimeWorkerSchema = workerViewSchema;
 
 export type RuntimeSnapshot = z.infer<typeof runtimeSnapshotSchema>;

@@ -18,7 +18,7 @@ import { SqliteThreadStore } from "../persistence/sqlite/sqlite-thread-store";
 import { SqliteExecutionLedger } from "../persistence/sqlite/sqlite-execution-ledger";
 import { SqliteWorkerStore } from "../persistence/sqlite/sqlite-worker-store";
 import { createRootGraph } from "../runtime/graph/root/graph";
-import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
+import { createModelGateway, ModelGatewayError, type ModelGateway } from "../infra/model-gateway";
 import { resolveConfig } from "../shared/config";
 import { createThreadNarrativeService } from "../control/context/thread-narrative-service";
 import { createWorkerScratchPolicy } from "../control/context/worker-scratch-policy";
@@ -34,6 +34,7 @@ type ControlPlane = {
   startRootTask(threadId: string, input: string | ResumeControl): Promise<SessionControlPlaneResult>;
   approveRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   rejectRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
+  cancelThread(threadId: string, reason?: string): Promise<boolean>;
 };
 
 function createStores(path: string | ReturnType<typeof createSqlite>) {
@@ -295,6 +296,61 @@ function resolveApprovalToolRequest(
   };
 }
 
+function formatPromptSection(title: string, lines: string[]): string {
+  if (lines.length === 0) {
+    return "";
+  }
+
+  return `${title}:\n${lines.map((line) => `- ${line}`).join("\n")}`;
+}
+
+function buildResponderPrompt(input: {
+  text: string;
+  threadView?: Awaited<ReturnType<AppStores["threadStore"]["get"]>>;
+}): string {
+  const sections = [`Current user request: ${input.text}`];
+  const threadSummary = input.threadView?.narrativeState?.threadSummary?.trim();
+  if (threadSummary) {
+    sections.push(`Thread summary:\n${threadSummary}`);
+  }
+
+  const taskSummaries = input.threadView?.narrativeState?.taskSummaries?.filter(Boolean) ?? [];
+  const notableEvents = input.threadView?.narrativeState?.notableEvents?.filter(Boolean) ?? [];
+  const workingMessages = input.threadView?.workingSetWindow?.messages?.filter(Boolean) ?? [];
+  const retrievedMemories = input.threadView?.workingSetWindow?.retrievedMemories?.filter(Boolean) ?? [];
+  const latestAnswer = input.threadView?.recoveryFacts?.latestDurableAnswer?.summary?.trim();
+
+  const narrativeSection = formatPromptSection("Recent task summaries", taskSummaries);
+  if (narrativeSection) {
+    sections.push(narrativeSection);
+  }
+
+  const notableSection = formatPromptSection("Notable events", notableEvents);
+  if (notableSection) {
+    sections.push(notableSection);
+  }
+
+  const workingSection = formatPromptSection("Recent working messages", workingMessages);
+  if (workingSection) {
+    sections.push(workingSection);
+  }
+
+  const memorySection = formatPromptSection("Retrieved memories", retrievedMemories);
+  if (memorySection) {
+    sections.push(memorySection);
+  }
+
+  if (latestAnswer) {
+    sections.push(`Latest durable answer:\n- ${latestAnswer}`);
+  }
+
+  return sections.join("\n\n");
+}
+
+function isCancelledError(error: unknown): boolean {
+  return error instanceof ModelGatewayError && error.kind === "cancelled_error";
+}
+
 async function createControlPlane(input: {
   config: ReturnType<typeof resolveConfig>;
   stores: AppStores;
@@ -311,6 +367,34 @@ async function createControlPlane(input: {
     approvals,
     executionLedger: input.stores.executionLedger,
   });
+  const activeExecutions = new Map<string, { taskId: string; controller: AbortController }>();
+  const getAbortSignal = (threadId?: string) => (threadId ? activeExecutions.get(threadId)?.controller.signal : undefined);
+
+  async function cancelActiveThread(threadId: string): Promise<boolean> {
+    const execution = activeExecutions.get(threadId);
+    if (!execution) {
+      return false;
+    }
+
+    execution.controller.abort();
+
+    const existingTask = await input.stores.taskStore.get(execution.taskId);
+    if (existingTask && existingTask.status === "running") {
+      await saveTaskStatus(input.stores, ensureControlTask(existingTask), "cancelled");
+    }
+
+    const thread = await input.stores.threadStore.get(threadId);
+    if (thread && thread.status !== "interrupted") {
+      const nextThread = {
+        ...transitionThread(thread, "interrupted"),
+        revision: (thread.revision ?? 1) + 1,
+      };
+      await input.stores.threadStore.save(nextThread);
+    }
+
+    return true;
+  }
+
   const rootGraph = await createRootGraph({
     checkpointer: input.checkpointer,
     compactionPolicy: { compact: compactThreadView },
@@ -323,7 +407,7 @@ async function createControlPlane(input: {
         : "";
       
       const prompt = `${memoryContext}\nUser request: ${text}`;
-      const result = await input.modelGateway.plan({ prompt, threadId, taskId });
+      const result = await input.modelGateway.plan({ prompt, threadId, taskId, signal: getAbortSignal(threadId) });
       
       return {
         summary: result.summary,
@@ -331,7 +415,7 @@ async function createControlPlane(input: {
       };
     },
     verifier: async ({ input: text, threadId, taskId }) => {
-      const result = await input.modelGateway.verify({ prompt: text, threadId, taskId });
+      const result = await input.modelGateway.verify({ prompt: text, threadId, taskId, signal: getAbortSignal(threadId) });
       return {
         summary: result.summary,
         mode: "verify",
@@ -404,7 +488,14 @@ async function createControlPlane(input: {
       };
     },
     responder: async ({ input: text, threadId, taskId }) => {
-      const result = await input.modelGateway.respond({ prompt: text, threadId, taskId });
+      const threadView = threadId ? await input.stores.threadStore.get(threadId) : undefined;
+      const prompt = buildResponderPrompt({ text, threadView });
+      const result = await input.modelGateway.respond({
+        prompt,
+        threadId,
+        taskId,
+        signal: getAbortSignal(threadId),
+      });
       return {
         summary: result.summary,
         mode: "respond",
@@ -430,30 +521,45 @@ async function createControlPlane(input: {
         }
         task = ensureControlTask(lastTask);
         task = await saveTaskStatus(input.stores, task, "running");
-
-        graphResult = await rootGraph.invoke(
-          new Command({ resume: inputValue }),
-          {
-            configurable: {
-              thread_id: threadId,
-              task_id: task.taskId,
-            },
-          },
-        );
       } else {
         const text = typeof inputValue === "string" ? inputValue : inputValue.reason ?? "";
         task = await taskManager.createRootTask(threadId, text);
         task = await saveTaskStatus(input.stores, task, "running");
+      }
+      const controller = new AbortController();
+      activeExecutions.set(threadId, { taskId: task.taskId, controller });
 
-        graphResult = await rootGraph.invoke(
-          { input: text },
-          {
-            configurable: {
-              thread_id: threadId,
-              task_id: task.taskId,
-            },
-          },
-        );
+      try {
+        graphResult = isResume
+          ? await rootGraph.invoke(
+              new Command({ resume: inputValue }),
+              {
+                configurable: {
+                  thread_id: threadId,
+                  task_id: task.taskId,
+                  signal: controller.signal,
+                },
+              },
+            )
+          : await rootGraph.invoke(
+              { input: typeof inputValue === "string" ? inputValue : inputValue.reason ?? "" },
+              {
+                configurable: {
+                  thread_id: threadId,
+                  task_id: task.taskId,
+                  signal: controller.signal,
+                },
+              },
+            );
+      } catch (error: unknown) {
+        if (isCancelledError(error)) {
+          throw error;
+        }
+        throw error;
+      } finally {
+        if (activeExecutions.get(threadId)?.controller === controller) {
+          activeExecutions.delete(threadId);
+        }
       }
       const approvalsForThread = await input.stores.approvalStore.listPendingByThread(threadId);
       
@@ -557,6 +663,10 @@ async function createControlPlane(input: {
         approvals: pendingApprovals,
         summary: `Rejected ${approval.summary}`,
       };
+    },
+
+    async cancelThread(threadId: string) {
+      return cancelActiveThread(threadId);
     },
   };
 }

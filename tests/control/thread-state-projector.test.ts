@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createThreadStateProjector } from "../../src/control/context/thread-state-projector";
 import { createControlTask } from "../../src/control/tasks/task-types";
 import { createApprovalRequest } from "../../src/domain/approval";
+import type { DerivedThreadView } from "../../src/control/context/thread-compaction-types";
 
 describe("ThreadStateProjector", () => {
   test("promotes completed tasks into stable recovery facts and narrative summaries", () => {
@@ -569,5 +570,23 @@ describe("ThreadStateProjector", () => {
       summary: "Work resumed.",
     }));
     expect(runningView.recoveryFacts?.blocking).toBeUndefined();
+  });
+
+  test("caps transcript history to the most recent messages", () => {
+    const projector = createThreadStateProjector();
+    let view: DerivedThreadView = {};
+
+    for (let index = 0; index < 60; index += 1) {
+      view = projector.project(view, {
+        kind: "transcript_message",
+        messageId: `message-${index}`,
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `message ${index}`,
+      });
+    }
+
+    expect(view.recoveryFacts?.conversationHistory).toHaveLength(40);
+    expect(view.recoveryFacts?.conversationHistory?.[0]?.messageId).toBe("message-20");
+    expect(view.recoveryFacts?.conversationHistory?.at(-1)?.messageId).toBe("message-59");
   });
 });

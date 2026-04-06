@@ -33,8 +33,11 @@ export function routeNode(state: {
   }
 
   // 4. CHAT/RESPOND HEURISTICS: Direct Response for simple talk
+  const isMemoryQuestion =
+    /\b(what(?:'s| is) my name|who am i|do you remember (?:me|my name)|what did i just say)\b/.test(input) ||
+    /(我叫什么|你记得我叫什么|我刚才说了什么)/.test(state.input);
   const isSimpleChat = /^(hi|hello|hey|hola|你好|您好|谁|who are you|what can you do|你是谁|天气)/i.test(input);
-  if (isSimpleChat) {
+  if (isSimpleChat || isMemoryQuestion) {
     return { mode: "respond", recommendationReason: undefined };
   }
 

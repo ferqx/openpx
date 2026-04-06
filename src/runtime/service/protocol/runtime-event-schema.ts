@@ -83,6 +83,12 @@ const recoveryFactsSchema = z.object({
     status: z.string(),
     createdAt: z.string(),
   })),
+  conversationHistory: z.array(z.object({
+    messageId: z.string().min(1),
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+    createdAt: z.string(),
+  })).optional(),
   latestDurableAnswer: z.object({
     answerId: z.string().min(1),
     summary: z.string(),

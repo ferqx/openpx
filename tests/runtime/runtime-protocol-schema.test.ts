@@ -148,6 +148,28 @@ describe("runtime protocol schemas", () => {
         type: "thread.view_updated",
         payload: {
           threadId: "thread-1",
+          recoveryFacts: {
+            threadId: "thread-1",
+            revision: 2,
+            schemaVersion: 1,
+            status: "completed",
+            updatedAt: new Date().toISOString(),
+            pendingApprovals: [],
+            conversationHistory: [
+              {
+                messageId: "message-1",
+                role: "user",
+                content: "hello",
+                createdAt: new Date().toISOString(),
+              },
+              {
+                messageId: "message-2",
+                role: "assistant",
+                content: "hi",
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          },
           status: "active",
         },
       }).success,

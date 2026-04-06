@@ -163,6 +163,12 @@ export function createSessionKernel(deps: {
     for (const approval of result.approvals) {
       view = projector.project(view, { kind: "approval", approval });
     }
+    view = projector.project(view, {
+      kind: "transcript_message",
+      messageId: prefixedUuid("msg"),
+      role: "assistant",
+      content: result.summary,
+    });
     view = projector.project(view, { kind: "answer", answerId: prefixedUuid("ans"), summary: result.summary });
 
     // Persist the updated view back to the thread
@@ -256,6 +262,25 @@ export function createSessionKernel(deps: {
             threads: threadList,
           });
         }
+
+        const threadWithPrompt = {
+          recoveryFacts: thread.recoveryFacts,
+          narrativeState: thread.narrativeState,
+          workingSetWindow: thread.workingSetWindow,
+        };
+        const updatedView = projector.project(threadWithPrompt, {
+          kind: "transcript_message",
+          messageId: prefixedUuid("msg"),
+          role: "user",
+          content: command.payload.text,
+        });
+        await deps.stores.threadStore.save({
+          ...thread,
+          recoveryFacts: updatedView.recoveryFacts,
+          narrativeState: updatedView.narrativeState,
+          workingSetWindow: updatedView.workingSetWindow,
+          revision: updatedView.recoveryFacts?.revision ?? thread.revision,
+        });
 
         void runSessionInBackground({
           threadId: thread.threadId,

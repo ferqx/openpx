@@ -43,6 +43,20 @@ describe("Runtime session contract", () => {
           content: "Completed repo scan and narrowed work to runtime recovery.",
         },
       ],
+      messages: [
+        {
+          messageId: "message-1",
+          threadId: "thread-1",
+          role: "user",
+          content: "Recover the runtime snapshot path.",
+        },
+        {
+          messageId: "message-2",
+          threadId: "thread-1",
+          role: "assistant",
+          content: "Completed repo scan and narrowed work to runtime recovery.",
+        },
+      ],
       workers: [
         {
           workerId: "worker-1",
@@ -59,6 +73,7 @@ describe("Runtime session contract", () => {
 
     expect(session).toEqual({
       status: "blocked",
+      stage: "blocked",
       threadId: "thread-1",
       summary: "Completed repo scan and narrowed work to runtime recovery.",
       tasks: [
@@ -78,6 +93,20 @@ describe("Runtime session contract", () => {
         {
           answerId: "answer-1",
           threadId: "thread-1",
+          content: "Completed repo scan and narrowed work to runtime recovery.",
+        },
+      ],
+      messages: [
+        {
+          messageId: "message-1",
+          threadId: "thread-1",
+          role: "user",
+          content: "Recover the runtime snapshot path.",
+        },
+        {
+          messageId: "message-2",
+          threadId: "thread-1",
+          role: "assistant",
           content: "Completed repo scan and narrowed work to runtime recovery.",
         },
       ],

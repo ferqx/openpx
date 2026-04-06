@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { answerViewSchema } from "./answer-view";
 import { approvalViewSchema } from "./approval-view";
+import { messageViewSchema } from "./message-view";
 import { protocolVersionSchema } from "./protocol-version";
 import { taskBlockingReasonSchema, taskViewSchema } from "./task-view";
 import { threadViewSchema } from "./thread-view";
@@ -19,6 +20,7 @@ export const runtimeSnapshotSchema = z.object({
   tasks: z.array(taskViewSchema),
   pendingApprovals: z.array(approvalViewSchema),
   answers: z.array(answerViewSchema),
+  messages: z.array(messageViewSchema).optional(),
   workers: z.array(workerViewSchema),
 });
 

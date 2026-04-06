@@ -4,6 +4,7 @@ export type PlannerModelInput = {
   prompt: string;
   threadId?: string;
   taskId?: string;
+  signal?: AbortSignal;
 };
 
 export type PlannerModelOutput = {
@@ -14,6 +15,7 @@ export type VerifierModelInput = {
   prompt: string;
   threadId?: string;
   taskId?: string;
+  signal?: AbortSignal;
 };
 
 export type VerifierModelOutput = {
@@ -25,6 +27,7 @@ export type RespondModelInput = {
   prompt: string;
   threadId?: string;
   taskId?: string;
+  signal?: AbortSignal;
 };
 
 export type RespondModelOutput = {
@@ -80,6 +83,7 @@ export type ModelGatewayErrorKind =
   | "provider_error"
   | "rate_limit_error"
   | "timeout_error"
+  | "cancelled_error"
   | "invalid_response_error";
 
 export class ModelGatewayError extends Error {
@@ -180,10 +184,22 @@ class SingleProviderGateway {
     messages: ModelMessage[],
     onStatus: (status: ModelStatus) => void,
     onEvent: (event: ModelGatewayEvent) => void,
+    signal?: AbortSignal,
   ): Promise<ModelInvocationResponse> {
     const controller = new AbortController();
+    let cancelledByCaller = false;
     const id = setTimeout(() => controller.abort(), this.timeoutMs);
     const startTime = Date.now();
+    const abortFromCaller = () => {
+      cancelledByCaller = true;
+      controller.abort(signal?.reason);
+    };
+
+    if (signal?.aborted) {
+      abortFromCaller();
+    } else {
+      signal?.addEventListener("abort", abortFromCaller, { once: true });
+    }
 
     onEvent({ type: "model.invocation_started", payload: { timestamp: startTime } });
     onStatus("thinking");
@@ -236,6 +252,9 @@ class SingleProviderGateway {
       onEvent({ type: "model.failed", payload: { timestamp: Date.now(), duration, error: getErrorMessage(error) } });
       
       if (error instanceof Error && error.name === "AbortError") {
+        if (cancelledByCaller) {
+          throw new ModelGatewayError("cancelled_error", "request cancelled by user", error);
+        }
         throw new ModelGatewayError("timeout_error", `request timed out after ${this.timeoutMs}ms`);
       }
       
@@ -253,6 +272,7 @@ class SingleProviderGateway {
       throw new ModelGatewayError("network_error", getErrorMessage(error), error);
     } finally {
       clearTimeout(id);
+      signal?.removeEventListener("abort", abortFromCaller);
       onStatus("idle");
     }
   }
@@ -288,7 +308,7 @@ class MultiModelGateway implements ModelGateway {
     this.eventHandlers.forEach(h => h(event));
   }
 
-  private async tryAllProviders(messages: ModelMessage[]): Promise<ModelInvocationResponse> {
+  private async tryAllProviders(messages: ModelMessage[], signal?: AbortSignal): Promise<ModelInvocationResponse> {
     let lastError: unknown;
     for (let i = 0; i < this.providers.length; i++) {
       const provider = this.providers[i];
@@ -301,12 +321,13 @@ class MultiModelGateway implements ModelGateway {
         const result = await provider.invoke(
           messages, 
           s => this.emitStatus(s),
-          e => this.emitEvent(e)
+          e => this.emitEvent(e),
+          signal,
         );
         return result;
       } catch (e) {
         lastError = e;
-        if (e instanceof ModelGatewayError && e.kind === "config_error") {
+        if (e instanceof ModelGatewayError && (e.kind === "config_error" || e.kind === "cancelled_error")) {
           break;
         }
       }
@@ -318,7 +339,7 @@ class MultiModelGateway implements ModelGateway {
     const response = await this.tryAllProviders([
       ["system", "You are the planning worker. Return a concise implementation plan summary."],
       ["human", input.prompt],
-    ]);
+    ], input.signal);
 
     const summary = normalizeModelText(response.content);
     if (!summary) {
@@ -331,7 +352,7 @@ class MultiModelGateway implements ModelGateway {
     const response = await this.tryAllProviders([
       ["system", "You are the verifier. Confirm if the task is complete. Return 'VALID: <summary>' or 'INVALID: <reason>'."],
       ["human", input.prompt],
-    ]);
+    ], input.signal);
 
     const text = normalizeModelText(response.content);
     if (!text) {
@@ -347,7 +368,7 @@ class MultiModelGateway implements ModelGateway {
     const response = await this.tryAllProviders([
       ["system", "You are a helpful AI assistant. Respond naturally and concisely."],
       ["human", input.prompt],
-    ]);
+    ], input.signal);
 
     const summary = normalizeModelText(response.content);
     if (!summary) {

@@ -1,28 +1,82 @@
 import { describe, expect, test } from "bun:test";
-import { parseCommand } from "../../src/interface/tui/commands";
+import { getSlashCommandSuggestions, parseCommand } from "../../src/interface/tui/commands";
 
 describe("TUI commands", () => {
-  test("parses thread lifecycle commands", () => {
+  test("parses the v1 slash command surface", () => {
+    expect(parseCommand("/new")).toEqual({
+      kind: "command",
+      name: "new",
+    });
+
+    expect(parseCommand("/history")).toEqual({
+      kind: "command",
+      name: "history",
+    });
+
+    expect(parseCommand("/sessions")).toEqual({
+      kind: "command",
+      name: "sessions",
+    });
+
+    expect(parseCommand("/clear")).toEqual({
+      kind: "command",
+      name: "clear",
+    });
+
+    expect(parseCommand("/settings")).toEqual({
+      kind: "command",
+      name: "settings",
+    });
+
+    expect(parseCommand("/help")).toEqual({
+      kind: "command",
+      name: "help",
+    });
+  });
+
+  test("parses planning input separately from ordinary submit input", () => {
+    expect(parseCommand("/plan improve the shell")).toEqual({
+      kind: "plan",
+      text: "improve the shell",
+    });
+
+    expect(parseCommand("improve the shell")).toEqual({
+      kind: "submit",
+      text: "improve the shell",
+    });
+  });
+
+  test("treats legacy slash forms as plain input instead of preferred v1 commands", () => {
     expect(parseCommand("/thread new")).toEqual({
-      type: "thread_new",
+      kind: "submit",
+      text: "/thread new",
     });
 
-    expect(parseCommand("/thread switch thread_123")).toEqual({
-      type: "thread_switch",
-      payload: {
-        threadId: "thread_123",
-      },
+    expect(parseCommand("/approve approval_123")).toEqual({
+      kind: "submit",
+      text: "/approve approval_123",
     });
 
-    expect(parseCommand("/thread continue thread_456")).toEqual({
-      type: "thread_continue",
-      payload: {
-        threadId: "thread_456",
-      },
+    expect(parseCommand("/reject approval_123")).toEqual({
+      kind: "submit",
+      text: "/reject approval_123",
     });
+  });
 
-    expect(parseCommand("/thread list")).toEqual({
-      type: "thread_list",
-    });
+  test("filters slash command suggestions for composer autocomplete", () => {
+    expect(getSlashCommandSuggestions("")).toEqual([
+      "/new",
+      "/plan",
+      "/history",
+      "/sessions",
+      "/clear",
+      "/settings",
+      "/help",
+    ]);
+
+    expect(getSlashCommandSuggestions("se")).toEqual([
+      "/sessions",
+      "/settings",
+    ]);
   });
 });

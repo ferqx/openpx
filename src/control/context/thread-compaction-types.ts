@@ -52,6 +52,13 @@ export type RecoveryFacts = {
     status: string;
     createdAt: string;
   }>;
+  conversationHistory?: Array<{
+    messageId: string;
+    role: "user" | "assistant";
+    content: string;
+    /** UTC ISO8601 */
+    createdAt: string;
+  }>;
   latestDurableAnswer?: {
     answerId: string;
     summary: string;

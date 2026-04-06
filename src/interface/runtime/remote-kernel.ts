@@ -1,6 +1,6 @@
 import type { RuntimeStatusEvent, TuiKernel, TuiKernelEvent } from "../tui/hooks/use-kernel";
 import type { RuntimeClient } from "./runtime-client";
-import type { SubmitInputCommand, ApprovalCommand, ThreadCommand } from "../tui/commands";
+import type { SubmitInputCommand, PlanInputCommand, ApprovalCommand, ThreadCommand } from "../tui/commands";
 import { deriveRuntimeSession, formatThreadListSummary } from "./runtime-session";
 import type { SessionUpdatedEvent } from "./tui-session-event";
 
@@ -14,6 +14,12 @@ export function createRemoteKernel(client: RemoteRuntimeClient): TuiKernel {
   const hydrateSession = async () => {
     const snapshot = await client.getSnapshot();
     return deriveRuntimeSession(snapshot);
+  };
+
+  const interruptCurrentThread = async () => {
+    const snapshot = await client.getSnapshot();
+    await client.sendCommand({ kind: "interrupt", threadId: snapshot.activeThreadId });
+    return hydrateSession();
   };
 
   function emitRuntimeStatus(status: "connected" | "disconnected") {
@@ -84,9 +90,11 @@ export function createRemoteKernel(client: RemoteRuntimeClient): TuiKernel {
         return () => handlers.delete(handler);
       },
     },
-    async handleCommand(command: SubmitInputCommand | ApprovalCommand | ThreadCommand) {
+    async handleCommand(command: SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand) {
       if (command.type === "submit_input") {
         await client.sendCommand({ kind: "add_task", content: command.payload.text });
+      } else if (command.type === "plan_input") {
+        await client.sendCommand({ kind: "plan_task", content: command.payload.text });
       } else if (command.type === "approve_request") {
         await client.sendCommand({ kind: "approve", approvalRequestId: command.payload.approvalRequestId });
       } else if (command.type === "reject_request") {
@@ -115,5 +123,6 @@ export function createRemoteKernel(client: RemoteRuntimeClient): TuiKernel {
       return hydrateSession();
     },
     hydrateSession,
+    interruptCurrentThread,
   };
 }

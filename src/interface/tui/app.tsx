@@ -1,19 +1,32 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useInput } from "ink";
 import { parseCommand } from "./commands";
-import { Screen } from "./screen";
+import { Screen, type ScreenChromeView, type ScreenComposerView, type ScreenConversationView, type ScreenUtilityView } from "./screen";
 import type { TuiKernel, TuiKernelEvent, TuiSessionResult } from "./hooks/use-kernel";
 import type { ApprovalCommand } from "./commands";
-import type { RuntimeSessionState } from "../runtime/runtime-session";
+import { deriveBaseSessionStage, type RuntimeSessionState, type SessionStage } from "../runtime/runtime-session";
+import { createInitialLaunchState } from "./view-state";
+import { createSettingsConfigStore, type SettingsConfigStore } from "./settings/config-store";
+import type { ResolvedSettingsConfig } from "./settings/config-resolver";
+import type { SettingsConfig, SettingsConfigScope } from "./settings/config-types";
+import type { UtilityPaneSessionSnapshot } from "./components/utility-pane";
+import type { TuiParsedInput } from "./commands";
+import { isThreadPanelToggle, resolveSessionsPaneAction, resolveStreamScrollDelta } from "./input-navigation";
+import {
+  buildChromeView,
+  buildComposerView,
+  buildConversationView,
+  buildUtilityView,
+} from "./app-screen-view";
+import {
+  deriveMessagesFromSession,
+  findActiveThreadIndex,
+  mergeThreadViewIntoSession,
+  type SessionUpdateSource,
+  type TuiMessage,
+} from "./session-sync";
 
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  thinking?: string;
-  thinkingDuration?: number;
-  timestamp: number;
-};
+type Message = TuiMessage;
 
 type ThinkingState = {
   content: string;
@@ -21,79 +34,373 @@ type ThinkingState = {
   duration?: number;
 };
 
-export function App(input: { kernel: TuiKernel }) {
+type PerformanceState = {
+  waitMs: number;
+  genMs: number;
+};
+
+type ConversationDisplayState = {
+  modelStatus: "idle" | "thinking" | "responding";
+  messages: Message[];
+  thinking: ThinkingState | null;
+  performance: PerformanceState;
+  metricsStart: {
+    thinking?: number;
+    responding?: number;
+  };
+  streamScrollOffset: number;
+};
+
+function createInitialConversationDisplayState(): ConversationDisplayState {
+  return {
+    modelStatus: "idle",
+    messages: [],
+    thinking: null,
+    performance: { waitMs: 0, genMs: 0 },
+    metricsStart: {},
+    streamScrollOffset: 0,
+  };
+}
+
+function parseApprovalDecision(text: string): "approve" | "reject" | undefined {
+  const normalized = text.trim().toLowerCase();
+  if (["y", "yes", "ok", "可以"].includes(normalized)) {
+    return "approve";
+  }
+
+  if (["n", "no", "不行"].includes(normalized)) {
+    return "reject";
+  }
+
+  return undefined;
+}
+
+function buildUtilitySessionSnapshot(
+  session: RuntimeSessionState | undefined,
+): UtilityPaneSessionSnapshot | undefined {
+  if (!session) {
+    return undefined;
+  }
+
+  return {
+    threadId: session.threadId,
+    messages: session.messages,
+    answers: session.answers,
+    workspaceRoot: session.workspaceRoot,
+    narrativeSummary: session.narrativeSummary,
+    threads: session.threads,
+  };
+}
+
+function areUtilityMessagesEqual(
+  previous: UtilityPaneSessionSnapshot["messages"],
+  next: UtilityPaneSessionSnapshot["messages"],
+): boolean {
+  if (previous === next) {
+    return true;
+  }
+
+  if (!previous || !next) {
+    return false;
+  }
+
+  if (previous.length !== next.length) {
+    return false;
+  }
+
+  return previous.every((message, index) => {
+    const candidate = next[index];
+    return (
+      message.messageId === candidate?.messageId &&
+      message.role === candidate?.role &&
+      message.content === candidate?.content
+    );
+  });
+}
+
+function areUtilityAnswersEqual(
+  previous: UtilityPaneSessionSnapshot["answers"],
+  next: UtilityPaneSessionSnapshot["answers"],
+): boolean {
+  if (previous === next) {
+    return true;
+  }
+
+  if (previous.length !== next.length) {
+    return false;
+  }
+
+  return previous.every((answer, index) => {
+    const candidate = next[index];
+    return (
+      answer.answerId === candidate?.answerId &&
+      answer.threadId === candidate?.threadId &&
+      answer.content === candidate?.content
+    );
+  });
+}
+
+function areUtilityThreadsEqual(
+  previous: UtilityPaneSessionSnapshot["threads"],
+  next: UtilityPaneSessionSnapshot["threads"],
+): boolean {
+  if (previous === next) {
+    return true;
+  }
+
+  if (previous.length !== next.length) {
+    return false;
+  }
+
+  return previous.every((thread, index) => {
+    const candidate = next[index];
+    return (
+      thread.threadId === candidate?.threadId &&
+      thread.workspaceRoot === candidate?.workspaceRoot &&
+      thread.projectId === candidate?.projectId &&
+      thread.revision === candidate?.revision &&
+      thread.status === candidate?.status &&
+      thread.narrativeSummary === candidate?.narrativeSummary &&
+      thread.narrativeRevision === candidate?.narrativeRevision &&
+      thread.pendingApprovalCount === candidate?.pendingApprovalCount &&
+      thread.blockingReasonKind === candidate?.blockingReasonKind
+    );
+  });
+}
+
+function isSameUtilitySessionSnapshot(
+  previous: UtilityPaneSessionSnapshot | undefined,
+  next: UtilityPaneSessionSnapshot | undefined,
+): boolean {
+  if (previous === next) {
+    return true;
+  }
+
+  if (!previous || !next) {
+    return false;
+  }
+
+  return (
+    previous.threadId === next.threadId &&
+    previous.workspaceRoot === next.workspaceRoot &&
+    previous.narrativeSummary === next.narrativeSummary &&
+    areUtilityMessagesEqual(previous.messages, next.messages) &&
+    areUtilityAnswersEqual(previous.answers, next.answers) &&
+    areUtilityThreadsEqual(previous.threads, next.threads)
+  );
+}
+
+export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigStore }) {
   const [session, setSession] = useState<RuntimeSessionState | undefined>();
-  const [modelStatus, setModelStatus] = useState<"idle" | "thinking" | "responding">("idle");
   const [runtimeStatus, setRuntimeStatus] = useState<"connected" | "disconnected">("disconnected");
   const [showThreadPanel, setShowThreadPanel] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [thinking, setThinking] = useState<ThinkingState | null>(null);
-  const thinkingRef = useRef<ThinkingState | null>(null);
+  const [conversationState, setConversationState] = useState(createInitialConversationDisplayState);
+  const [selectedSessionIndex, setSelectedSessionIndex] = useState(0);
+  const selectedSessionIndexRef = useRef(0);
+  const sessionRef = useRef<RuntimeSessionState | undefined>(undefined);
+  const [launchState, setLaunchState] = useState(createInitialLaunchState);
+  const messageIdRef = useRef(0);
+  const [activeTaskIntent, setActiveTaskIntent] = useState<"plan" | "execute" | null>(null);
+  const [settingsConfig, setSettingsConfig] = useState<ResolvedSettingsConfig | undefined>();
+  const activeThreadIdRef = useRef<string | undefined>(undefined);
+  const utilitySessionSnapshotRef = useRef<UtilityPaneSessionSnapshot | undefined>(undefined);
+  const conversationStateRef = useRef<ConversationDisplayState>(createInitialConversationDisplayState());
 
-  // Performance tracking
-  const [performance, setPerformance] = useState({ waitMs: 0, genMs: 0 });
-  const [metricsStart, setMetricsStart] = useState<{ thinking?: number; responding?: number }>({});
+  function updateSelectedSessionIndex(next: number) {
+    selectedSessionIndexRef.current = next;
+    setSelectedSessionIndex(next);
+  }
 
-  useInput((input, key) => {
-    if (input === "t" && key.ctrl) {
+  const updateConversationState = useEffectEvent((
+    updater: (current: ConversationDisplayState) => ConversationDisplayState,
+  ) => {
+    setConversationState((current) => {
+      const next = updater(current);
+      conversationStateRef.current = next;
+      return next;
+    });
+  });
+
+  const handleSessionThreadSwitch = useEffectEvent(async (threadId: string) => {
+    const result = await input.kernel.handleCommand({
+      type: "thread_switch",
+      payload: { threadId },
+    });
+    setLaunchState((current) => ({
+      ...current,
+      activeUtilityPane: "none",
+      hasCreatedThreadThisLaunch: true,
+    }));
+    applyKernelResult(result, "command");
+  });
+
+  const handleInputNavigation = useEffectEvent((keyValue: string, key: {
+    downArrow: boolean;
+    upArrow: boolean;
+    home: boolean;
+    end: boolean;
+    return: boolean;
+    pageUp: boolean;
+    pageDown: boolean;
+    ctrl: boolean;
+  }) => {
+    if (launchState.activeUtilityPane === "sessions") {
+      const sessionsAction = resolveSessionsPaneAction({
+        keyValue,
+        key,
+        selectedIndex: selectedSessionIndexRef.current,
+        threads: sessionRef.current?.threads ?? [],
+      });
+
+      if (sessionsAction.kind === "select") {
+        updateSelectedSessionIndex(sessionsAction.index);
+        return;
+      }
+
+      if (sessionsAction.kind === "switch") {
+        void handleSessionThreadSwitch(sessionsAction.threadId);
+        return;
+      }
+    }
+
+    if (isThreadPanelToggle({ keyValue, key })) {
       setShowThreadPanel(prev => !prev);
+      return;
+    }
+
+    const scrollDelta = resolveStreamScrollDelta(key);
+    if (scrollDelta > 0) {
+      updateConversationState((current) => ({
+        ...current,
+        streamScrollOffset: current.streamScrollOffset + scrollDelta,
+      }));
+      return;
+    }
+
+    if (scrollDelta < 0) {
+      updateConversationState((current) => ({
+        ...current,
+        streamScrollOffset: Math.max(0, current.streamScrollOffset + scrollDelta),
+      }));
     }
   });
 
-  useEffect(() => {
-    let interval: Timer | undefined;
+  useInput((keyValue, key) => {
+    handleInputNavigation(keyValue, key);
+  });
 
-    if (modelStatus === "thinking") {
-      const start = Date.now();
-      setMetricsStart({ thinking: start });
-      setPerformance({ waitMs: 0, genMs: 0 });
-      interval = setInterval(() => {
-        setPerformance(p => ({ ...p, waitMs: Date.now() - start }));
-      }, 100);
-    } else if (modelStatus === "responding") {
-      const start = Date.now();
-      const waitTime = metricsStart.thinking ? start - metricsStart.thinking : 0;
-      setMetricsStart(prev => ({ ...prev, responding: start }));
-      setPerformance(p => ({ ...p, waitMs: waitTime, genMs: 0 }));
-      interval = setInterval(() => {
-        setPerformance(p => ({ ...p, genMs: Date.now() - start }));
-      }, 100);
+  const resolveSettingsStore = useCallback((): SettingsConfigStore => {
+    return (
+      input.settingsStore ??
+      createSettingsConfigStore({
+        homeDir: process.env.HOME ?? process.cwd(),
+        workspaceRoot: session?.workspaceRoot ?? process.cwd(),
+      })
+    );
+  }, [input.settingsStore, session?.workspaceRoot]);
+
+  const openSettingsPane = useCallback(async () => {
+    const resolved = await resolveSettingsStore().readResolved();
+    setSettingsConfig(resolved);
+    setLaunchState((current) => ({ ...current, activeUtilityPane: "settings" }));
+  }, [resolveSettingsStore]);
+
+  const saveSettings = useCallback(async (scope: SettingsConfigScope, config: SettingsConfig) => {
+    const store = resolveSettingsStore();
+    if (scope === "global") {
+      await store.writeGlobal(config);
+    } else {
+      await store.writeProject(config);
     }
 
-    return () => { if (interval) clearInterval(interval); };
-  }, [modelStatus]);
+    const resolved = await store.readResolved();
+    setSettingsConfig(resolved);
+  }, [resolveSettingsStore]);
 
-  function applyKernelResult(result: TuiSessionResult) {
+  const updateThinking = useEffectEvent((next: ThinkingState | null) => {
+    updateConversationState((current) => ({
+      ...current,
+      thinking: next,
+    }));
+  });
+
+  const syncSessionState = useEffectEvent((
+    result: RuntimeSessionState | TuiSessionResult,
+    source: SessionUpdateSource,
+  ) => {
+    const previousThreadId = activeThreadIdRef.current;
+    const nextThreadId = result.threadId;
+    const threadChanged = previousThreadId !== undefined && nextThreadId !== previousThreadId;
+
+    activeThreadIdRef.current = nextThreadId;
+    sessionRef.current = result;
     setSession(result);
-    
+    if (threadChanged) {
+      updateConversationState((current) => ({
+        ...current,
+        messages: deriveMessagesFromSession(result),
+        streamScrollOffset: 0,
+      }));
+      updateSelectedSessionIndex(findActiveThreadIndex(result));
+      updateThinking(null);
+    }
+    if (
+      source !== "hydrate" &&
+      (deriveBaseSessionStage(result) !== "idle" || conversationStateRef.current.modelStatus === "idle")
+    ) {
+      setActiveTaskIntent(null);
+    }
+
+    return { threadChanged };
+  });
+
+  const applyKernelResult = useEffectEvent((
+    result: TuiSessionResult,
+    source: SessionUpdateSource = "command",
+  ) => {
+    const { threadChanged } = syncSessionState(result, source);
+
+    if (source === "hydrate" || threadChanged) {
+      return;
+    }
+
     if (result.summary && result.summary !== "Awaiting answer") {
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.role === "assistant") {
-          return [...prev.slice(0, -1), {
-            ...lastMsg,
-            content: result.summary!,
-            timestamp: Date.now(),
-          }];
-        }
-        return [...prev, {
-          id: `assistant-${Date.now()}`,
-          role: "assistant" as const,
-          content: result.summary!,
-          timestamp: Date.now(),
-        }];
+      updateConversationState((current) => {
+        const lastMsg = current.messages[current.messages.length - 1];
+        const messages = lastMsg && lastMsg.role === "assistant"
+          ? [...current.messages.slice(0, -1), {
+              ...lastMsg,
+              content: result.summary!,
+              timestamp: Date.now(),
+            }]
+          : [...current.messages, {
+              id: nextMessageId("assistant"),
+              role: "assistant" as const,
+              content: result.summary!,
+              timestamp: Date.now(),
+            }];
+
+        return {
+          ...current,
+          messages,
+          streamScrollOffset: 0,
+        };
       });
     }
-  }
+  });
 
-  function updateThinking(next: ThinkingState | null) {
-    thinkingRef.current = next;
-    setThinking(next);
-  }
-
-  function handleKernelEvent(event: TuiKernelEvent) {
+  const handleKernelEvent = useEffectEvent((event: TuiKernelEvent) => {
     if (event.type === "model.status") {
-      setModelStatus(event.payload.status);
+      updateConversationState((current) => ({
+        ...current,
+        modelStatus: event.payload.status,
+      }));
+      if (
+        event.payload.status === "idle" &&
+        deriveBaseSessionStage(sessionRef.current) === "idle"
+      ) {
+        setActiveTaskIntent(null);
+      }
       return;
     }
 
@@ -102,19 +409,30 @@ export function App(input: { kernel: TuiKernel }) {
       return;
     }
 
+    if (event.type === "thread.interrupted") {
+      updateConversationState((current) => ({
+        ...current,
+        modelStatus: "idle",
+      }));
+      setActiveTaskIntent(null);
+      return;
+    }
+
     if (event.type === "session.updated") {
-      setSession(event.payload);
+      syncSessionState(event.payload, "hydrate");
       return;
     }
 
     if (event.type === "thread.view_updated") {
+      const nextSession = mergeThreadViewIntoSession(sessionRef.current, event.payload);
+      syncSessionState(nextSession, "event");
       const summary = event.payload.summary;
       if (summary && summary !== "Awaiting answer") {
-        const currentThinking = thinkingRef.current;
-        setMessages(prev => {
-          const lastMsg = prev[prev.length - 1];
+        const currentThinking = conversationStateRef.current.thinking;
+        updateConversationState((current) => {
+          const lastMsg = current.messages[current.messages.length - 1];
           const assistantMsg: Message = {
-            id: `assistant-${Date.now()}`,
+            id: nextMessageId("assistant"),
             role: "assistant",
             content: summary,
             thinking: currentThinking?.content,
@@ -122,12 +440,16 @@ export function App(input: { kernel: TuiKernel }) {
             timestamp: Date.now(),
           };
 
-          if (lastMsg && lastMsg.role === "assistant") {
-            return [...prev.slice(0, -1), assistantMsg];
-          }
-          return [...prev, assistantMsg];
+          return {
+            ...current,
+            messages: lastMsg && lastMsg.role === "assistant"
+              ? [...current.messages.slice(0, -1), assistantMsg]
+              : [...current.messages, assistantMsg],
+            streamScrollOffset: 0,
+          };
         });
         updateThinking(null);
+        setActiveTaskIntent(null);
       }
       return;
     }
@@ -140,8 +462,11 @@ export function App(input: { kernel: TuiKernel }) {
     if (event.type === "stream.thinking_chunk") {
       const chunkContent = event.payload.content;
       updateThinking(
-        thinkingRef.current
-          ? { ...thinkingRef.current, content: thinkingRef.current.content + chunkContent }
+        conversationStateRef.current.thinking
+          ? {
+              ...conversationStateRef.current.thinking,
+              content: conversationStateRef.current.thinking.content + chunkContent,
+            }
           : { content: chunkContent, startedAt: Date.now() },
       );
       return;
@@ -150,30 +475,86 @@ export function App(input: { kernel: TuiKernel }) {
     if (event.type === "stream.text_chunk") {
       const chunkContent = event.payload.content;
       if (chunkContent) {
-        const currentThinking = thinkingRef.current;
-        setMessages(prev => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.role === "assistant") {
-            return [...prev.slice(0, -1), {
-              ...lastMsg,
-              content: lastMsg.content + chunkContent,
-              thinking: lastMsg.thinking ?? currentThinking?.content,
-              thinkingDuration:
-                lastMsg.thinkingDuration ??
-                (currentThinking ? Date.now() - currentThinking.startedAt : undefined),
-            }];
-          }
-          return [...prev, {
-            id: `assistant-${Date.now()}`,
-            role: "assistant",
-            content: chunkContent,
-            thinking: currentThinking?.content,
-            thinkingDuration: currentThinking ? Date.now() - currentThinking.startedAt : undefined,
-            timestamp: Date.now(),
-          }];
+        updateConversationState((current) => {
+          const currentThinking = current.thinking;
+          const lastMsg = current.messages[current.messages.length - 1];
+          const messages: Message[] = lastMsg && lastMsg.role === "assistant"
+            ? [...current.messages.slice(0, -1), {
+                ...lastMsg,
+                content: lastMsg.content + chunkContent,
+                thinking: lastMsg.thinking ?? currentThinking?.content,
+                thinkingDuration:
+                  lastMsg.thinkingDuration ??
+                  (currentThinking ? Date.now() - currentThinking.startedAt : undefined),
+              }]
+            : [...current.messages, {
+                id: nextMessageId("assistant"),
+                role: "assistant" as const,
+                content: chunkContent,
+                thinking: currentThinking?.content,
+                thinkingDuration: currentThinking ? Date.now() - currentThinking.startedAt : undefined,
+                timestamp: Date.now(),
+              }];
+
+          return {
+            ...current,
+            messages,
+            streamScrollOffset: 0,
+          };
         });
       }
     }
+  });
+
+  const inputKernelInterrupt = useCallback(async () => {
+    if (!input.kernel.interruptCurrentThread) {
+      return;
+    }
+
+    const result = await input.kernel.interruptCurrentThread();
+    if (result) {
+      syncSessionState(result, "command");
+    }
+  }, [input.kernel]);
+
+  useEffect(() => {
+    let interval: Timer | undefined;
+
+    if (conversationState.modelStatus === "thinking") {
+      const start = Date.now();
+      updateConversationState((current) => ({
+        ...current,
+        metricsStart: { thinking: start },
+        performance: { waitMs: 0, genMs: 0 },
+      }));
+      interval = setInterval(() => {
+        updateConversationState((current) => ({
+          ...current,
+          performance: { ...current.performance, waitMs: Date.now() - start },
+        }));
+      }, 100);
+    } else if (conversationState.modelStatus === "responding") {
+      const start = Date.now();
+      const waitTime = conversationState.metricsStart.thinking ? start - conversationState.metricsStart.thinking : 0;
+      updateConversationState((current) => ({
+        ...current,
+        metricsStart: { ...current.metricsStart, responding: start },
+        performance: { ...current.performance, waitMs: waitTime, genMs: 0 },
+      }));
+      interval = setInterval(() => {
+        updateConversationState((current) => ({
+          ...current,
+          performance: { ...current.performance, genMs: Date.now() - start },
+        }));
+      }, 100);
+    }
+
+    return () => { if (interval) clearInterval(interval); };
+  }, [conversationState.metricsStart.thinking, conversationState.modelStatus]);
+
+  function nextMessageId(prefix: "user" | "assistant") {
+    messageIdRef.current += 1;
+    return `${prefix}-${messageIdRef.current}`;
   }
 
   useEffect(() => {
@@ -191,13 +572,142 @@ export function App(input: { kernel: TuiKernel }) {
       if (!input.kernel.hydrateSession) return;
       const result = await input.kernel.hydrateSession();
       if (cancelled || !result) return;
-      applyKernelResult(result);
+      applyKernelResult(result, "hydrate");
     }
     void hydrate();
     return () => { cancelled = true; };
   }, [input.kernel]);
 
-  async function submit(text: string) {
+  const resetConversationMessages = useEffectEvent(() => {
+    updateConversationState((current) => ({
+      ...current,
+      messages: [],
+    }));
+  });
+
+  const appendUserMessage = useEffectEvent((content: string) => {
+    updateConversationState((current) => ({
+      ...current,
+      messages: [...current.messages, {
+        id: nextMessageId("user"),
+        role: "user" as const,
+        content,
+        timestamp: Date.now(),
+      }],
+      streamScrollOffset: 0,
+    }));
+  });
+
+  const ensureLaunchThread = useEffectEvent(async () => {
+    if (launchState.hasCreatedThreadThisLaunch) {
+      return true;
+    }
+
+    const newThreadResult = await input.kernel.handleCommand({ type: "thread_new" });
+    setLaunchState((current) => ({
+      ...current,
+      hasCreatedThreadThisLaunch: true,
+      activeUtilityPane: "none",
+    }));
+    applyKernelResult(newThreadResult, "command");
+    return true;
+  });
+
+  const handleApprovalSubmit = useEffectEvent(async (text: string) => {
+    const approvalRequestId = session?.approvals[0]?.approvalRequestId;
+    if (!approvalRequestId) {
+      return true;
+    }
+
+    const decision = parseApprovalDecision(text);
+    if (!decision) {
+      return true;
+    }
+
+    const command: ApprovalCommand = decision === "approve"
+      ? { type: "approve_request", payload: { approvalRequestId } }
+      : { type: "reject_request", payload: { approvalRequestId } };
+
+    const result = await input.kernel.handleCommand(command);
+    applyKernelResult(result);
+    return true;
+  });
+
+  const handleLocalCommand = useEffectEvent(async (parsed: Extract<TuiParsedInput, { kind: "command" }>) => {
+    if (parsed.name === "new") {
+      const result = await input.kernel.handleCommand({ type: "thread_new" });
+      setLaunchState((current) => ({
+        ...current,
+        hasCreatedThreadThisLaunch: true,
+        activeUtilityPane: "none",
+      }));
+      applyKernelResult(result, "command");
+      resetConversationMessages();
+      return true;
+    }
+
+    if (parsed.name === "sessions") {
+      setSelectedSessionIndex(0);
+      setLaunchState((current) => ({ ...current, activeUtilityPane: "sessions" }));
+      updateSelectedSessionIndex(findActiveThreadIndex(sessionRef.current ?? {
+        threadId: session?.threadId,
+        threads: session?.threads ?? [],
+      }));
+      return true;
+    }
+
+    if (parsed.name === "clear") {
+      resetConversationMessages();
+      setLaunchState((current) => ({ ...current, activeUtilityPane: "none" }));
+      return true;
+    }
+
+    if (parsed.name === "history") {
+      setLaunchState((current) => ({ ...current, activeUtilityPane: "history" }));
+      return true;
+    }
+
+    if (parsed.name === "settings") {
+      await openSettingsPane();
+      return true;
+    }
+
+    if (parsed.name === "help") {
+      setLaunchState((current) => ({ ...current, activeUtilityPane: "help" }));
+      return true;
+    }
+
+    return true;
+  });
+
+  const submitParsedInput = useEffectEvent(async (
+    parsed: Exclude<TuiParsedInput, { kind: "command" }>,
+    value: string,
+  ) => {
+    await ensureLaunchThread();
+    appendUserMessage(value);
+    setActiveTaskIntent(parsed.kind === "plan" ? "plan" : "execute");
+    const result = await input.kernel.handleCommand(
+      parsed.kind === "plan"
+        ? {
+            type: "plan_input",
+            payload: {
+              text: parsed.text,
+            },
+          }
+        : {
+            type: "submit_input",
+            payload: {
+              text: parsed.text,
+            },
+          },
+    );
+    // Command hydration after submit still points at the previous durable answer.
+    // Keep the task/session state, but let stream/thread events own assistant output.
+    syncSessionState(result, "command");
+  });
+
+  const submitEvent = useEffectEvent(async (text: string) => {
     const composerMode = session?.status === "waiting_approval"
       ? "confirm"
       : session?.status === "blocked"
@@ -207,33 +717,38 @@ export function App(input: { kernel: TuiKernel }) {
     if (composerMode === "blocked") return;
 
     if (composerMode === "confirm") {
-      const approvalRequestId = session?.approvals[0]?.approvalRequestId;
-      if (!approvalRequestId) {
-        return;
-      }
-
-      const command: ApprovalCommand = text.toLowerCase() === "yes" 
-        ? { type: "approve_request", payload: { approvalRequestId } }
-        : { type: "reject_request", payload: { approvalRequestId } };
-      
-      const result = await input.kernel.handleCommand(command);
-      applyKernelResult(result);
+      await handleApprovalSubmit(text);
       return;
     }
 
     const value = text.trim();
     if (!value) return;
 
-    setMessages(current => [...current, {
-      id: `user-${Date.now()}`,
-      role: "user" as const,
-      content: value,
-      timestamp: Date.now(),
-    }]);
+    const parsed = parseCommand(value);
 
-    const result = await input.kernel.handleCommand(parseCommand(value));
-    applyKernelResult(result);
-  }
+    if (parsed.kind === "command") {
+      await handleLocalCommand(parsed);
+      return;
+    }
+
+    await submitParsedInput(parsed, value);
+  });
+
+  const submit = useCallback((text: string) => {
+    return submitEvent(text);
+  }, []);
+
+  const sessionStage = deriveBaseSessionStage(session);
+  const stage: SessionStage =
+    sessionStage !== "idle"
+      ? sessionStage
+      : activeTaskIntent === "plan"
+        ? "planning"
+        : activeTaskIntent === "execute" ||
+            conversationState.modelStatus === "thinking" ||
+            conversationState.modelStatus === "responding"
+          ? "executing"
+          : "idle";
 
   const composerMode = session?.status === "waiting_approval"
     ? "confirm"
@@ -241,26 +756,104 @@ export function App(input: { kernel: TuiKernel }) {
       ? "blocked"
       : "input";
 
+  const handleCommandMenuOpenChange = useCallback((isOpen: boolean) => {
+    setLaunchState((current) =>
+      current.isCommandMenuOpen === isOpen ? current : { ...current, isCommandMenuOpen: isOpen },
+    );
+  }, []);
+
+  const handleComposerEscape = useCallback(async () => {
+    if (!launchState.isCommandMenuOpen && launchState.activeUtilityPane !== "settings") {
+      await inputKernelInterrupt();
+    }
+  }, [inputKernelInterrupt, launchState.activeUtilityPane, launchState.isCommandMenuOpen]);
+
+  const handleSettingsClose = useCallback(() => {
+    setLaunchState((current) => ({ ...current, activeUtilityPane: "none" }));
+  }, []);
+
+  const utilitySessionSnapshot = useMemo(
+    () => {
+      const nextSnapshot = buildUtilitySessionSnapshot(session);
+      if (isSameUtilitySessionSnapshot(utilitySessionSnapshotRef.current, nextSnapshot)) {
+        return utilitySessionSnapshotRef.current;
+      }
+
+      utilitySessionSnapshotRef.current = nextSnapshot;
+      return nextSnapshot;
+    },
+    [session],
+  );
+
+  const conversationView = useMemo<ScreenConversationView>(() => {
+    return buildConversationView({
+      conversationState,
+      session,
+      hasCreatedThreadThisLaunch: launchState.hasCreatedThreadThisLaunch,
+    });
+  }, [
+    conversationState.messages,
+    conversationState.modelStatus,
+    conversationState.performance,
+    conversationState.streamScrollOffset,
+    launchState.hasCreatedThreadThisLaunch,
+    session?.approvals,
+    session?.narrativeSummary,
+    session?.tasks,
+  ]);
+
+  const utilityView = useMemo<ScreenUtilityView>(() => {
+    return buildUtilityView({
+      activeUtilityPane: launchState.activeUtilityPane,
+      utilitySession: utilitySessionSnapshot,
+      settingsConfig,
+      selectedSessionIndex,
+    });
+  }, [
+    launchState.activeUtilityPane,
+    selectedSessionIndex,
+    settingsConfig,
+    utilitySessionSnapshot,
+  ]);
+
+  const chromeView = useMemo<ScreenChromeView>(() => {
+    return buildChromeView({
+      session,
+      runtimeStatus,
+      stage,
+      showThreadPanel,
+      modelName: process.env.OPENAI_MODEL ?? "unknown",
+      thinkingLevel: process.env.OPENPX_THINKING ?? "default",
+    });
+  }, [
+    runtimeStatus,
+    session?.blockingReason,
+    session?.projectId,
+    session?.recommendationReason,
+    session?.threadId,
+    session?.threads,
+    session?.workspaceRoot,
+    showThreadPanel,
+    stage,
+  ]);
+
+  const composerView = useMemo<ScreenComposerView>(() => {
+    return buildComposerView({
+      composerMode,
+      submit,
+      onCommandMenuOpenChange: handleCommandMenuOpenChange,
+      onComposerEscape: handleComposerEscape,
+      onSettingsSave: saveSettings,
+      onSettingsClose: handleSettingsClose,
+    });
+  }, [composerMode, handleCommandMenuOpenChange, handleComposerEscape, handleSettingsClose, saveSettings, submit]);
+
   return (
     <Screen
-      messages={messages}
-      tasks={session?.tasks ?? []}
-      approvals={session?.approvals ?? []}
-      composerMode={composerMode}
-      workspaceRoot={session?.workspaceRoot}
-      projectId={session?.projectId}
-      threadId={session?.threadId}
-      modelStatus={modelStatus}
-      runtimeStatus={runtimeStatus}
-      blockingReason={session?.blockingReason}
-      narrativeSummary={session?.narrativeSummary}
-      recommendationReason={session?.recommendationReason}
-      threads={session?.threads}
-      showThreadPanel={showThreadPanel}
-      performance={performance}
-      modelName={process.env.OPENAI_MODEL ?? "unknown"}
-      thinkingLevel={process.env.OPENPX_THINKING ?? "default"}
-      onSubmit={submit}
+      conversationView={conversationView}
+      utilityView={utilityView}
+      chromeView={chromeView}
+      composerView={composerView}
     />
   );
 }
