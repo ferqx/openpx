@@ -11,7 +11,10 @@ type MainInput = {
   workspaceRoot?: string;
   projectId?: string;
   dataDir?: string;
-  mount?: (tree: React.ReactElement) => Instance | { unmount?: () => void };
+  mount?: (
+    tree: React.ReactElement,
+    options?: { exitOnCtrlC?: boolean },
+  ) => Instance | { unmount?: () => void };
 };
 
 function resolveProjectId(workspaceRoot: string): string {
@@ -38,6 +41,14 @@ Options:
 }
 
 export async function main(input?: MainInput) {
+  // 检查是否在交互式终端中运行
+  if (!process.stdin.isTTY) {
+    console.error("Error: TUI requires an interactive terminal (tty).");
+    console.error("Please run this command in a proper terminal application.");
+    console.error("If using an IDE, try running from an external terminal.");
+    process.exit(1);
+  }
+
   const workspaceRoot = input?.workspaceRoot ?? process.cwd();
   const projectId = input?.projectId ?? resolveProjectId(workspaceRoot);
   const dataDir = input?.dataDir ?? process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ".openpx";
@@ -54,7 +65,9 @@ export async function main(input?: MainInput) {
   });
   const remoteKernel = createRemoteKernel(scopedClient);
 
-  const ui = (input?.mount ?? render)(React.createElement(App, { kernel: remoteKernel }));
+  const ui = (input?.mount ?? render)(React.createElement(App, { kernel: remoteKernel }), {
+    exitOnCtrlC: false,
+  });
 
   return {
     ui,
