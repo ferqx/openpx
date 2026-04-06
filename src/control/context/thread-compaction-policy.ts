@@ -6,6 +6,7 @@ export type CompactionRequest = {
 };
 
 const CURRENT_SCHEMA_VERSION = 1;
+const MAX_TRANSCRIPT_MESSAGES = 40;
 
 function dedupe(arr: string[]): string[] {
   return [...new Set(arr)];
@@ -33,14 +34,25 @@ function cloneRecoveryFacts(input?: RecoveryFacts): RecoveryFacts {
   if (!input) {
     throw new Error("Cannot compact empty recovery facts");
   }
-  return {
+  const cloned: RecoveryFacts = {
     ...input,
     pendingApprovals: (input.pendingApprovals ?? []).map(a => ({ ...a })),
-    environment: input.environment ? { 
+  };
+
+  if (input.conversationHistory) {
+    cloned.conversationHistory = input.conversationHistory
+      .slice(-MAX_TRANSCRIPT_MESSAGES)
+      .map((message) => ({ ...message }));
+  }
+
+  if (input.environment) {
+    cloned.environment = {
       ...input.environment,
       fingerprints: { ...(input.environment.fingerprints ?? {}) }
-    } : undefined,
-  };
+    };
+  }
+
+  return cloned;
 }
 
 function cloneNarrativeState(input?: NarrativeState): NarrativeState {

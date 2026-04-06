@@ -18,6 +18,19 @@ function scopeKey(scope: RuntimeScope): string {
   return `${scope.workspaceRoot}::${scope.projectId}`;
 }
 
+function createEmptySessionResult(scope: RuntimeScope): SessionCommandResult {
+  return {
+    threadId: "",
+    status: "completed",
+    summary: "Awaiting answer",
+    workspaceRoot: scope.workspaceRoot,
+    projectId: scope.projectId,
+    approvals: [],
+    tasks: [],
+    threads: [],
+  };
+}
+
 export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
   return async function handleRuntimeCommand(command: RuntimeCommand): Promise<SessionCommandResult> {
     if (command.kind === "new_thread") {
@@ -31,7 +44,11 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
     }
 
     if (command.kind === "switch_thread" || command.kind === "continue") {
-      const threadId = command.threadId ?? (await deps.ensureActiveThread()).threadId;
+      const threadId = command.threadId;
+      if (!threadId) {
+        const result = await deps.context.kernel.hydrateSession();
+        return result ?? createEmptySessionResult(deps.scope);
+      }
       const thread = await deps.context.stores.threadStore.get(threadId);
       if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
         throw new Error(`thread ${threadId} not found in scope ${scopeKey(deps.scope)}`);
@@ -48,6 +65,38 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       return result;
     }
 
+    if (command.kind === "interrupt") {
+      const threadId = command.threadId;
+      if (!threadId) {
+        const result = await deps.context.kernel.hydrateSession();
+        return result ?? createEmptySessionResult(deps.scope);
+      }
+      const thread = await deps.context.stores.threadStore.get(threadId);
+      if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
+        throw new Error(`thread ${threadId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+
+       if (!["active", "waiting_approval", "blocked", "interrupted"].includes(thread.status)) {
+        const result = await deps.context.kernel.hydrateSession();
+        if (!result) {
+          throw new Error("failed to hydrate interrupted thread");
+        }
+        return result;
+      }
+
+      const cancelled = await deps.context.controlPlane.cancelThread(thread.threadId, "Interrupted from TUI");
+      if (!cancelled) {
+        await deps.touchThread(thread, "interrupted");
+      }
+      await deps.context.kernel.interrupts.interruptThread(thread.threadId, "Interrupted from TUI");
+
+      const result = await deps.context.kernel.hydrateSession();
+      if (!result) {
+        throw new Error("failed to hydrate interrupted thread");
+      }
+      return result;
+    }
+
     if (command.kind === "add_task") {
       await deps.ensureActiveThread();
       const result = await deps.context.kernel.handleCommand({
@@ -55,6 +104,18 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
         payload: {
           text: command.content,
           background: command.background,
+        },
+      });
+      deps.setActiveThreadId(result.threadId);
+      return result;
+    }
+
+    if (command.kind === "plan_task") {
+      await deps.ensureActiveThread();
+      const result = await deps.context.kernel.handleCommand({
+        type: "submit_input",
+        payload: {
+          text: `plan: ${command.content}`,
         },
       });
       deps.setActiveThreadId(result.threadId);

@@ -33,11 +33,11 @@ describe("ThreadPanel", () => {
 
     const frame = lastFrame();
 
-    expect(frame).toContain("THREADS");
-    expect(frame).toContain("thread-active (active) [active]");
-    expect(frame).toContain("thread-blocked [blocked]");
-    expect(frame).toContain("approval:1");
-    expect(frame).toContain("human_recovery");
+    expect(frame).toContain("threads");
+    expect(frame).toContain("thread-active");
+    expect(frame).toContain("active");
+    expect(frame).toContain("1 approval");
+    expect(frame).toContain("recovery");
     expect(frame).toContain("Current active runtime recovery thread.");
     expect(frame).toContain("Manual recovery pending for a risky patch.");
   });

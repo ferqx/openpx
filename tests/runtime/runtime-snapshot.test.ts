@@ -68,6 +68,20 @@ describe("Runtime snapshot", () => {
           status: "blocked",
           updatedAt: new Date().toISOString(),
           pendingApprovals: [],
+          conversationHistory: [
+            {
+              messageId: "message-1",
+              role: "user",
+              content: "What is the status?",
+              createdAt: new Date().toISOString(),
+            },
+            {
+              messageId: "message-2",
+              role: "assistant",
+              content: "Runtime snapshot migration is paused.",
+              createdAt: new Date().toISOString(),
+            },
+          ],
           blocking: {
             sourceTaskId: "task-1",
             kind: "human_recovery",
@@ -96,6 +110,20 @@ describe("Runtime snapshot", () => {
       {
         answerId: "answer-1",
         threadId: "thread-1",
+        content: "Runtime snapshot migration is paused.",
+      },
+    ]);
+    expect(snapshot.messages).toEqual([
+      {
+        messageId: "message-1",
+        threadId: "thread-1",
+        role: "user",
+        content: "What is the status?",
+      },
+      {
+        messageId: "message-2",
+        threadId: "thread-1",
+        role: "assistant",
         content: "Runtime snapshot migration is paused.",
       },
     ]);

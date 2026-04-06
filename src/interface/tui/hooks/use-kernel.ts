@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { parseCommand, type ApprovalCommand, type SubmitInputCommand, type ThreadCommand } from "../commands";
+import type { ApprovalCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../commands";
 import type { RuntimeEvent } from "../../../runtime/service/runtime-types";
 import type { RuntimeSessionState } from "../../runtime/runtime-session";
 import type { SessionUpdatedEvent } from "../../runtime/tui-session-event";
@@ -18,8 +18,9 @@ export type TuiKernel = {
   events: {
     subscribe: (handler: (event: TuiKernelEvent) => void) => () => void;
   };
-  handleCommand: (command: SubmitInputCommand | ApprovalCommand | ThreadCommand) => Promise<TuiSessionResult>;
+  handleCommand: (command: SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand) => Promise<TuiSessionResult>;
   hydrateSession?: () => Promise<TuiSessionResult | undefined>;
+  interruptCurrentThread?: () => Promise<TuiSessionResult | undefined>;
 };
 
 export function useKernel(kernel: TuiKernel) {
@@ -30,18 +31,7 @@ export function useKernel(kernel: TuiKernel) {
       setEvents((current) => [...current, event]);
     });
   }, [kernel]);
-
-  async function submit(text: string) {
-    const value = text.trim();
-    if (!value) {
-      return;
-    }
-
-    await kernel.handleCommand(parseCommand(value));
-  }
-
   return {
     events,
-    submit,
   };
 }

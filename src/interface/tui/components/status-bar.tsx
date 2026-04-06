@@ -1,11 +1,13 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme";
+import type { SessionStage } from "../../runtime/runtime-session";
 
 export interface StatusBarProps {
   modelName?: string;
   thinkingLevel?: string;
   workspaceRoot: string;
+  stage?: SessionStage;
 }
 
 const THINKING_LABELS: Record<string, string> = {
@@ -20,8 +22,7 @@ function getThinkingDisplay(level?: string): { label: string; color: string } {
   if (!level) return { label: "—", color: theme.colors.dim };
   const normalized = level.toLowerCase();
   const label = THINKING_LABELS[normalized] ?? normalized;
-  const color = normalized === "off" ? theme.colors.dim : theme.colors.secondary;
-  return { label, color };
+  return { label, color: theme.colors.dim };
 }
 
 function truncatePath(path: string, maxLen = 50): string {
@@ -34,15 +35,33 @@ function truncatePath(path: string, maxLen = 50): string {
   return "…/" + parts.slice(-2).join("/");
 }
 
-export function StatusBar({ modelName, thinkingLevel, workspaceRoot }: StatusBarProps) {
+function formatStage(stage?: SessionStage): { label: string; color: string } {
+  switch (stage) {
+    case "planning":
+      return { label: "plan", color: theme.colors.dim };
+    case "awaiting_confirmation":
+      return { label: "confirm", color: theme.colors.dim };
+    case "executing":
+      return { label: "run", color: theme.colors.dim };
+    case "blocked":
+      return { label: "blocked", color: theme.colors.dim };
+    default:
+      return { label: "idle", color: theme.colors.dim };
+  }
+}
+
+export const StatusBar = React.memo(function StatusBar({ modelName, thinkingLevel, workspaceRoot, stage }: StatusBarProps) {
   const thinking = getThinkingDisplay(thinkingLevel);
+  const stageDisplay = formatStage(stage);
 
   return (
     <Box paddingX={1} justifyContent="space-between">
       <Box gap={1}>
-        <Text color={theme.colors.primary} bold>{modelName ?? "unknown"}</Text>
-        <Text color={theme.colors.dim}>|</Text>
-        <Text color={thinking.color}>推理:{thinking.label}</Text>
+        <Text color={theme.colors.dim}>{modelName ?? "unknown"}</Text>
+        <Text color={theme.colors.dim}>·</Text>
+        <Text color={thinking.color}>mode:{thinking.label}</Text>
+        <Text color={theme.colors.dim}>·</Text>
+        <Text color={stageDisplay.color}>stage:{stageDisplay.label}</Text>
       </Box>
 
       <Box gap={1}>
@@ -50,4 +69,4 @@ export function StatusBar({ modelName, thinkingLevel, workspaceRoot }: StatusBar
       </Box>
     </Box>
   );
-}
+});

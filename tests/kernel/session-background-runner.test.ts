@@ -33,4 +33,23 @@ describe("runSessionInBackground", () => {
     expect(finalize).not.toHaveBeenCalled();
     expect(publishFailure).toHaveBeenCalledWith("thread-1", "boom");
   });
+
+  test("suppresses cancelled executions without publishing a failure", async () => {
+    const finalize = mock(async () => undefined);
+    const publishFailure = mock(() => undefined);
+    const cancelledError = new Error("cancelled");
+    cancelledError.name = "AbortError";
+
+    await runSessionInBackground({
+      threadId: "thread-1",
+      execute: async () => {
+        throw cancelledError;
+      },
+      finalize,
+      publishFailure,
+    });
+
+    expect(finalize).not.toHaveBeenCalled();
+    expect(publishFailure).not.toHaveBeenCalled();
+  });
 });

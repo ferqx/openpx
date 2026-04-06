@@ -111,8 +111,28 @@ describe("root graph", () => {
     expect(result.workingSetWindow?.messages).toContain("Need to inspect the previous patch.");
   });
 
-  test("routes boundary compaction decisions through the compact node", async () => {
-    // This is a placeholder test to verify the route, we'll implement it when we build the router
-    expect(true).toBe(true);
+  test("routes conversational memory questions to the responder", async () => {
+    const checkpointer = new MemorySaver();
+    let responderCalled = false;
+
+    const graph = await createRootGraph({
+      checkpointer,
+      planner: async () => ({ summary: "planned", mode: "plan" }),
+      executor: async () => ({ summary: "executed", mode: "execute" }),
+      verifier: async () => ({ summary: "verified", mode: "verify" }),
+      responder: async () => {
+        responderCalled = true;
+        return { summary: "Your name is Alice.", mode: "respond" };
+      },
+    });
+
+    const result = await graph.invoke(
+      { input: "what is my name?" },
+      { configurable: { thread_id: "thread_memory", task_id: "task_memory" } },
+    );
+
+    expect(responderCalled).toBe(true);
+    expect(result.mode).toBe("done");
+    expect(result.summary).toBe("Your name is Alice.");
   });
 });

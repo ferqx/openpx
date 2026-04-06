@@ -1,14 +1,16 @@
 export const theme = {
   colors: {
-    primary: "cyan",
-    secondary: "magenta",
+    primary: "blue",
+    secondary: "cyan",
     user: "green",
-    agent: "blue",
+    agent: "white",
     tool: "yellow",
     error: "red",
     success: "green",
     dim: "gray",
     bg: "black",
+    composerBg: "gray",
+    composerText: "white",
   },
   symbols: {
     prompt: "❯",

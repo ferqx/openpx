@@ -87,6 +87,24 @@ describe("Stable Control API Compliance", () => {
     ).toBe(true);
   });
 
+  test("runtime command schema accepts interrupt commands", () => {
+    expect(
+      schemas.RuntimeCommand.safeParse({
+        kind: "interrupt",
+        threadId: "thread-1",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("runtime command schema accepts planning task commands", () => {
+    expect(
+      schemas.RuntimeCommand.safeParse({
+        kind: "plan_task",
+        content: "design the rollout",
+      }).success,
+    ).toBe(true);
+  });
+
   test("POST /v1/commands rejects invalid commands", async () => {
     const command = { kind: "invalid_command" };
     const req = new Request("http://localhost/v1/commands", {

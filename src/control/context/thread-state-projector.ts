@@ -10,6 +10,7 @@ export type ThreadProjectionInput =
   | { kind: "task"; task: ControlTask }
   | { kind: "approval"; approval: ApprovalRequest }
   | { kind: "answer"; answerId: string; summary: string }
+  | { kind: "transcript_message"; messageId: string; role: "user" | "assistant"; content: string }
   | { kind: "event"; eventType: string; summary: string; sourceTaskId?: string }
   | { kind: "tool_result"; content: string }
   | { kind: "verifier_feedback"; content: string }
@@ -33,6 +34,7 @@ export type ThreadStateProjectorOptions = {
 };
 
 const CURRENT_SCHEMA_VERSION = 1;
+const MAX_TRANSCRIPT_MESSAGES = 40;
 
 function cloneRecoveryFacts(input?: RecoveryFacts): RecoveryFacts {
   return {
@@ -50,6 +52,7 @@ function cloneRecoveryFacts(input?: RecoveryFacts): RecoveryFacts {
     lastStableTask: input?.lastStableTask ? { ...input.lastStableTask } : undefined,
     blocking: input?.blocking ? { ...input.blocking } : undefined,
     pendingApprovals: (input?.pendingApprovals ?? []).map(a => ({ ...a })),
+    conversationHistory: (input?.conversationHistory ?? []).map((message) => ({ ...message })),
     latestDurableAnswer: input?.latestDurableAnswer ? { ...input.latestDurableAnswer } : undefined,
     resumeAnchor: input?.resumeAnchor ? { ...input.resumeAnchor } : undefined,
   };
@@ -295,6 +298,20 @@ export function createThreadStateProjector(
             }
           }
 
+          break;
+        }
+
+        case "transcript_message": {
+          factChanged = true;
+          nextView.recoveryFacts!.conversationHistory = [
+            ...(nextView.recoveryFacts!.conversationHistory ?? []),
+            {
+              messageId: input.messageId,
+              role: input.role,
+              content: input.content,
+              createdAt: now,
+            },
+          ].slice(-MAX_TRANSCRIPT_MESSAGES);
           break;
         }
 

@@ -1,3 +1,15 @@
+function isCancelledError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  if (error.name === "AbortError") {
+    return true;
+  }
+
+  return "kind" in error && error.kind === "cancelled_error";
+}
+
 export async function runSessionInBackground<TResult>(input: {
   threadId: string;
   execute: () => Promise<TResult>;
@@ -8,6 +20,9 @@ export async function runSessionInBackground<TResult>(input: {
     const result = await input.execute();
     await input.finalize(result);
   } catch (error: unknown) {
+    if (isCancelledError(error)) {
+      return;
+    }
     const errorMessage = error instanceof Error ? error.message : String(error);
     input.publishFailure(input.threadId, errorMessage);
   }

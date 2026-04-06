@@ -14,7 +14,7 @@ type RuntimeThreadView = Thread & {
 
 export function buildRuntimeSnapshot(input: {
   scope: RuntimeScope;
-  activeThread: Thread;
+  activeThread?: Thread;
   threads: RuntimeThreadView[];
   tasks: Task[];
   pendingApprovals: ApprovalRequest[];
@@ -23,14 +23,14 @@ export function buildRuntimeSnapshot(input: {
   fallbackLastEventSeq: number;
   narrativeSummary?: string;
 }): RuntimeSnapshot {
-  const activeBlockingReason = input.activeThread.recoveryFacts?.blocking
+  const activeBlockingReason = input.activeThread?.recoveryFacts?.blocking
     ? {
         kind: input.activeThread.recoveryFacts.blocking.kind,
         message: input.activeThread.recoveryFacts.blocking.message,
       }
     : input.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
 
-  const narrativeSummary = input.activeThread.narrativeState?.threadSummary || input.narrativeSummary;
+  const narrativeSummary = input.activeThread?.narrativeState?.threadSummary || input.narrativeSummary;
 
   const lastEventSeq = getStoredEventSequence(input.events.at(-1)) ?? input.fallbackLastEventSeq;
 
@@ -39,8 +39,8 @@ export function buildRuntimeSnapshot(input: {
     workspaceRoot: input.scope.workspaceRoot,
     projectId: input.scope.projectId,
     lastEventSeq,
-    activeThreadId: input.activeThread.threadId,
-    recommendationReason: input.activeThread.recommendationReason,
+    activeThreadId: input.activeThread?.threadId,
+    recommendationReason: input.activeThread?.recommendationReason,
     narrativeSummary,
     blockingReason: activeBlockingReason,
     threads: input.threads.map((thread) => ({
@@ -70,7 +70,7 @@ export function buildRuntimeSnapshot(input: {
       risk: approval.risk,
       status: approval.status,
     })),
-    answers: input.activeThread.recoveryFacts?.latestDurableAnswer
+    answers: input.activeThread?.recoveryFacts?.latestDurableAnswer
       ? [
           {
             answerId: input.activeThread.recoveryFacts.latestDurableAnswer.answerId,
@@ -79,6 +79,12 @@ export function buildRuntimeSnapshot(input: {
           },
         ]
       : [],
+    messages: (input.activeThread?.recoveryFacts?.conversationHistory ?? []).map((message) => ({
+      messageId: message.messageId,
+      threadId: input.activeThread?.threadId ?? "",
+      role: message.role,
+      content: message.content,
+    })),
     workers: input.workers.map((worker) => ({
       workerId: worker.workerId,
       threadId: worker.threadId,

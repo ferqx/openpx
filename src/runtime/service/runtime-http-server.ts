@@ -67,6 +67,8 @@ export function createHttpServer(runtime: RuntimeService): RuntimeHttpServer {
   try {
     const server = Bun.serve({
       port: 0,
+      // Runtime event streams can stay idle for long periods between SSE messages.
+      idleTimeout: 0,
       async fetch(req) {
         return router.handle(req);
       },

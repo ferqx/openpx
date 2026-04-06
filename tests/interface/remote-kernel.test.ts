@@ -64,6 +64,7 @@ describe("Remote Kernel", () => {
 
     expect(hydrated).toEqual({
       status: "blocked",
+      stage: "blocked",
       threadId: "thread-1",
       summary: "Manual recovery required from snapshot.",
       tasks: [
@@ -80,6 +81,7 @@ describe("Remote Kernel", () => {
       ],
       approvals: [],
       answers: [],
+      messages: [],
       workers: [
         {
           workerId: "worker-1",
@@ -213,5 +215,86 @@ describe("Remote Kernel", () => {
     expect(
       received.some((event) => event.type === "thread.view_updated" && "_hydration" in event.payload),
     ).toBe(false);
+  });
+
+  test("exposes an interruptCurrentThread helper that forwards the runtime interrupt command", async () => {
+    const sentCommands: unknown[] = [];
+    const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
+      async getSnapshot() {
+        return {
+          protocolVersion: "1.0.0",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          lastEventSeq: 12,
+          activeThreadId: "thread-1",
+          recommendationReason: undefined,
+          blockingReason: undefined,
+          threads: [],
+          tasks: [],
+          pendingApprovals: [],
+          answers: [],
+          workers: [],
+        };
+      },
+      async sendCommand(command) {
+        sentCommands.push(command);
+        return undefined;
+      },
+      subscribeEvents() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            await new Promise(() => undefined);
+          },
+        };
+      },
+    };
+
+    const kernel = createRemoteKernel(client);
+
+    await kernel.interruptCurrentThread?.();
+
+    expect(sentCommands).toEqual([{ kind: "interrupt", threadId: "thread-1" }]);
+  });
+
+  test("forwards planning input through an explicit plan_task runtime command", async () => {
+    const sentCommands: unknown[] = [];
+    const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
+      async getSnapshot() {
+        return {
+          protocolVersion: "1.0.0",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          lastEventSeq: 12,
+          activeThreadId: "thread-1",
+          recommendationReason: undefined,
+          blockingReason: undefined,
+          threads: [],
+          tasks: [],
+          pendingApprovals: [],
+          answers: [],
+          workers: [],
+        };
+      },
+      async sendCommand(command) {
+        sentCommands.push(command);
+        return undefined;
+      },
+      subscribeEvents() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            await new Promise(() => undefined);
+          },
+        };
+      },
+    };
+
+    const kernel = createRemoteKernel(client);
+
+    await kernel.handleCommand({
+      type: "plan_input",
+      payload: { text: "design the rollout" },
+    });
+
+    expect(sentCommands).toContainEqual({ kind: "plan_task", content: "design the rollout" });
   });
 });
