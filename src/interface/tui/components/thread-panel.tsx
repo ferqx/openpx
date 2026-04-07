@@ -28,13 +28,18 @@ export const ThreadPanel = React.memo(function ThreadPanel(input: { threads: Thr
       {input.threads.length === 0 ? <Text color="gray">No threads yet</Text> : null}
       {input.threads.map((thread) => (
         <Box key={thread.threadId} flexDirection="column" marginBottom={1}>
+          {(() => {
+            const displayStatus = thread.activeRunStatus ?? thread.status;
+            return (
           <Box gap={1}>
-            {getStatusIndicator(thread.status)}
+            {getStatusIndicator(displayStatus)}
             <Text>{thread.threadId}</Text>
-            <Text color={theme.colors.dim}>{thread.threadId === input.activeThreadId ? "active" : thread.status}</Text>
+            <Text color={theme.colors.dim}>{thread.threadId === input.activeThreadId ? "active" : displayStatus}</Text>
             {thread.pendingApprovalCount ? <Text color="yellow">{thread.pendingApprovalCount} approval</Text> : null}
             {thread.blockingReasonKind ? <Text color="yellow">{thread.blockingReasonKind === "human_recovery" ? "recovery" : thread.blockingReasonKind}</Text> : null}
           </Box>
+            );
+          })()}
           {thread.narrativeSummary ? (
             <Box marginLeft={2}>
               <Text color={theme.colors.dim}>{thread.narrativeSummary}</Text>

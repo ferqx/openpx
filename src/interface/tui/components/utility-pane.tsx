@@ -92,6 +92,7 @@ export const UtilityPane = React.memo(function UtilityPane(input: {
           {(input.session?.threads ?? []).map((thread) => {
             const selected = thread.threadId === input.selectedThreadId;
             const active = thread.threadId === input.session?.threadId;
+            const displayStatus = thread.activeRunStatus ?? thread.status;
             return (
               <Box key={thread.threadId} gap={1}>
                 <Text color={selected ? theme.colors.primary : theme.colors.dim} bold={selected}>
@@ -100,7 +101,7 @@ export const UtilityPane = React.memo(function UtilityPane(input: {
                 <Text color={selected ? theme.colors.primary : undefined} inverse={selected} bold={selected}>
                   {thread.threadId}
                   {active ? " (active)" : ""}
-                  {` [${thread.status}]`}
+                  {` [${displayStatus}]`}
                   {thread.pendingApprovalCount ? ` approval:${thread.pendingApprovalCount}` : ""}
                   {thread.blockingReasonKind ? ` ${thread.blockingReasonKind}` : ""}
                   {thread.narrativeSummary ? ` ${thread.narrativeSummary}` : ""}

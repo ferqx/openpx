@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { threadStatusSchema, taskStatusSchema } from "../../../shared/schemas";
+import { runStatusSchema, sessionStatusSchema, threadStatusSchema, taskStatusSchema } from "../../../shared/schemas";
 import { approvalViewSchema } from "./approval-view";
 import { protocolVersionSchema } from "./protocol-version";
 import { taskBlockingReasonSchema, taskViewSchema } from "./task-view";
@@ -38,6 +38,8 @@ const runtimeEventTypeSchema = z.enum(runtimeEventTypes);
 const sessionThreadSummarySchema = z.object({
   threadId: z.string().min(1),
   status: z.string().min(1),
+  activeRunId: z.string().min(1).optional(),
+  activeRunStatus: runStatusSchema.optional(),
   narrativeSummary: z.string().optional(),
   pendingApprovalCount: z.number().int().nonnegative().optional(),
   blockingReasonKind: z.enum(["waiting_approval", "human_recovery"]).optional(),
@@ -122,7 +124,7 @@ const threadViewUpdatedPayloadSchema = z.object({
   recoveryFacts: recoveryFactsSchema.optional(),
   narrativeState: narrativeStateSchema.optional(),
   workingSetWindow: workingSetWindowSchema.optional(),
-  status: threadStatusSchema,
+  status: sessionStatusSchema,
   threadId: z.string().min(1),
   summary: z.string().optional(),
   recommendationReason: z.string().optional(),
@@ -136,6 +138,7 @@ const threadViewUpdatedPayloadSchema = z.object({
 const taskLifecyclePayloadSchema = z.object({
   taskId: z.string().min(1).optional(),
   threadId: z.string().min(1).optional(),
+  runId: z.string().min(1).optional(),
   summary: z.string().optional(),
   status: taskStatusSchema.optional(),
   blockingReason: taskBlockingReasonSchema.optional(),

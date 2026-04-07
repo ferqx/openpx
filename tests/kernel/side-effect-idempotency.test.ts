@@ -31,6 +31,7 @@ describe("Kernel Side-Effect Idempotency", () => {
       task: {
         taskId: "task-1",
         threadId,
+        runId: "run-1",
         summary: "Update package.json",
         status: "running"
       }

@@ -10,6 +10,7 @@ export const taskBlockingReasonSchema = z.object({
 export const taskViewSchema = z.object({
   taskId: z.string().min(1),
   threadId: z.string().min(1),
+  runId: z.string().min(1),
   status: taskStatusSchema,
   summary: z.string(),
   blockingReason: taskBlockingReasonSchema.optional(),

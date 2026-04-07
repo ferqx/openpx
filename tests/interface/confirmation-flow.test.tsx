@@ -51,6 +51,7 @@ describe("Confirmation Flow", () => {
             {
               taskId: "t1",
               threadId: "thread-1",
+              runId: "run-1",
               summary: "The Plan",
               status: "blocked",
               blockingReason: {
@@ -63,6 +64,7 @@ describe("Confirmation Flow", () => {
             {
               approvalRequestId: "approval-1",
               threadId: "thread-1",
+              runId: "run-1",
               taskId: "t1",
               toolCallId: "tool-1",
               summary: "Agent team ready to start",
@@ -127,6 +129,7 @@ describe("Confirmation Flow", () => {
               {
                 approvalRequestId: "approval-1",
                 threadId: "thread-1",
+                runId: "run-1",
                 taskId: "t1",
                 toolCallId: "tool-1",
                 summary: "Approval required",
@@ -155,6 +158,7 @@ describe("Confirmation Flow", () => {
               {
                 approvalRequestId: "approval-1",
                 threadId: "thread-1",
+                runId: "run-1",
                 taskId: "t1",
                 toolCallId: "tool-1",
                 summary: "Approval required",

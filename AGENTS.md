@@ -41,6 +41,27 @@ CLI-first agent OS for long-running code work. Built with Bun, React (Ink), and 
 4. **Multi-Project**: Threads and runtimes are isolated per workspace/projectId.
 5. **Human-in-the-Loop**: High-risk actions and team recommendations require explicit confirmation.
 
+## Core Runtime Model
+- **Agent**: The user-facing system that accepts goals, decides next actions, uses tools, and keeps work moving until it completes, blocks, or needs approval.
+- **Thread**: The long-lived collaboration container for one line of work. It holds message history, durable context, recovery facts, and project association. A thread preserves continuity across many execution attempts.
+- **Run**: One execution instance inside a thread. A run begins from a user request or a resume action and tracks the lifecycle of that specific attempt, such as `running`, `waiting_approval`, `blocked`, or `completed`.
+- **Task**: A concrete unit of work within a run, such as inspecting code, editing files, or verifying a fix. Tasks are short-lived and should describe the current step being executed rather than the whole conversation history.
+- **Tool**: The only way an agent may observe or affect the project environment. File reads, terminal commands, patch application, and future external integrations all belong here.
+- **Approval**: A control-plane checkpoint for actions that must not execute autonomously. Risky or state-changing tool calls must flow through policy and approval before execution.
+- **Runtime**: The execution substrate that owns state transitions, persistence, event publication, recovery, and protocol views. The TUI renders runtime truth; it does not invent competing business state.
+
+## Thread, Run, and Task Boundaries
+- **Thread answers**: "What ongoing line of work are we in?" It stores durable conversation context, not per-step execution details.
+- **Run answers**: "What is happening in this execution attempt right now?" It stores the lifecycle of one attempt, not the entire long-term history.
+- **Task answers**: "What concrete step is the agent doing right now?" It stores step-level inputs, outputs, and result summaries, not the full thread narrative.
+- A thread may outlive many runs. A run may contain many tasks over time. In V1, prefer a single active run per thread and a single active task per run unless parallelism is explicitly designed.
+- Do not use `thread` as a substitute for task state, and do not use `task` as a dumping ground for long-term context.
+
+## Worker Positioning
+- `worker` is currently an internal runtime concept, not a primary product concept.
+- Workers may exist as execution units used by the runtime to advance tasks, but the stable external model is `thread -> run -> task -> tool -> approval`.
+- `planner`, `executor`, `verifier`, `graph`, and `node` are implementation mechanisms. They must not become the main architecture vocabulary for user-facing or protocol-facing behavior.
+
 ## Development Workflow
 - Always use `bun test` before committing.
 - Follow TDD for new domain or runtime features.

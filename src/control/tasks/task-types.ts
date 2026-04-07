@@ -1,10 +1,11 @@
-import { taskId as sharedTaskId, threadId as sharedThreadId } from "../../shared/ids";
+import { runId as sharedRunId, taskId as sharedTaskId, threadId as sharedThreadId } from "../../shared/ids";
 
 export type ControlTaskStatus = "queued" | "running" | "blocked" | "completed" | "failed" | "cancelled";
 
 export type ControlTask = {
   taskId: ReturnType<typeof sharedTaskId>;
   threadId: ReturnType<typeof sharedThreadId>;
+  runId: ReturnType<typeof sharedRunId>;
   summary: string;
   status: ControlTaskStatus;
   blockingReason?: {
@@ -20,6 +21,7 @@ export type TaskStoreContract = {
 export function createControlTask(input: {
   taskId: string;
   threadId: string;
+  runId?: string;
   summary: string;
   status?: ControlTaskStatus;
   blockingReason?: {
@@ -30,6 +32,7 @@ export function createControlTask(input: {
   return {
     taskId: sharedTaskId(input.taskId),
     threadId: sharedThreadId(input.threadId),
+    runId: sharedRunId(input.runId ?? input.taskId),
     summary: input.summary,
     status: input.status ?? "queued",
     blockingReason: input.blockingReason,

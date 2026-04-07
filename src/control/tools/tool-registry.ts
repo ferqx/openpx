@@ -168,8 +168,12 @@ export function createToolRegistry(input: {
         const approvalRequest = await input.approvals.createPending({
           toolCallId: normalizedRequest.toolCallId,
           threadId: normalizedRequest.threadId,
+          runId: normalizedRequest.runId,
           taskId: normalizedRequest.taskId,
-          toolRequest: normalizedRequest,
+          toolRequest: {
+            ...normalizedRequest,
+            runId: normalizedRequest.runId ?? normalizedRequest.taskId,
+          },
           summary: summarizeRequest(normalizedRequest, workspaceRoot),
           risk: decision.risk.key,
         });

@@ -487,6 +487,7 @@ describe("TUI App", () => {
             {
               taskId: "task-2",
               threadId: "thread-repeat",
+              runId: "run-repeat-2",
               status: "running",
               summary: "Working on second answer",
             },
@@ -568,6 +569,7 @@ describe("TUI App", () => {
           {
             taskId: "task_running",
             threadId: "thread_1",
+            runId: "run-running",
             status: "running",
             summary: "Generating answer",
           },
@@ -589,6 +591,7 @@ describe("TUI App", () => {
           {
             taskId: "task_running",
             threadId: "thread_1",
+            runId: "run-running",
             status: "completed",
             summary: "Generating answer",
           },
@@ -677,7 +680,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 2,
-              status: "blocked",
+              status: "idle",
+              activeRunStatus: "blocked",
               narrativeSummary: "Manual recovery pending for a risky patch.",
               blockingReasonKind: "human_recovery",
             },
@@ -728,7 +732,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 4,
-              status: "completed",
+              status: "active",
+              activeRunStatus: "completed",
               narrativeSummary: "Current thread",
             },
             {
@@ -736,7 +741,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 3,
-              status: "completed",
+              status: "idle",
+              activeRunStatus: "completed",
               narrativeSummary: "Target thread",
             },
           ],
@@ -788,7 +794,8 @@ describe("TUI App", () => {
                 workspaceRoot: "/tmp/workspace",
                 projectId: "project-1",
                 revision: 4,
-                status: "completed",
+                status: "idle",
+                activeRunStatus: "completed",
                 narrativeSummary: "Current thread",
               },
               {
@@ -796,7 +803,8 @@ describe("TUI App", () => {
                 workspaceRoot: "/tmp/workspace",
                 projectId: "project-1",
                 revision: 3,
-                status: "completed",
+                status: "active",
+                activeRunStatus: "completed",
                 narrativeSummary: "Target thread",
               },
             ],
@@ -860,7 +868,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 4,
-              status: "completed",
+              status: "active",
+              activeRunStatus: "completed",
               narrativeSummary: "Current thread",
             },
             {
@@ -868,7 +877,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 3,
-              status: "completed",
+              status: "idle",
+              activeRunStatus: "completed",
               narrativeSummary: "Middle thread",
             },
             {
@@ -876,7 +886,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 2,
-              status: "completed",
+              status: "idle",
+              activeRunStatus: "completed",
               narrativeSummary: "Oldest thread",
             },
           ],
@@ -1381,6 +1392,7 @@ describe("TUI App", () => {
             {
               taskId: "task_1",
               threadId: "thread_1",
+              runId: "run_1",
               status: "blocked",
               summary: "delete src/old.ts",
               blockingReason: {
@@ -1393,6 +1405,7 @@ describe("TUI App", () => {
             {
               approvalRequestId: "approval_1",
               threadId: "thread_1",
+              runId: "run_1",
               taskId: "task_1",
               toolCallId: "tool_1",
               summary: "apply_patch delete_file src/old.ts",
@@ -1447,6 +1460,7 @@ describe("TUI App", () => {
             {
               taskId: "task_resume",
               threadId: "thread_resume",
+              runId: "run_resume",
               status: "blocked",
               summary: "delete src/resume-me.ts",
               blockingReason: {
@@ -1459,6 +1473,7 @@ describe("TUI App", () => {
             {
               approvalRequestId: "approval_resume",
               threadId: "thread_resume",
+              runId: "run_resume",
               taskId: "task_resume",
               toolCallId: "tool_resume",
               summary: "apply_patch delete_file src/resume-me.ts",
@@ -1558,7 +1573,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 2,
-              status: "blocked",
+              status: "idle",
+              activeRunStatus: "blocked",
               narrativeSummary: "Manual recovery pending for a risky patch.",
               blockingReasonKind: "human_recovery",
             },
@@ -1609,6 +1625,7 @@ describe("TUI App", () => {
             {
               taskId: "task_recovery",
               threadId: "thread_recovery",
+              runId: "run_recovery",
               status: "blocked",
               summary: "Apply risky patch",
               blockingReason: {
@@ -1679,6 +1696,7 @@ describe("TUI App", () => {
           {
             taskId: "task_live_recovery",
             threadId: "thread_live_recovery",
+            runId: "run_live_recovery",
             status: "blocked",
             summary: "Recover risky patch",
             blockingReason: {
@@ -1791,6 +1809,7 @@ describe("TUI App", () => {
         {
           taskId: "task-stage",
           threadId: "thread-executing",
+          runId: "run-stage",
           status: "blocked",
           summary: "Apply shell patch",
           blockingReason: {
@@ -1803,6 +1822,7 @@ describe("TUI App", () => {
         {
           approvalRequestId: "approval-stage",
           threadId: "thread-executing",
+          runId: "run-stage",
           taskId: "task-stage",
           toolCallId: "tool-stage",
           summary: "apply_patch update_file src/interface/tui/app.tsx",

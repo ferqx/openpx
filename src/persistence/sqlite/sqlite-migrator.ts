@@ -8,6 +8,7 @@ export function migrateSqlite(db: Database): void {
     CREATE TABLE IF NOT EXISTS tasks (
       task_id TEXT PRIMARY KEY,
       thread_id TEXT NOT NULL,
+      run_id TEXT,
       summary TEXT,
       status TEXT NOT NULL,
       blocking_reason_json TEXT
@@ -15,7 +16,31 @@ export function migrateSqlite(db: Database): void {
   `);
 
   ensureColumn(db, "tasks", "summary", "TEXT");
+  ensureColumn(db, "tasks", "run_id", "TEXT");
   ensureColumn(db, "tasks", "blocking_reason_json", "TEXT");
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS runs (
+      run_id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      input_text TEXT,
+      active_task_id TEXT,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      result_summary TEXT,
+      resume_token TEXT,
+      blocking_reason_json TEXT
+    )
+  `);
+
+  ensureColumn(db, "runs", "input_text", "TEXT");
+  ensureColumn(db, "runs", "active_task_id", "TEXT");
+  ensureColumn(db, "runs", "ended_at", "TEXT");
+  ensureColumn(db, "runs", "result_summary", "TEXT");
+  ensureColumn(db, "runs", "resume_token", "TEXT");
+  ensureColumn(db, "runs", "blocking_reason_json", "TEXT");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS memories (
@@ -61,6 +86,7 @@ export function migrateSqlite(db: Database): void {
     CREATE TABLE IF NOT EXISTS approvals (
       approval_request_id TEXT PRIMARY KEY,
       thread_id TEXT NOT NULL,
+      run_id TEXT,
       task_id TEXT NOT NULL,
       tool_call_id TEXT NOT NULL,
       request_json TEXT,
@@ -81,6 +107,7 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "threads", "narrative_state_json", "TEXT");
   ensureColumn(db, "threads", "working_set_window_json", "TEXT");
   ensureColumn(db, "approvals", "request_json", "TEXT");
+  ensureColumn(db, "approvals", "run_id", "TEXT");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS workers (
@@ -113,6 +140,7 @@ export function migrateSqlite(db: Database): void {
   `);
 
   db.run("CREATE INDEX IF NOT EXISTS idx_tasks_thread_id ON tasks (thread_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_runs_thread_id ON runs (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories (namespace)");
   db.run("CREATE INDEX IF NOT EXISTS idx_memories_thread_id ON memories (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_events_thread_sequence ON events (thread_id, sequence)");

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createAppContext } from "../../src/app/bootstrap";
 import { createThread } from "../../src/domain/thread";
+import { createApprovalRequest } from "../../src/domain/approval";
+import { createRun, transitionRun } from "../../src/domain/run";
 import { createControlTask } from "../../src/control/tasks/task-types";
 import os from "node:os";
 import path from "node:path";
@@ -148,6 +150,116 @@ describe("createAppContext", () => {
     expect(prompts[0]).toContain("User said their name is Alice.");
     expect(prompts[0]).toContain("User: My name is Alice.");
     expect(prompts[0]).toContain("Your name is Alice.");
+
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  });
+
+  test("persists a run lifecycle record when starting root work", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-run-lifecycle-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+
+    await fs.mkdir(workspaceRoot, { recursive: true });
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway: createTestModelGateway(),
+    });
+
+    const thread = createThread("thread-run", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+
+    const result = await ctx.controlPlane.startRootTask(thread.threadId, "what is my name?");
+    const runs = await ctx.stores.runStore.listByThread(thread.threadId);
+
+    expect(result.status).toBe("completed");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.threadId).toBe(thread.threadId);
+    expect(runs[0]?.activeTaskId).toBe(result.task.taskId);
+    expect(runs[0]?.status).toBe("completed");
+    expect(runs[0]?.inputText).toBe("what is my name?");
+
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  });
+
+  test("advances an existing run when an approval is approved", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-approve-run-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+    const filePath = path.join(workspaceRoot, "approved.txt");
+
+    await fs.mkdir(workspaceRoot, { recursive: true });
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway: createTestModelGateway(),
+    });
+
+    const thread = createThread("thread-approve", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+
+    const run = transitionRun(
+      transitionRun(
+        createRun({
+          runId: "run-approve",
+          threadId: thread.threadId,
+          trigger: "approval_resume",
+          inputText: "approve patch",
+        }),
+        "running",
+      ),
+      "waiting_approval",
+    );
+    await ctx.stores.runStore.save({
+      ...run,
+      activeTaskId: "task-approve",
+      blockingReason: {
+        kind: "waiting_approval",
+        message: "apply_patch create_file approved.txt",
+      },
+    });
+    await ctx.stores.taskStore.save({
+      taskId: "task-approve",
+      threadId: thread.threadId,
+      runId: run.runId,
+      summary: "Create approved file",
+      status: "blocked",
+      blockingReason: {
+        kind: "waiting_approval",
+        message: "apply_patch create_file approved.txt",
+      },
+    });
+    await ctx.stores.approvalStore.save(
+      createApprovalRequest({
+        approvalRequestId: "approval-approve",
+        threadId: thread.threadId,
+        runId: run.runId,
+        taskId: "task-approve",
+        toolCallId: "tool-approve",
+        toolRequest: {
+          toolCallId: "tool-approve",
+          threadId: thread.threadId,
+          runId: run.runId,
+          taskId: "task-approve",
+          toolName: "apply_patch",
+          args: { content: "approved\n" },
+          action: "create_file",
+          path: filePath,
+          changedFiles: 1,
+        },
+        summary: "apply_patch create_file approved.txt",
+        risk: "apply_patch.create_file",
+      }),
+    );
+
+    const result = await ctx.controlPlane.approveRequest("approval-approve");
+    const updatedRun = await ctx.stores.runStore.get(run.runId);
+
+    expect(result.status).toBe("completed");
+    expect(updatedRun?.runId).toBe(run.runId);
+    expect(updatedRun?.status).toBe("completed");
+    expect(updatedRun?.activeTaskId).toBe("task-approve");
+    expect(await Bun.file(filePath).text()).toBe("approved\n");
 
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });

@@ -5,6 +5,7 @@ import type { PatchAction, ToolEffect } from "../policy/risk-model";
 export type ToolExecuteRequest = {
   toolCallId: string;
   threadId: string;
+  runId?: string;
   taskId: string;
   toolName: string;
   args: Record<string, unknown>;

@@ -19,6 +19,10 @@ export function threadId(value?: string): Id {
   return value ? ensureId(value) : nextId();
 }
 
+export function runId(value?: string): Id {
+  return value ? ensureId(value) : nextId();
+}
+
 export function taskId(value?: string): Id {
   return value ? ensureId(value) : nextId();
 }

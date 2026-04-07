@@ -109,8 +109,19 @@ export class RuntimeScopedSession {
   }
 
   private async touchThread(thread: Thread, nextStatus?: Thread["status"]): Promise<Thread> {
+    if (this.activeThreadId && this.activeThreadId !== thread.threadId) {
+      const previous = await this.context.stores.threadStore.get(this.activeThreadId);
+      if (previous && previous.workspaceRoot === this.scope.workspaceRoot && previous.projectId === this.scope.projectId && previous.status === "active") {
+        await this.context.stores.threadStore.save({
+          ...transitionThread(previous, "idle"),
+          revision: (previous.revision ?? 1) + 1,
+        });
+      }
+    }
+
+    const targetStatus = nextStatus ?? thread.status;
     const updated =
-      nextStatus && thread.status !== nextStatus ? transitionThread(thread, nextStatus) : thread;
+      thread.status !== targetStatus ? transitionThread(thread, targetStatus) : thread;
     await this.context.stores.threadStore.save(updated);
     this.activeThreadId = updated.threadId;
     return updated;
@@ -122,19 +133,24 @@ export class RuntimeScopedSession {
     const threads = await this.context.stores.threadStore.listByScope(this.scope);
     const threadViews = await Promise.all(
       threads.map(async (thread) => {
-        const [threadTasks, threadApprovals] = await Promise.all([
+        const [threadTasks, threadApprovals, latestRun] = await Promise.all([
           this.context.stores.taskStore.listByThread(thread.threadId),
           this.context.stores.approvalStore.listPendingByThread(thread.threadId),
+          this.context.stores.runStore.getLatestByThread(thread.threadId),
         ]);
         const blockedTask = threadTasks.find((task) => task.status === "blocked" && task.blockingReason);
 
         return {
           ...thread,
+          activeRunId: latestRun?.runId,
+          activeRunStatus: latestRun?.status,
           pendingApprovalCount: threadApprovals.length,
           blockingReasonKind: blockedTask?.blockingReason?.kind,
         };
       }),
     );
+    const runs = activeThread ? await this.context.stores.runStore.listByThread(activeThread.threadId) : [];
+    const activeRun = activeThread ? await this.context.stores.runStore.getLatestByThread(activeThread.threadId) : undefined;
     const tasks = activeThread ? await this.context.stores.taskStore.listByThread(activeThread.threadId) : [];
     const pendingApprovals = activeThread ? await this.context.stores.approvalStore.listPendingByThread(activeThread.threadId) : [];
     const workers = activeThread ? await this.context.stores.workerStore.listByThread(activeThread.threadId) : [];
@@ -144,7 +160,9 @@ export class RuntimeScopedSession {
     return buildRuntimeSnapshot({
       scope: this.scope,
       activeThread,
+      activeRunId: activeRun?.runId,
       threads: threadViews,
+      runs,
       tasks,
       pendingApprovals,
       workers,

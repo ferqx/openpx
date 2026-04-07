@@ -1,6 +1,7 @@
 import { describe, expect, test, afterEach } from "bun:test";
 import { createRuntimeService } from "../../src/runtime/service/runtime-service";
 import { createAppContext } from "../../src/app/bootstrap";
+import { createRun, transitionRun } from "../../src/domain/run";
 import { createThread } from "../../src/domain/thread";
 import { createTask } from "../../src/domain/task";
 import { createApprovalRequest } from "../../src/domain/approval";
@@ -94,9 +95,29 @@ describe("RuntimeService", () => {
     const app = await createAppContext({ dataDir, workspaceRoot: testDir, projectId });
 
     const thread = createThread("thread-blocked-1", testDir, projectId);
-    await app.stores.threadStore.save({ ...thread, status: "blocked" });
+    await app.stores.threadStore.save({ ...thread, status: "active" });
+    const run = transitionRun(
+      transitionRun(
+        createRun({
+          runId: "run-blocked-1",
+          threadId: thread.threadId,
+          trigger: "user_input",
+          inputText: "Recover risky patch",
+        }),
+        "running",
+      ),
+      "blocked",
+    );
+    await app.stores.runStore.save({
+      ...run,
+      activeTaskId: "task-blocked-1",
+      blockingReason: {
+        kind: "human_recovery",
+        message: "Manual recovery required before continuing this thread.",
+      },
+    });
 
-    const task = createTask("task-blocked-1", thread.threadId, "Recover risky patch");
+    const task = createTask("task-blocked-1", thread.threadId, run.runId, "Recover risky patch");
     await app.stores.taskStore.save({
       ...task,
       status: "blocked",
@@ -109,11 +130,13 @@ describe("RuntimeService", () => {
       createApprovalRequest({
         approvalRequestId: "approval-blocked-1",
         threadId: thread.threadId,
+        runId: run.runId,
         taskId: task.taskId,
         toolCallId: "tool-call-1",
         toolRequest: {
           toolCallId: "tool-call-1",
           threadId: thread.threadId,
+          runId: run.runId,
           taskId: task.taskId,
           toolName: "apply_patch",
           args: {},
@@ -130,6 +153,8 @@ describe("RuntimeService", () => {
       kind: "human_recovery",
       message: "Manual recovery required before continuing this thread.",
     });
+    expect(snapshot.activeRunId).toBe("run-blocked-1");
+    expect(snapshot.runs[0]?.runId).toBe("run-blocked-1");
     expect(snapshot.tasks[0]?.blockingReason).toEqual({
       kind: "human_recovery",
       message: "Manual recovery required before continuing this thread.",
@@ -146,9 +171,47 @@ describe("RuntimeService", () => {
 
     const thread = {
       ...createThread("thread-completed-1", testDir, projectId),
-      status: "completed" as const,
+      status: "idle" as const,
     };
     await app.stores.threadStore.save(thread);
+
+    const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
+
+    const result = await runtime.handleCommand(
+      { kind: "interrupt", threadId: thread.threadId },
+      { workspaceRoot: testDir, projectId },
+    );
+
+    expect(result.threadId).toBe(thread.threadId);
+    expect(result.status).toBe("idle");
+
+    const snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
+    expect(snapshot.activeThreadId).toBe(thread.threadId);
+    expect(snapshot.threads[0]?.status).toBe("idle");
+  });
+
+  test("treats interrupt on a thread with a completed latest run as a no-op", async () => {
+    await fs.mkdir(testDir, { recursive: true });
+    const dataDir = path.join(testDir, "runtime-service-interrupt-run.sqlite");
+    const projectId = "interrupt-run-project";
+    const app = await createAppContext({ dataDir, workspaceRoot: testDir, projectId });
+
+    const thread = createThread("thread-completed-run-1", testDir, projectId);
+    await app.stores.threadStore.save(thread);
+    await app.stores.runStore.save(
+      transitionRun(
+        transitionRun(
+          createRun({
+            runId: "run-completed-1",
+            threadId: thread.threadId,
+            trigger: "user_input",
+            inputText: "Finished work",
+          }),
+          "running",
+        ),
+        "completed",
+      ),
+    );
 
     const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
 
@@ -162,7 +225,62 @@ describe("RuntimeService", () => {
 
     const snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
     expect(snapshot.activeThreadId).toBe(thread.threadId);
-    expect(snapshot.threads[0]?.status).toBe("completed");
+    expect(snapshot.activeRunId).toBe("run-completed-1");
+    expect(snapshot.threads[0]?.activeRunStatus).toBe("completed");
+  });
+
+  test("includes each thread's latest run status in the thread list snapshot", async () => {
+    await fs.mkdir(testDir, { recursive: true });
+    const dataDir = path.join(testDir, "runtime-service-thread-list.sqlite");
+    const projectId = "thread-list-project";
+    const app = await createAppContext({ dataDir, workspaceRoot: testDir, projectId });
+
+    const waitingThread = createThread("thread-waiting", testDir, projectId);
+    const completedThread = createThread("thread-completed", testDir, projectId);
+    await app.stores.threadStore.save(waitingThread);
+    await app.stores.threadStore.save(completedThread);
+    await app.stores.runStore.save({
+      ...transitionRun(
+        transitionRun(
+          createRun({
+            runId: "run-waiting",
+            threadId: waitingThread.threadId,
+            trigger: "user_input",
+            inputText: "Need approval",
+          }),
+          "running",
+        ),
+        "waiting_approval",
+      ),
+      blockingReason: {
+        kind: "waiting_approval",
+        message: "Need approval",
+      },
+    });
+    await app.stores.runStore.save(
+      transitionRun(
+        transitionRun(
+          createRun({
+            runId: "run-completed",
+            threadId: completedThread.threadId,
+            trigger: "user_input",
+            inputText: "Done",
+          }),
+          "running",
+        ),
+        "completed",
+      ),
+    );
+
+    const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
+    const snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
+    const waitingView = snapshot.threads.find((thread) => thread.threadId === waitingThread.threadId);
+    const completedView = snapshot.threads.find((thread) => thread.threadId === completedThread.threadId);
+
+    expect(waitingView?.activeRunId).toBe("run-waiting");
+    expect(waitingView?.activeRunStatus).toBe("waiting_approval");
+    expect(completedView?.activeRunId).toBe("run-completed");
+    expect(completedView?.activeRunStatus).toBe("completed");
   });
 
   test("does not create a thread when continue or interrupt is called on an empty scope", async () => {

@@ -1,4 +1,5 @@
 import type { Event } from "../../domain/event";
+import type { Run } from "../../domain/run";
 import type { Task } from "../../domain/task";
 import type { Thread } from "../../domain/thread";
 import type { ApprovalRequest } from "../../domain/approval";
@@ -8,6 +9,8 @@ import { PROTOCOL_VERSION, type RuntimeSnapshot } from "./runtime-types";
 import { getStoredEventSequence } from "./runtime-events";
 
 type RuntimeThreadView = Thread & {
+  activeRunId?: string;
+  activeRunStatus?: Run["status"];
   pendingApprovalCount?: number;
   blockingReasonKind?: "waiting_approval" | "human_recovery";
 };
@@ -15,7 +18,9 @@ type RuntimeThreadView = Thread & {
 export function buildRuntimeSnapshot(input: {
   scope: RuntimeScope;
   activeThread?: Thread;
+  activeRunId?: string;
   threads: RuntimeThreadView[];
+  runs: Run[];
   tasks: Task[];
   pendingApprovals: ApprovalRequest[];
   workers: WorkerRecord[];
@@ -40,23 +45,43 @@ export function buildRuntimeSnapshot(input: {
     projectId: input.scope.projectId,
     lastEventSeq,
     activeThreadId: input.activeThread?.threadId,
+    activeRunId: input.activeRunId,
     recommendationReason: input.activeThread?.recommendationReason,
     narrativeSummary,
     blockingReason: activeBlockingReason,
-    threads: input.threads.map((thread) => ({
+    threads: input.threads.map((thread) => {
+      const latestRun = input.runs.filter((run) => run.threadId === thread.threadId).at(-1);
+      return {
       threadId: thread.threadId,
       workspaceRoot: thread.workspaceRoot,
       projectId: thread.projectId,
       revision: thread.revision,
       status: thread.status,
+      activeRunId: thread.activeRunId ?? latestRun?.runId,
+      activeRunStatus: thread.activeRunStatus ?? latestRun?.status,
       narrativeSummary: thread.narrativeSummary,
       narrativeRevision: thread.narrativeRevision,
       pendingApprovalCount: thread.pendingApprovalCount,
       blockingReasonKind: thread.blockingReasonKind,
+      };
+    }),
+    runs: input.runs.map((run) => ({
+      runId: run.runId,
+      threadId: run.threadId,
+      status: run.status,
+      trigger: run.trigger,
+      inputText: run.inputText,
+      activeTaskId: run.activeTaskId,
+      startedAt: run.startedAt,
+      endedAt: run.endedAt,
+      resultSummary: run.resultSummary,
+      blockingReason: run.blockingReason,
+      resumeToken: run.resumeToken,
     })),
     tasks: input.tasks.map((task) => ({
       taskId: task.taskId,
       threadId: task.threadId,
+      runId: task.runId,
       status: task.status,
       summary: task.summary ?? "",
       blockingReason: task.blockingReason,
@@ -64,6 +89,7 @@ export function buildRuntimeSnapshot(input: {
     pendingApprovals: input.pendingApprovals.map((approval) => ({
       approvalRequestId: approval.approvalRequestId,
       threadId: approval.threadId,
+      runId: approval.runId,
       taskId: approval.taskId,
       toolCallId: approval.toolCallId,
       summary: approval.summary,

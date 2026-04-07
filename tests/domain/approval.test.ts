@@ -6,11 +6,13 @@ describe("approval requests", () => {
     const approval = createApprovalRequest({
       approvalRequestId: "approval_1",
       threadId: "thread_1",
+      runId: "run_1",
       taskId: "task_1",
       toolCallId: "tool_1",
       toolRequest: {
         toolCallId: "tool_1",
         threadId: "thread_1",
+        runId: "run_1",
         taskId: "task_1",
         toolName: "apply_patch",
         args: {},
@@ -23,7 +25,9 @@ describe("approval requests", () => {
     });
 
     expect(approval.approvalRequestId).toBe("approval_1");
+    expect(approval.runId).toBe("run_1");
     expect(approval.status).toBe("pending");
+    expect(approval.toolRequest.runId).toBe("run_1");
     expect(approval.toolRequest.toolName).toBe("apply_patch");
   });
 });

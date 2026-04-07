@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { threadStatusSchema } from "../../../shared/schemas";
+import { runStatusSchema, threadStatusSchema } from "../../../shared/schemas";
 
 export const blockingReasonKindSchema = z.enum(["waiting_approval", "human_recovery"]);
 
@@ -9,6 +9,8 @@ export const threadViewSchema = z.object({
   projectId: z.string(),
   revision: z.number().int().nonnegative(),
   status: threadStatusSchema,
+  activeRunId: z.string().min(1).optional(),
+  activeRunStatus: runStatusSchema.optional(),
   narrativeSummary: z.string().optional(),
   narrativeRevision: z.number().int().nonnegative().optional(),
   pendingApprovalCount: z.number().int().nonnegative().optional(),

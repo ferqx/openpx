@@ -9,6 +9,7 @@ describe("TaskManager", () => {
     const savedTasks: Array<{
       taskId: string;
       threadId: string;
+      runId: string;
       summary: string;
       status: string;
     }> = [];
@@ -60,6 +61,7 @@ describe("TaskManager", () => {
     expect(reloaded).toEqual({
       taskId: created.taskId,
       threadId: "thread_1",
+      runId: created.runId,
       summary: "plan repo",
       status: "queued",
     });
@@ -71,6 +73,7 @@ describe("TaskManager", () => {
     const savedTasks: Array<{
       taskId: string;
       threadId: string;
+      runId: string;
       summary: string;
       status: string;
     }> = [];
