@@ -1,16 +1,42 @@
 import { Annotation } from "@langchain/langgraph";
-import type { RootMode } from "./context";
+import type {
+  PendingApprovalState,
+  RootMode,
+  RootRoute,
+  VerificationReport,
+} from "./context";
 import type { ResumeControl } from "./resume-control";
 import type { 
   RecoveryFacts, 
   NarrativeState, 
   WorkingSetWindow 
 } from "../../../control/context/thread-compaction-types";
+import type { WorkPackage } from "../../planning/work-package";
 
 export const RootState = Annotation.Root({
   input: Annotation<string>(),
   summary: Annotation<string | undefined>(),
   mode: Annotation<RootMode>(),
+  route: Annotation<RootRoute>({
+    reducer: (_, next) => next,
+    default: () => "unrouted",
+  }),
+  workPackages: Annotation<WorkPackage[]>({
+    reducer: (_, next) => next,
+    default: () => [],
+  }),
+  currentWorkPackageId: Annotation<string | undefined>(),
+  pendingApproval: Annotation<PendingApprovalState | undefined>(),
+  approved: Annotation<boolean>({
+    reducer: (_, next) => next,
+    default: () => false,
+  }),
+  artifacts: Annotation<string[]>({
+    reducer: (_, next) => next,
+    default: () => [],
+  }),
+  verificationReport: Annotation<VerificationReport | undefined>(),
+  finalAnswer: Annotation<string | undefined>(),
   recoveryFacts: Annotation<RecoveryFacts>(),
   narrativeState: Annotation<NarrativeState>(),
   workingSetWindow: Annotation<WorkingSetWindow>(),

@@ -27,6 +27,14 @@ describe("root graph", () => {
     );
 
     expect(result.mode).toBe("plan");
+    expect(result.route).toBe("unrouted");
+    expect(result.workPackages).toEqual([]);
+    expect(result.currentWorkPackageId).toBeUndefined();
+    expect(result.pendingApproval).toBeUndefined();
+    expect(result.approved).toBe(false);
+    expect(result.artifacts).toEqual([]);
+    expect(result.verificationReport).toBeUndefined();
+    expect(result.finalAnswer).toBeUndefined();
     expect(plannerCallInput).toBe("plan the repository");
     expect(plannerCallThreadId).toBe("thread_1");
     expect(plannerCallTaskId).toBe("task_1");
@@ -134,5 +142,87 @@ describe("root graph", () => {
     expect(responderCalled).toBe(true);
     expect(result.mode).toBe("done");
     expect(result.summary).toBe("Your name is Alice.");
+  });
+
+  test("routes direct execution requests to the executor", async () => {
+    const checkpointer = new MemorySaver();
+    let executorCalled = false;
+
+    const graph = await createRootGraph({
+      checkpointer,
+      planner: async () => ({ summary: "planned", mode: "plan" }),
+      executor: async () => {
+        executorCalled = true;
+        return { summary: "executed pwd", mode: "execute" };
+      },
+      verifier: async () => ({ summary: "verified", mode: "verify" }),
+    });
+
+    const result = await graph.invoke(
+      { input: "run pwd in the workspace" },
+      { configurable: { thread_id: "thread_exec", task_id: "task_exec" } },
+    );
+
+    expect(executorCalled).toBe(true);
+    expect(result.mode).toBe("done");
+    expect(result.summary).toBe("executed pwd");
+  });
+
+  test("routes file-specific questions to the executor for read-then-answer flows", async () => {
+    const checkpointer = new MemorySaver();
+    let executorCalled = false;
+    let plannerCalled = false;
+
+    const graph = await createRootGraph({
+      checkpointer,
+      planner: async () => {
+        plannerCalled = true;
+        return { summary: "planned", mode: "plan" };
+      },
+      executor: async () => {
+        executorCalled = true;
+        return { summary: "explained main.ts", mode: "execute" };
+      },
+      verifier: async () => ({ summary: "verified", mode: "verify" }),
+    });
+
+    const result = await graph.invoke(
+      { input: "what does src/app/main.ts do?" },
+      { configurable: { thread_id: "thread_file_question", task_id: "task_file_question" } },
+    );
+
+    expect(executorCalled).toBe(true);
+    expect(plannerCalled).toBe(false);
+    expect(result.mode).toBe("done");
+    expect(result.summary).toBe("explained main.ts");
+  });
+
+  test("routes file-specific fix requests to the executor even without leading action keywords", async () => {
+    const checkpointer = new MemorySaver();
+    let executorCalled = false;
+    let plannerCalled = false;
+
+    const graph = await createRootGraph({
+      checkpointer,
+      planner: async () => {
+        plannerCalled = true;
+        return { summary: "planned", mode: "plan" };
+      },
+      executor: async () => {
+        executorCalled = true;
+        return { summary: "fixed main.ts", mode: "execute" };
+      },
+      verifier: async () => ({ summary: "verified", mode: "verify" }),
+    });
+
+    const result = await graph.invoke(
+      { input: "can you fix src/app/main.ts so the startup message is clearer?" },
+      { configurable: { thread_id: "thread_file_fix", task_id: "task_file_fix" } },
+    );
+
+    expect(executorCalled).toBe(true);
+    expect(plannerCalled).toBe(false);
+    expect(result.mode).toBe("done");
+    expect(result.summary).toBe("fixed main.ts");
   });
 });

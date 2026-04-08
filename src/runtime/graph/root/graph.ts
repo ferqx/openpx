@@ -45,7 +45,7 @@ export async function createRootGraph(context: RootGraphContext) {
         } : {})
       };
     })
-    .addNode("route", routeNode)
+    .addNode("router", routeNode)
     .addNode("planner", async (state, config) => {
       return plannerGraph.invoke({ input: state.input }, config);
     })
@@ -101,8 +101,8 @@ export async function createRootGraph(context: RootGraphContext) {
       return {};
     })
     .addEdge(START, "intake")
-    .addEdge("intake", "route")
-    .addConditionalEdges("route", (state) => {
+    .addEdge("intake", "router")
+    .addConditionalEdges("router", (state) => {
       switch (state.mode) {
         case "plan":
           return "planner";
@@ -122,7 +122,7 @@ export async function createRootGraph(context: RootGraphContext) {
     .addEdge("responder", END)
     .addConditionalEdges("verifier", (state) => {
       if (state.verifierPassed === false) {
-        return "route";
+        return "router";
       }
       return END;
     })

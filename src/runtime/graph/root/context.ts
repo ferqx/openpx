@@ -2,8 +2,21 @@ import type { CheckpointPort } from "../../../persistence/ports/checkpoint-port"
 import type { DerivedThreadView } from "../../../control/context/thread-compaction-types";
 import type { compactThreadView } from "../../../control/context/thread-compaction-policy";
 import type { PlannerResult } from "../../planning/planner-result";
+import type { WorkPackage } from "../../planning/work-package";
 
 export type RootMode = "plan" | "execute" | "verify" | "done" | "waiting_approval" | "respond";
+export type RootRoute = RootMode | "unrouted";
+
+export type PendingApprovalState = {
+  summary: string;
+  reason?: string;
+};
+
+export type VerificationReport = {
+  summary: string;
+  passed?: boolean;
+  feedback?: string;
+};
 
 export type WorkerMode = Exclude<RootMode, "done">;
 
@@ -13,6 +26,7 @@ export type WorkerResult<TMode extends WorkerMode = WorkerMode> = {
   isValid?: boolean;
   feedback?: string;
   plannerResult?: PlannerResult;
+  workPackages?: WorkPackage[];
 };
 
 export type WorkerExecutionContext = {
