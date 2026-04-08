@@ -89,6 +89,6 @@ describe("planner model integration", () => {
     const result = await ctx.controlPlane.startRootTask(thread.threadId, "make startup copy nicer");
 
     expect(result.status).toBe("completed");
-    expect(result.summary).toBe("Executed request: make startup copy nicer");
+    expect(result.summary).toBe("Executed request: Update startup message copy");
   });
 });

@@ -30,6 +30,7 @@ import { compactThreadView } from "../control/context/thread-compaction-policy";
 import type { ResumeControl } from "../runtime/graph/root/resume-control";
 import { createRun, transitionRun, type Run } from "../domain/run";
 import { prefixedUuid } from "../shared/id-generators";
+import { buildExecutionInput, buildVerifierPrompt } from "./worker-inputs";
 
 type AppStores = ReturnType<typeof createStores>;
 
@@ -454,11 +455,18 @@ async function createControlPlane(input: {
       return {
         summary: result.summary,
         mode: "plan",
+        plannerResult: result.plannerResult,
         workPackages: result.plannerResult?.workPackages ?? [],
       };
     },
-    verifier: async ({ input: text, threadId, taskId }) => {
-      const result = await input.modelGateway.verify({ prompt: text, threadId, taskId, signal: getAbortSignal(threadId) });
+    verifier: async ({ input: text, threadId, taskId, currentWorkPackage, artifacts, plannerResult }) => {
+      const prompt = buildVerifierPrompt({
+        input: text,
+        currentWorkPackage,
+        artifacts,
+        plannerResult,
+      });
+      const result = await input.modelGateway.verify({ prompt, threadId, taskId, signal: getAbortSignal(threadId) });
       return {
         summary: result.summary,
         mode: "verify",
@@ -466,11 +474,17 @@ async function createControlPlane(input: {
         feedback: result.summary, // Assuming summary contains feedback when invalid
       };
     },
-    executor: async ({ input: text, threadId, taskId }) => {
-      const deleteRequest = parseDeleteRequest(text, input.config.workspaceRoot);
+    executor: async ({ input: text, threadId, taskId, currentWorkPackage, plannerResult, artifacts }) => {
+      const executionInput = buildExecutionInput({
+        input: text,
+        currentWorkPackage,
+        artifacts,
+        plannerResult,
+      });
+      const deleteRequest = parseDeleteRequest(executionInput, input.config.workspaceRoot);
       if (!deleteRequest || !threadId || !taskId) {
         return {
-          summary: `Executed request: ${text}`,
+          summary: `Executed request: ${executionInput}`,
           mode: "execute",
         };
       }

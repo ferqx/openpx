@@ -7,6 +7,7 @@ import type {
 } from "./context";
 import type { ResumeControl } from "./resume-control";
 import type { ArtifactRecord } from "../../artifacts/artifact-index";
+import type { PlannerResult } from "../../planning/planner-result";
 import type { 
   RecoveryFacts, 
   NarrativeState, 
@@ -22,6 +23,7 @@ export const RootState = Annotation.Root({
     reducer: (_, next) => next,
     default: () => "unrouted",
   }),
+  plannerResult: Annotation<PlannerResult | undefined>(),
   workPackages: Annotation<WorkPackage[]>({
     reducer: (_, next) => next,
     default: () => [],

@@ -82,6 +82,78 @@ describe("root graph", () => {
     expect(result.summary).toBe("executed startup message update");
   });
 
+  test("passes active work package context into executor and verifier", async () => {
+    const checkpointer = new MemorySaver();
+    let executorInput:
+      | {
+          currentWorkPackage?: typeof startupMessageWorkPackage;
+          plannerResult?: {
+            verificationScope?: string[];
+          };
+        }
+      | undefined;
+    let verifierInput:
+      | {
+          currentWorkPackage?: typeof startupMessageWorkPackage;
+          artifacts?: Array<{ ref: string }>;
+        }
+      | undefined;
+
+    const graph = await createRootGraph({
+      checkpointer,
+      planner: async () => ({
+        summary: "planned startup message update",
+        mode: "plan",
+        workPackages: [startupMessageWorkPackage],
+        plannerResult: {
+          workPackages: [startupMessageWorkPackage],
+          acceptanceCriteria: ["startup message updated"],
+          riskFlags: [],
+          approvalRequiredActions: [],
+          verificationScope: ["tests/runtime/intake-normalize.test.ts"],
+        },
+      }),
+      executor: async (input) => {
+        executorInput = input as typeof executorInput;
+        return { summary: "executed startup message update", mode: "execute" };
+      },
+      verifier: async (input) => {
+        verifierInput = input as typeof verifierInput;
+        return { summary: "verified", mode: "verify", isValid: true };
+      },
+    });
+
+    await graph.invoke(
+      { input: "fix the startup message" },
+      { configurable: { thread_id: "thread_context_exec", task_id: "task_context_exec" } },
+    );
+
+    expect(executorInput?.currentWorkPackage?.id).toBe("pkg_startup_message");
+    expect(executorInput?.plannerResult?.verificationScope).toEqual([
+      "tests/runtime/intake-normalize.test.ts",
+    ]);
+
+    await graph.invoke(
+      {
+        input: "verify",
+        workPackages: [startupMessageWorkPackage],
+        currentWorkPackageId: "pkg_startup_message",
+        artifacts: [
+          {
+            ref: "patch:src/app/main.ts",
+            kind: "patch",
+            summary: "Updated startup message copy",
+            workPackageId: "pkg_startup_message",
+          },
+        ],
+      },
+      { configurable: { thread_id: "thread_context_verify", task_id: "task_context_verify" } },
+    );
+
+    expect(verifierInput?.currentWorkPackage?.id).toBe("pkg_startup_message");
+    expect(verifierInput?.artifacts?.[0]?.ref).toBe("patch:src/app/main.ts");
+  });
+
   test("routes execute work to the executor even when the request mentions src/planner.ts", async () => {
     const checkpointer = new MemorySaver();
     let plannerCalled = false;

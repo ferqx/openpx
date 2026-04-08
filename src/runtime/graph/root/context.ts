@@ -35,6 +35,9 @@ export type WorkerExecutionContext = {
   input: string;
   threadId?: string;
   taskId?: string;
+  currentWorkPackage?: WorkPackage;
+  artifacts?: ArtifactRecord[];
+  plannerResult?: PlannerResult;
   configurable?: Record<string, unknown>;
 };
 

@@ -10,6 +10,16 @@ import { createPlannerWorkerGraph } from "../../workers/planner/graph";
 import { createExecutorWorkerGraph } from "../../workers/executor/graph";
 import { createVerifierWorkerGraph } from "../../workers/verifier/graph";
 import type { ResumeControl } from "./resume-control";
+import type { WorkPackage } from "../../planning/work-package";
+
+function resolveCurrentWorkPackage(state: {
+  workPackages?: WorkPackage[];
+  currentWorkPackageId?: string;
+}) {
+  const workPackages = state.workPackages ?? [];
+  const currentWorkPackageId = state.currentWorkPackageId ?? workPackages[0]?.id;
+  return workPackages.find((item) => item.id === currentWorkPackageId);
+}
 
 export async function createRootGraph(context: RootGraphContext) {
   const plannerGraph = await createPlannerWorkerGraph(context.planner);
@@ -71,15 +81,28 @@ export async function createRootGraph(context: RootGraphContext) {
       };
     })
     .addNode("executor", (state, config) => {
+      const currentWorkPackage = resolveCurrentWorkPackage(state);
       return context.executor({
         input: state.input,
         threadId: config.configurable?.thread_id as string | undefined,
         taskId: config.configurable?.task_id as string | undefined,
+        currentWorkPackage,
+        artifacts: state.artifacts,
+        plannerResult: state.plannerResult,
         configurable: config.configurable,
       });
     })
     .addNode("verifier", async (state, config) => {
-      const result = await verifierGraph.invoke({ input: state.input }, config);
+      const currentWorkPackage = resolveCurrentWorkPackage(state);
+      const result = await verifierGraph.invoke(
+        {
+          input: state.input,
+          currentWorkPackage,
+          artifacts: state.artifacts,
+          plannerResult: state.plannerResult,
+        },
+        config,
+      );
       return {
         summary: result.summary,
         verifierPassed: result.isValid,
