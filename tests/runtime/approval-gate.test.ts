@@ -1,13 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { Annotation, END, INTERRUPT, MemorySaver, START, StateGraph, isInterrupted } from "@langchain/langgraph";
 import { approvalGateNode } from "../../src/runtime/graph/root/nodes/approval-gate";
+import type { RootMode, RootRoute } from "../../src/runtime/graph/root/context";
+import type { ResumeControl } from "../../src/runtime/graph/root/resume-control";
 
 describe("approval gate node", () => {
   test("interrupts when a pending approval must be resolved", async () => {
     const GateState = Annotation.Root({
-      mode: Annotation<"waiting_approval">(),
+      input: Annotation<string | undefined>(),
+      mode: Annotation<RootMode>(),
+      approved: Annotation<boolean | undefined>(),
+      currentWorkPackageId: Annotation<string | undefined>(),
       pendingApproval: Annotation<{ summary: string } | undefined>(),
-      resumeValue: Annotation<unknown>(),
+      resumeValue: Annotation<string | ResumeControl | undefined>(),
+      route: Annotation<RootRoute | undefined>(),
     });
     const graph = new StateGraph(GateState)
       .addNode("approval-gate", approvalGateNode)

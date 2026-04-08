@@ -48,6 +48,40 @@ describe("root graph", () => {
     expect(plannerCallTaskId).toBe("task_1");
   });
 
+  test("continues from planner output into execution when the planner emits work packages", async () => {
+    const checkpointer = new MemorySaver();
+    let plannerCalled = false;
+    let executorCalled = false;
+
+    const graph = await createRootGraph({
+      checkpointer,
+      planner: async () => {
+        plannerCalled = true;
+        return {
+          summary: "planned startup message update",
+          mode: "plan",
+          workPackages: [startupMessageWorkPackage],
+        };
+      },
+      executor: async () => {
+        executorCalled = true;
+        return { summary: "executed startup message update", mode: "execute" };
+      },
+      verifier: async () => ({ summary: "verified", mode: "verify" }),
+    });
+
+    const result = await graph.invoke(
+      { input: "fix the startup message" },
+      { configurable: { thread_id: "thread_plan_exec", task_id: "task_plan_exec" } },
+    );
+
+    expect(plannerCalled).toBe(true);
+    expect(executorCalled).toBe(true);
+    expect(result.workPackages).toEqual([startupMessageWorkPackage]);
+    expect(result.currentWorkPackageId).toBe("pkg_startup_message");
+    expect(result.summary).toBe("executed startup message update");
+  });
+
   test("routes execute work to the executor even when the request mentions src/planner.ts", async () => {
     const checkpointer = new MemorySaver();
     let plannerCalled = false;
@@ -189,7 +223,14 @@ describe("root graph", () => {
         input: "continue",
         workPackages: [startupMessageWorkPackage],
         currentWorkPackageId: "pkg_startup_message",
-        artifacts: ["patch:src/app/main.ts"],
+        artifacts: [
+          {
+            ref: "patch:src/app/main.ts",
+            kind: "patch",
+            summary: "Updated startup message copy",
+            workPackageId: "pkg_startup_message",
+          },
+        ],
       },
       { configurable: { thread_id: "thread_verify", task_id: "task_verify" } },
     );
@@ -230,7 +271,14 @@ describe("root graph", () => {
         input: "continue",
         workPackages: [startupMessageWorkPackage],
         currentWorkPackageId: "pkg_startup_message",
-        artifacts: ["patch:src/app/main.ts"],
+        artifacts: [
+          {
+            ref: "patch:src/app/main.ts",
+            kind: "patch",
+            summary: "Updated startup message copy",
+            workPackageId: "pkg_startup_message",
+          },
+        ],
         verificationReport: {
           summary: "All checks passed",
           passed: true,

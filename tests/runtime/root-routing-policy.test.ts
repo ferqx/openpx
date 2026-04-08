@@ -65,7 +65,14 @@ describe("root routing policy", () => {
           },
         ],
         currentWorkPackageId: "pkg_1",
-        artifacts: ["patch:src/app/main.ts"],
+        artifacts: [
+          {
+            ref: "patch:src/app/main.ts",
+            kind: "patch",
+            summary: "Updated startup message copy",
+            workPackageId: "pkg_1",
+          },
+        ],
       }),
     ).toEqual({
       route: "verifier",
@@ -87,7 +94,14 @@ describe("root routing policy", () => {
           },
         ],
         currentWorkPackageId: "pkg_1",
-        artifacts: ["patch:src/app/main.ts"],
+        artifacts: [
+          {
+            ref: "patch:src/app/main.ts",
+            kind: "patch",
+            summary: "Updated startup message copy",
+            workPackageId: "pkg_1",
+          },
+        ],
         verificationReport: {
           summary: "All checks passed",
           passed: true,

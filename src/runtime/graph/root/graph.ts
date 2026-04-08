@@ -129,7 +129,12 @@ export async function createRootGraph(context: RootGraphContext) {
           return "executor";
       }
     })
-    .addEdge("planner", END)
+    .addConditionalEdges("planner", (state) => {
+      if ((state.workPackages?.length ?? 0) > 0) {
+        return "router";
+      }
+      return END;
+    })
     .addEdge("responder", END)
     .addConditionalEdges("approval-gate", (state) => {
       switch (state.mode) {

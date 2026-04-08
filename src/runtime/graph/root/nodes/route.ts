@@ -1,6 +1,7 @@
 import type { PendingApprovalState, RootMode, RootRoute, VerificationReport } from "../context";
 import { createRecommendationEngine } from "../../../../control/policy/recommendation-engine";
 import type { WorkPackage } from "../../../planning/work-package";
+import type { ArtifactRecord } from "../../../artifacts/artifact-index";
 import { routeNext } from "../root-routing-policy";
 
 export function routeNode(state: { 
@@ -8,7 +9,7 @@ export function routeNode(state: {
   workPackages?: WorkPackage[];
   currentWorkPackageId?: string;
   pendingApproval?: PendingApprovalState;
-  artifacts?: string[];
+  artifacts?: ArtifactRecord[];
   verificationReport?: VerificationReport;
   verifierPassed?: boolean; 
   verifierFeedback?: string; 
@@ -56,17 +57,15 @@ export function routeNode(state: {
     };
   }
 
-  if (state.mode !== "waiting_approval") {
-    const recommendationEngine = createRecommendationEngine();
-    const recommendation = recommendationEngine.evaluate(state.input);
-    if (recommendation.recommendTeam) {
-      return {
-        mode: "waiting_approval",
-        route: "approval",
-        recommendationReason: recommendation.reason,
-        currentWorkPackageId: state.currentWorkPackageId,
-      };
-    }
+  const recommendationEngine = createRecommendationEngine();
+  const recommendation = recommendationEngine.evaluate(state.input);
+  if (recommendation.recommendTeam) {
+    return {
+      mode: "waiting_approval",
+      route: "approval",
+      recommendationReason: recommendation.reason,
+      currentWorkPackageId: state.currentWorkPackageId,
+    };
   }
 
   const decision = routeNext({

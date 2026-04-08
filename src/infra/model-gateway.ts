@@ -1,4 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
+import { plannerResultSchema, type PlannerResult } from "../runtime/planning/planner-result";
 
 export type PlannerModelInput = {
   prompt: string;
@@ -9,6 +10,7 @@ export type PlannerModelInput = {
 
 export type PlannerModelOutput = {
   summary: string;
+  plannerResult?: PlannerResult;
 };
 
 export type VerifierModelInput = {
@@ -130,8 +132,37 @@ function normalizeModelText(content: unknown): string {
   return "";
 }
 
+function parseJsonObject(text: string): unknown {
+  const trimmed = text.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidate = fencedMatch?.[1]?.trim() ?? trimmed;
+  return JSON.parse(candidate);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export function parsePlannerModelOutput(text: string): PlannerModelOutput {
+  try {
+    const parsed = parseJsonObject(text);
+    if (!isRecord(parsed) || typeof parsed.summary !== "string") {
+      throw new Error("planner envelope missing summary");
+    }
+
+    const plannerResult = parsed.plannerResult === undefined
+      ? undefined
+      : plannerResultSchema.parse(parsed.plannerResult);
+
+    return {
+      summary: parsed.summary.trim(),
+      plannerResult,
+    };
+  } catch {
+    return {
+      summary: text.trim(),
+    };
+  }
 }
 
 function getErrorMessage(error: unknown): string {
@@ -337,15 +368,22 @@ class MultiModelGateway implements ModelGateway {
 
   async plan(input: PlannerModelInput): Promise<PlannerModelOutput> {
     const response = await this.tryAllProviders([
-      ["system", "You are the planning worker. Return a concise implementation plan summary."],
+      [
+        "system",
+        [
+          "You are the planning worker.",
+          "Return either a plain-text summary or JSON with this shape:",
+          '{"summary":"<concise plan summary>","plannerResult":{"workPackages":[{"id":"pkg_id","objective":"...","allowedTools":["read_file"],"inputRefs":["thread:goal"],"expectedArtifacts":["patch:file"]}],"acceptanceCriteria":["..."],"riskFlags":[],"approvalRequiredActions":[],"verificationScope":["..."]}}',
+        ].join(" "),
+      ],
       ["human", input.prompt],
     ], input.signal);
 
-    const summary = normalizeModelText(response.content);
-    if (!summary) {
+    const text = normalizeModelText(response.content);
+    if (!text) {
       throw new ModelGatewayError("invalid_response_error", "model returned an empty response");
     }
-    return { summary };
+    return parsePlannerModelOutput(text);
   }
 
   async verify(input: VerifierModelInput): Promise<VerifierModelOutput> {

@@ -3,6 +3,7 @@ import type {
   RootMode,
   VerificationReport,
 } from "./context";
+import type { ArtifactRecord } from "../../artifacts/artifact-index";
 import type { WorkPackage } from "../../planning/work-package";
 
 export type RoutingDecision = {
@@ -15,7 +16,7 @@ export function routeNext(state: {
   workPackages?: WorkPackage[];
   currentWorkPackageId?: string;
   pendingApproval?: PendingApprovalState;
-  artifacts?: string[];
+  artifacts?: ArtifactRecord[];
   verificationReport?: VerificationReport;
 }): RoutingDecision {
   if (state.pendingApproval) {

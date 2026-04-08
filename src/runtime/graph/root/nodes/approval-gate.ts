@@ -19,7 +19,7 @@ export function approvalGateNode(state: {
       resumeValue: undefined;
     }
   | {
-      resumeValue: unknown;
+      resumeValue: string | ResumeControl;
     } {
   const resolution =
     state.resumeValue && typeof state.resumeValue !== "string" && state.resumeValue.kind === "approval_resolution"
@@ -53,6 +53,6 @@ export function approvalGateNode(state: {
   }
 
   return {
-    resumeValue: resolution,
+    resumeValue: resolution as string | ResumeControl,
   };
 }

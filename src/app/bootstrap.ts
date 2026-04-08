@@ -454,6 +454,7 @@ async function createControlPlane(input: {
       return {
         summary: result.summary,
         mode: "plan",
+        workPackages: result.plannerResult?.workPackages ?? [],
       };
     },
     verifier: async ({ input: text, threadId, taskId }) => {
