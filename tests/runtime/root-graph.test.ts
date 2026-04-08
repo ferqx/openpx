@@ -2,6 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { MemorySaver } from "@langchain/langgraph";
 import { createRootGraph } from "../../src/runtime/graph/root/graph";
 
+const startupMessageWorkPackage = {
+  id: "pkg_startup_message",
+  objective: "Update startup message",
+  allowedTools: ["read_file", "apply_patch"],
+  inputRefs: ["thread:goal", "file:src/app/main.ts"],
+  expectedArtifacts: ["patch:src/app/main.ts"],
+};
+
 describe("root graph", () => {
   test("routes plan work into the planner worker with injected checkpointer and execution context", async () => {
     const checkpointer = new MemorySaver();
@@ -27,7 +35,7 @@ describe("root graph", () => {
     );
 
     expect(result.mode).toBe("plan");
-    expect(result.route).toBe("unrouted");
+    expect(result.route).toBe("planner");
     expect(result.workPackages).toEqual([]);
     expect(result.currentWorkPackageId).toBeUndefined();
     expect(result.pendingApproval).toBeUndefined();
@@ -119,59 +127,46 @@ describe("root graph", () => {
     expect(result.workingSetWindow?.messages).toContain("Need to inspect the previous patch.");
   });
 
-  test("routes conversational memory questions to the responder", async () => {
-    const checkpointer = new MemorySaver();
-    let responderCalled = false;
-
-    const graph = await createRootGraph({
-      checkpointer,
-      planner: async () => ({ summary: "planned", mode: "plan" }),
-      executor: async () => ({ summary: "executed", mode: "execute" }),
-      verifier: async () => ({ summary: "verified", mode: "verify" }),
-      responder: async () => {
-        responderCalled = true;
-        return { summary: "Your name is Alice.", mode: "respond" };
-      },
-    });
-
-    const result = await graph.invoke(
-      { input: "what is my name?" },
-      { configurable: { thread_id: "thread_memory", task_id: "task_memory" } },
-    );
-
-    expect(responderCalled).toBe(true);
-    expect(result.mode).toBe("done");
-    expect(result.summary).toBe("Your name is Alice.");
-  });
-
-  test("routes direct execution requests to the executor", async () => {
+  test("routes to the executor when the active work package has not been executed yet", async () => {
     const checkpointer = new MemorySaver();
     let executorCalled = false;
+    let plannerCalled = false;
+    let verifierCalled = false;
 
     const graph = await createRootGraph({
       checkpointer,
-      planner: async () => ({ summary: "planned", mode: "plan" }),
+      planner: async () => {
+        plannerCalled = true;
+        return { summary: "planned", mode: "plan" };
+      },
       executor: async () => {
         executorCalled = true;
         return { summary: "executed pwd", mode: "execute" };
       },
-      verifier: async () => ({ summary: "verified", mode: "verify" }),
+      verifier: async () => {
+        verifierCalled = true;
+        return { summary: "verified", mode: "verify" };
+      },
     });
 
     const result = await graph.invoke(
-      { input: "run pwd in the workspace" },
+      { input: "continue", workPackages: [startupMessageWorkPackage] },
       { configurable: { thread_id: "thread_exec", task_id: "task_exec" } },
     );
 
     expect(executorCalled).toBe(true);
+    expect(plannerCalled).toBe(false);
+    expect(verifierCalled).toBe(false);
     expect(result.mode).toBe("done");
     expect(result.summary).toBe("executed pwd");
+    expect(result.currentWorkPackageId).toBe("pkg_startup_message");
   });
 
-  test("routes file-specific questions to the executor for read-then-answer flows", async () => {
+  test("routes to the verifier after artifacts exist for the active work package", async () => {
     const checkpointer = new MemorySaver();
-    let executorCalled = false;
+    let verifierCalled = false;
     let plannerCalled = false;
+    let executorCalled = false;
 
     const graph = await createRootGraph({
       checkpointer,
@@ -181,26 +176,36 @@ describe("root graph", () => {
       },
       executor: async () => {
         executorCalled = true;
-        return { summary: "explained main.ts", mode: "execute" };
+        return { summary: "executed", mode: "execute" };
       },
-      verifier: async () => ({ summary: "verified", mode: "verify" }),
+      verifier: async () => {
+        verifierCalled = true;
+        return { summary: "verified", mode: "verify" };
+      },
     });
 
     const result = await graph.invoke(
-      { input: "what does src/app/main.ts do?" },
-      { configurable: { thread_id: "thread_file_question", task_id: "task_file_question" } },
+      {
+        input: "continue",
+        workPackages: [startupMessageWorkPackage],
+        currentWorkPackageId: "pkg_startup_message",
+        artifacts: ["patch:src/app/main.ts"],
+      },
+      { configurable: { thread_id: "thread_verify", task_id: "task_verify" } },
     );
 
-    expect(executorCalled).toBe(true);
+    expect(verifierCalled).toBe(true);
     expect(plannerCalled).toBe(false);
-    expect(result.mode).toBe("done");
-    expect(result.summary).toBe("explained main.ts");
+    expect(executorCalled).toBe(false);
+    expect(result.mode).toBe("verify");
+    expect(result.summary).toBe("verified");
   });
 
-  test("routes file-specific fix requests to the executor even without leading action keywords", async () => {
+  test("finishes immediately after verification already passed for all work packages", async () => {
     const checkpointer = new MemorySaver();
     let executorCalled = false;
     let plannerCalled = false;
+    let verifierCalled = false;
 
     const graph = await createRootGraph({
       checkpointer,
@@ -210,19 +215,32 @@ describe("root graph", () => {
       },
       executor: async () => {
         executorCalled = true;
-        return { summary: "fixed main.ts", mode: "execute" };
+        return { summary: "executed", mode: "execute" };
       },
-      verifier: async () => ({ summary: "verified", mode: "verify" }),
+      verifier: async () => {
+        verifierCalled = true;
+        return { summary: "verified", mode: "verify" };
+      },
     });
 
     const result = await graph.invoke(
-      { input: "can you fix src/app/main.ts so the startup message is clearer?" },
-      { configurable: { thread_id: "thread_file_fix", task_id: "task_file_fix" } },
+      {
+        input: "continue",
+        workPackages: [startupMessageWorkPackage],
+        currentWorkPackageId: "pkg_startup_message",
+        artifacts: ["patch:src/app/main.ts"],
+        verificationReport: {
+          summary: "All checks passed",
+          passed: true,
+        },
+      },
+      { configurable: { thread_id: "thread_finish", task_id: "task_finish" } },
     );
 
-    expect(executorCalled).toBe(true);
+    expect(executorCalled).toBe(false);
     expect(plannerCalled).toBe(false);
+    expect(verifierCalled).toBe(false);
     expect(result.mode).toBe("done");
-    expect(result.summary).toBe("fixed main.ts");
+    expect(result.route).toBe("finish");
   });
 });

@@ -1,58 +1,77 @@
-import type { RootMode } from "../context";
+import type { PendingApprovalState, RootMode, RootRoute, VerificationReport } from "../context";
 import { createRecommendationEngine } from "../../../../control/policy/recommendation-engine";
+import type { WorkPackage } from "../../../planning/work-package";
+import { routeNext } from "../root-routing-policy";
 
 export function routeNode(state: { 
   input: string; 
+  workPackages?: WorkPackage[];
+  currentWorkPackageId?: string;
+  pendingApproval?: PendingApprovalState;
+  artifacts?: string[];
+  verificationReport?: VerificationReport;
   verifierPassed?: boolean; 
   verifierFeedback?: string; 
   mode?: RootMode;
-}): { mode: RootMode; input?: string; verifierPassed?: boolean; recommendationReason?: string } {
+}): {
+  mode: RootMode;
+  route: RootRoute;
+  input?: string;
+  verifierPassed?: boolean;
+  recommendationReason?: string;
+  currentWorkPackageId?: string;
+} {
   const input = state.input.toLowerCase().trim();
 
-  // 1. Verifier Feedback Loop
   if (state.verifierPassed === false) {
     return {
       mode: "execute",
+      route: "executor",
       input: `${state.input}\n\nVerification failed: ${state.verifierFeedback}. Please fix these issues and verify again.`,
       verifierPassed: undefined,
       recommendationReason: undefined,
+      currentWorkPackageId: state.currentWorkPackageId,
     };
   }
 
-  // 2. Explicit Termination
   if (/\b(completed|done|finished)\b/.test(input)) {
-    return { mode: "done", recommendationReason: undefined };
+    return { mode: "done", route: "finish", recommendationReason: undefined };
   }
 
-  // 3. Explicit Mode Triggers
   if (/\bverify\b/.test(input)) {
-    return { mode: "verify", recommendationReason: undefined };
-  }
-  if (/\bplan\b/.test(input)) {
-    return { mode: "plan", recommendationReason: undefined };
-  }
-
-  // 4. CHAT/RESPOND HEURISTICS: Direct Response for simple talk
-  const isMemoryQuestion =
-    /\b(what(?:'s| is) my name|who am i|do you remember (?:me|my name)|what did i just say)\b/.test(input) ||
-    /(我叫什么|你记得我叫什么|我刚才说了什么)/.test(state.input);
-  const isSimpleChat = /^(hi|hello|hey|hola|你好|您好|谁|who are you|what can you do|你是谁|天气)/i.test(input);
-  if (isSimpleChat || isMemoryQuestion) {
-    return { mode: "respond", recommendationReason: undefined };
+    return {
+      mode: "verify",
+      route: "verifier",
+      recommendationReason: undefined,
+      currentWorkPackageId: state.currentWorkPackageId,
+    };
   }
 
-  // 5. POLICY CHECK: Check for team recommendation only if we are starting a new work turn
   if (state.mode !== "waiting_approval") {
     const recommendationEngine = createRecommendationEngine();
     const recommendation = recommendationEngine.evaluate(state.input);
     if (recommendation.recommendTeam) {
       return {
         mode: "waiting_approval",
+        route: "approval",
         recommendationReason: recommendation.reason,
+        currentWorkPackageId: state.currentWorkPackageId,
       };
     }
   }
 
-  // 6. DEFAULT: All other technical inputs go to planner for goal-setting
-  return { mode: "plan", recommendationReason: undefined };
+  const decision = routeNext({
+    workPackages: state.workPackages,
+    currentWorkPackageId: state.currentWorkPackageId,
+    pendingApproval: state.pendingApproval,
+    artifacts: state.artifacts,
+    verificationReport: state.verificationReport,
+  });
+
+  return {
+    mode: decision.mode,
+    route: decision.route,
+    recommendationReason: undefined,
+    currentWorkPackageId: decision.currentWorkPackageId,
+  };
 }
