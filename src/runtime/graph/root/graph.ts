@@ -1,9 +1,9 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import type { RootGraphContext } from "./context";
 import { RootState } from "./state";
-import { intakeNode } from "./nodes/intake";
 import { routeNode } from "./nodes/route";
 import { postTurnGuardNode } from "./nodes/post-turn-guard";
+import { intakeNormalizeNode } from "./nodes/intake-normalize";
 import { createPlannerWorkerGraph } from "../../workers/planner/graph";
 import { createExecutorWorkerGraph } from "../../workers/executor/graph";
 import { createVerifierWorkerGraph } from "../../workers/verifier/graph";
@@ -33,8 +33,10 @@ export async function createRootGraph(context: RootGraphContext) {
         }
       }
 
+      const normalizedInput = intakeNormalizeNode({ input: input.trim() }).normalizedInput;
+
       return {
-        input: input.trim(),
+        input: normalizedInput.goal,
         resumeValue: undefined, // Clear after use
         ...(view ? {
           recoveryFacts: view.recoveryFacts,
