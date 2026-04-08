@@ -24,6 +24,6 @@ export const theme = {
     arrowRight: "→",
   },
   spacing: {
-    indent: 2,
+    indent: 0,
   }
 };

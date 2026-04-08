@@ -66,8 +66,7 @@ function buildSingleLineEditor(value: string, cursorOffset: number, width: numbe
 
   if (value.length === 0) {
     const placeholder = `${prompt} ${chalk.inverse(" ")}${chalk.white("Ask openpx... Press / for commands")}`;
-    const paddedPlaceholder = placeholder + chalk.bgGray(" ".repeat(Math.max(0, width - stringWidth(placeholder))));
-    return chalk.bgGray(paddedPlaceholder);
+    return chalk.white(placeholder);
   }
 
   const safeCursor = clampCursorOffset(value, cursorOffset);
@@ -75,8 +74,7 @@ function buildSingleLineEditor(value: string, cursorOffset: number, width: numbe
   const cursorCharacter = value[safeCursor] ?? " ";
   const afterCursor = value.slice(Math.min(safeCursor + (value[safeCursor] ? 1 : 0), value.length));
   const content = `${prompt} ${chalk.white(beforeCursor)}${chalk.inverse(cursorCharacter)}${chalk.white(afterCursor)}`;
-  const paddedContent = content + chalk.bgGray(" ".repeat(Math.max(0, width - stringWidth(content))));
-  return chalk.bgGray(paddedContent);
+  return chalk.white(content);
 }
 
 function isBackwardDeleteKey(keyValue: string, key: { backspace?: boolean }) {
@@ -313,15 +311,16 @@ export function Composer(input: {
   }
 
   const { lineIndex: cursorLineIndex, columnIndex: cursorColumnIndex, lines } = resolveCursorLine(value, cursorOffset);
-  const promptIndent = "  ";
+  const prompt = chalk.bold.green(theme.symbols.prompt);
+  const promptIndent = " ";
   const isMultiline = value.includes("\n");
   const singleLineWidth = Math.max(0, (stdout?.columns ?? 80) - 6);
 
   return (
-    <Box paddingX={1} paddingY={0} flexDirection="column" width="100%">
-      <Box flexDirection="column" width="100%" paddingX={1} backgroundColor={theme.colors.composerBg}>
+    <Box paddingY={0} flexDirection="column" width="100%;">
+      <Box flexDirection="column" width="100%">
         {!isMultiline ? (
-          <Box>
+          <Box width="100%">
             <Text>{buildSingleLineEditor(value, cursorOffset, singleLineWidth)}</Text>
           </Box>
         ) : (
@@ -336,11 +335,11 @@ export function Composer(input: {
             return (
               <Box key={`composer-line-${index}`} gap={1}>
                 {index === 0 ? (
-                  <Text color={theme.colors.user} backgroundColor={theme.colors.composerBg} bold>{theme.symbols.prompt}</Text>
+                  <Text color={theme.colors.user}>{theme.symbols.prompt}</Text>
                 ) : (
-                  <Text color={theme.colors.composerText} backgroundColor={theme.colors.composerBg}>{promptIndent}</Text>
+                  <Text color={theme.colors.composerText}>{promptIndent}</Text>
                 )}
-                <Text color={theme.colors.composerText} backgroundColor={theme.colors.composerBg}>
+                <Text color={theme.colors.composerText}>
                   {beforeCursor}
                   {isCursorLine ? <Text inverse>{cursorCharacter}</Text> : null}
                   {isCursorLine ? afterCursor : ""}

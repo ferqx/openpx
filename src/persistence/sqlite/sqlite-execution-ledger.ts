@@ -6,6 +6,7 @@ import { migrateSqlite } from "./sqlite-migrator";
 type LedgerRow = {
   execution_id: string;
   thread_id: string;
+  run_id: string | null;
   task_id: string;
   tool_call_id: string;
   tool_name: string;
@@ -31,9 +32,9 @@ export class SqliteExecutionLedger implements ExecutionLedgerPort {
   async save(entry: ExecutionLedgerEntry): Promise<void> {
     this.db.run(
       `INSERT INTO execution_ledger (
-        execution_id, thread_id, task_id, tool_call_id, tool_name, args_json, 
+        execution_id, thread_id, run_id, task_id, tool_call_id, tool_name, args_json, 
         status, result_json, error, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(execution_id) DO UPDATE SET
         status = excluded.status,
         result_json = excluded.result_json,
@@ -42,6 +43,7 @@ export class SqliteExecutionLedger implements ExecutionLedgerPort {
       [
         entry.executionId,
         entry.threadId,
+        entry.runId ?? null,
         entry.taskId,
         entry.toolCallId,
         entry.toolName,
@@ -91,6 +93,7 @@ function mapLedgerRow(row: LedgerRow): ExecutionLedgerEntry {
     threadId: row.thread_id,
     taskId: row.task_id,
     toolCallId: row.tool_call_id,
+    runId: row.run_id ?? undefined,
     toolName: row.tool_name,
     argsJson: row.args_json,
     status: row.status,

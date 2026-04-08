@@ -590,3 +590,141 @@ describe("ThreadStateProjector", () => {
     expect(view.recoveryFacts?.conversationHistory?.at(-1)?.messageId).toBe("message-59");
   });
 });
+
+  test("tool_executed updates ledgerState with lastCompletedToolCallId", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {
+        recoveryFacts: {
+          threadId: "thread-1",
+          revision: 0,
+          schemaVersion: 1,
+          status: "active",
+          updatedAt: new Date().toISOString(),
+          pendingApprovals: [],
+        },
+      },
+      {
+        kind: "tool_executed",
+        toolCallId: "tool-123",
+        toolName: "apply_patch",
+      },
+    );
+
+    expect(view.recoveryFacts?.ledgerState).toEqual({
+      lastCompletedToolCallId: "tool-123",
+      pendingToolCallId: undefined,
+    });
+  });
+
+  test("tool_pending updates ledgerState with pendingToolCallId", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {
+        recoveryFacts: {
+          threadId: "thread-1",
+          revision: 0,
+          schemaVersion: 1,
+          status: "active",
+          updatedAt: new Date().toISOString(),
+          pendingApprovals: [],
+        },
+      },
+      {
+        kind: "tool_pending",
+        toolCallId: "tool-456",
+        toolName: "exec",
+      },
+    );
+
+    expect(view.recoveryFacts?.ledgerState).toEqual({
+      pendingToolCallId: "tool-456",
+    });
+  });
+
+  test("tool_blocked updates ledgerState with pendingToolCallId", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {
+        recoveryFacts: {
+          threadId: "thread-1",
+          revision: 0,
+          schemaVersion: 1,
+          status: "active",
+          updatedAt: new Date().toISOString(),
+          pendingApprovals: [],
+        },
+      },
+      {
+        kind: "tool_blocked",
+        toolCallId: "tool-789",
+        toolName: "apply_patch",
+      },
+    );
+
+    expect(view.recoveryFacts?.ledgerState).toEqual({
+      pendingToolCallId: "tool-789",
+    });
+  });
+
+  test("tool_failed clears pendingToolCallId", () => {
+    const projector = createThreadStateProjector();
+    const view = projector.project(
+      {
+        recoveryFacts: {
+          threadId: "thread-1",
+          revision: 0,
+          schemaVersion: 1,
+          status: "active",
+          updatedAt: new Date().toISOString(),
+          pendingApprovals: [],
+          ledgerState: {
+            pendingToolCallId: "tool-456",
+          },
+        },
+      },
+      {
+        kind: "tool_failed",
+        toolCallId: "tool-456",
+        toolName: "exec",
+      },
+    );
+
+    expect(view.recoveryFacts?.ledgerState).toEqual({
+      pendingToolCallId: undefined,
+    });
+  });
+
+  test("tool_executed after tool_pending clears pending and sets completed", () => {
+    const projector = createThreadStateProjector();
+    let view = projector.project(
+      {
+        recoveryFacts: {
+          threadId: "thread-1",
+          revision: 0,
+          schemaVersion: 1,
+          status: "active",
+          updatedAt: new Date().toISOString(),
+          pendingApprovals: [],
+        },
+      },
+      {
+        kind: "tool_pending",
+        toolCallId: "tool-001",
+        toolName: "apply_patch",
+      },
+    );
+
+    expect(view.recoveryFacts?.ledgerState?.pendingToolCallId).toBe("tool-001");
+
+    view = projector.project(view, {
+      kind: "tool_executed",
+      toolCallId: "tool-001",
+      toolName: "apply_patch",
+    });
+
+    expect(view.recoveryFacts?.ledgerState).toEqual({
+      lastCompletedToolCallId: "tool-001",
+      pendingToolCallId: undefined,
+    });
+  });

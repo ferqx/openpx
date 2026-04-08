@@ -13,6 +13,7 @@ import { migrateSqlite } from "../persistence/sqlite/sqlite-migrator";
 import { SqliteApprovalStore } from "../persistence/sqlite/sqlite-approval-store";
 import { SqliteEventLog } from "../persistence/sqlite/sqlite-event-log";
 import { SqliteMemoryStore } from "../persistence/sqlite/sqlite-memory-store";
+import { SqliteRunStore } from "../persistence/sqlite/sqlite-run-store";
 import { SqliteTaskStore } from "../persistence/sqlite/sqlite-task-store";
 import { SqliteThreadStore } from "../persistence/sqlite/sqlite-thread-store";
 import { SqliteExecutionLedger } from "../persistence/sqlite/sqlite-execution-ledger";
@@ -27,6 +28,8 @@ import { transitionThread } from "../domain/thread";
 import { createEvent } from "../domain/event";
 import { compactThreadView } from "../control/context/thread-compaction-policy";
 import type { ResumeControl } from "../runtime/graph/root/resume-control";
+import { createRun, transitionRun, type Run } from "../domain/run";
+import { prefixedUuid } from "../shared/id-generators";
 
 type AppStores = ReturnType<typeof createStores>;
 
@@ -40,6 +43,7 @@ type ControlPlane = {
 function createStores(path: string | ReturnType<typeof createSqlite>) {
   return {
     threadStore: new SqliteThreadStore(path),
+    runStore: new SqliteRunStore(path),
     taskStore: new SqliteTaskStore(path),
     approvalStore: new SqliteApprovalStore(path),
     eventLog: new SqliteEventLog(path),
@@ -105,17 +109,15 @@ async function recoverUncertainExecutions(stores: AppStores, scope: { workspaceR
     }
 
     const recoveredThread =
-      thread.status === "blocked"
-        ? thread
-        : ({
-            ...(thread.status === "active" ||
-            thread.status === "waiting_approval" ||
-            thread.status === "interrupted"
-              ? transitionThread(thread, "blocked")
-              : thread),
-            status: "blocked",
+      thread.status === "active"
+        ? {
+            ...thread,
             revision: (thread.revision ?? 1) + 1,
-          } as typeof thread);
+          }
+        : {
+            ...transitionThread(thread, "active"),
+            revision: (thread.revision ?? 1) + 1,
+          };
     await stores.threadStore.save(recoveredThread);
     await stores.eventLog.append(
       createEvent({
@@ -226,12 +228,14 @@ async function saveTaskStatus(stores: AppStores, task: ControlTask, status: Cont
 function ensureControlTask(task: {
   taskId: string;
   threadId: string;
+  runId?: string;
   summary?: string;
   status: ControlTask["status"];
 }): ControlTask {
   return {
     taskId: task.taskId,
     threadId: task.threadId,
+    runId: task.runId ?? task.taskId,
     summary: task.summary ?? task.taskId,
     status: task.status,
   };
@@ -265,6 +269,7 @@ function resolveApprovalToolRequest(
     return {
       toolCallId: approval.toolRequest.toolCallId,
       threadId: approval.toolRequest.threadId,
+      runId: approval.toolRequest.runId,
       taskId: approval.toolRequest.taskId,
       toolName: approval.toolRequest.toolName,
       args: approval.toolRequest.args,
@@ -287,6 +292,7 @@ function resolveApprovalToolRequest(
   return {
     toolCallId: approval.toolCallId,
     threadId: approval.threadId,
+    runId: approval.runId,
     taskId: approval.taskId,
     toolName: "apply_patch",
     args: {},
@@ -370,9 +376,38 @@ async function createControlPlane(input: {
   const activeExecutions = new Map<string, { taskId: string; controller: AbortController }>();
   const getAbortSignal = (threadId?: string) => (threadId ? activeExecutions.get(threadId)?.controller.signal : undefined);
 
+  async function saveRun(run: Run): Promise<Run> {
+    await input.stores.runStore.save(run);
+    return run;
+  }
+
+  async function updateRunStatus(run: Run, status: Run["status"], patch?: Partial<Run>): Promise<Run> {
+    const transitioned = run.status === status ? run : transitionRun(run, status);
+    const next: Run = {
+      ...transitioned,
+      ...patch,
+      endedAt:
+        status === "completed" || status === "failed"
+          ? patch?.endedAt ?? transitioned.endedAt ?? new Date().toISOString()
+          : patch?.endedAt ?? transitioned.endedAt,
+    };
+    return await saveRun(next);
+  }
+
   async function cancelActiveThread(threadId: string): Promise<boolean> {
     const execution = activeExecutions.get(threadId);
+    const activeRun = await input.stores.runStore.getLatestByThread(threadId);
     if (!execution) {
+      if (
+        activeRun &&
+        ["created", "running", "waiting_approval", "blocked"].includes(activeRun.status)
+      ) {
+        await updateRunStatus(activeRun, "interrupted", {
+          endedAt: new Date().toISOString(),
+          resultSummary: "Interrupted from TUI",
+        });
+        return true;
+      }
       return false;
     }
 
@@ -383,10 +418,17 @@ async function createControlPlane(input: {
       await saveTaskStatus(input.stores, ensureControlTask(existingTask), "cancelled");
     }
 
+    if (activeRun && activeRun.status !== "interrupted") {
+      await updateRunStatus(activeRun, "interrupted", {
+        endedAt: new Date().toISOString(),
+        resultSummary: "Interrupted from TUI",
+      });
+    }
+
     const thread = await input.stores.threadStore.get(threadId);
-    if (thread && thread.status !== "interrupted") {
+    if (thread && thread.status !== "active") {
       const nextThread = {
-        ...transitionThread(thread, "interrupted"),
+        ...transitionThread(thread, "active"),
         revision: (thread.revision ?? 1) + 1,
       };
       await input.stores.threadStore.save(nextThread);
@@ -432,9 +474,12 @@ async function createControlPlane(input: {
         };
       }
 
+      const currentTask = await input.stores.taskStore.get(taskId);
+
       const outcome = await toolRegistry.execute({
         toolCallId: `${taskId}:apply_patch`,
         threadId,
+        runId: currentTask?.runId,
         taskId,
         toolName: "apply_patch",
         action: "delete_file",
@@ -454,11 +499,14 @@ async function createControlPlane(input: {
         return {
           summary,
           mode: "execute",
+          pendingToolCallId: `${taskId}:apply_patch`,
+          pendingToolName: "apply_patch",
         };
       }
 
       if (outcome.kind === "executed") {
         const summary = `Deleted ${deleteRequest.relativePath}`;
+        
         await input.stores.eventLog.append({
           eventId: `event_${crypto.randomUUID()}`,
           threadId: threadId!,
@@ -470,6 +518,8 @@ async function createControlPlane(input: {
         return {
           summary,
           mode: "execute",
+          lastCompletedToolCallId: `${taskId}:apply_patch`,
+          lastCompletedToolName: "apply_patch",
         };
       }
 
@@ -506,14 +556,23 @@ async function createControlPlane(input: {
   return {
     async startRootTask(threadId: string, inputValue: string | ResumeControl) {
       const thread = await input.stores.threadStore.get(threadId);
-      const isResume = thread?.status === "waiting_approval";
+      if (!thread) {
+        throw new Error(`thread ${threadId} not found`);
+      }
+      const latestRun = await input.stores.runStore.getLatestByThread(threadId);
+      const isResume = latestRun?.status === "waiting_approval" || latestRun?.status === "interrupted";
       
       let task: ControlTask;
+      let run: Run;
       let graphResult:
         | Awaited<ReturnType<typeof rootGraph.invoke>>
         | undefined;
 
       if (isResume) {
+        if (!latestRun) {
+          throw new Error(`no run found for thread ${threadId} to resume`);
+        }
+        run = await updateRunStatus(latestRun, "running");
         const tasks = await input.stores.taskStore.listByThread(threadId);
         const lastTask = tasks[tasks.length - 1];
         if (!lastTask) {
@@ -523,9 +582,22 @@ async function createControlPlane(input: {
         task = await saveTaskStatus(input.stores, task, "running");
       } else {
         const text = typeof inputValue === "string" ? inputValue : inputValue.reason ?? "";
-        task = await taskManager.createRootTask(threadId, text);
+        run = await saveRun(
+          createRun({
+            runId: prefixedUuid("run"),
+            threadId,
+            trigger: "user_input",
+            inputText: text,
+          }),
+        );
+        run = await updateRunStatus(run, "running");
+        task = await taskManager.createRootTask(threadId, text, run.runId);
         task = await saveTaskStatus(input.stores, task, "running");
       }
+      run = await saveRun({
+        ...run,
+        activeTaskId: task.taskId,
+      });
       const controller = new AbortController();
       activeExecutions.set(threadId, { taskId: task.taskId, controller });
 
@@ -587,6 +659,18 @@ async function createControlPlane(input: {
             recommendationReason ??
             (typeof inputValue === "string" ? inputValue : inputValue.reason ?? ""),
           );
+      await updateRunStatus(run, status === "waiting_approval" ? "waiting_approval" : "completed", {
+        activeTaskId: finalTask.taskId,
+        resultSummary: summary,
+        blockingReason:
+          status === "waiting_approval"
+            ? {
+                kind: approvalsForThread.length > 0 ? "waiting_approval" : "human_recovery",
+                message: String(interruptValue?.summary ?? recommendationReason ?? "Execution paused."),
+              }
+            : undefined,
+        endedAt: status === "waiting_approval" ? undefined : new Date().toISOString(),
+      });
 
       return {
         status,
@@ -602,6 +686,10 @@ async function createControlPlane(input: {
       if (!approval) {
         throw new Error(`approval request ${approvalRequestId} not found`);
       }
+      const run = await input.stores.runStore.get(approval.runId);
+      if (!run) {
+        throw new Error(`run ${approval.runId} not found for approval ${approvalRequestId}`);
+      }
       const toolRequest = resolveApprovalToolRequest(approval, input.config.workspaceRoot);
       if (!toolRequest) {
         throw new Error(`approval request ${approvalRequestId} cannot be resumed without a stored tool request`);
@@ -612,16 +700,34 @@ async function createControlPlane(input: {
         ({
           taskId: approval.taskId,
           threadId: approval.threadId,
+          runId: approval.runId,
           summary: approval.summary,
           status: "blocked",
         } satisfies ControlTask);
       const runningTask = await saveTaskStatus(input.stores, ensureControlTask(currentTask), "running");
+      await updateRunStatus(run, "running", {
+        activeTaskId: runningTask.taskId,
+        blockingReason: undefined,
+        endedAt: undefined,
+      });
       const outcome = await toolRegistry.executeApproved(toolRequest);
       await approvals.updateStatus(approvalRequestId, "approved");
       const pendingApprovals = await input.stores.approvalStore.listPendingByThread(approval.threadId);
 
       if (outcome.kind === "executed") {
         const completedTask = await saveTaskStatus(input.stores, runningTask, "completed");
+        await updateRunStatus(run, pendingApprovals.length > 0 ? "waiting_approval" : "completed", {
+          activeTaskId: completedTask.taskId,
+          resultSummary: summarizeApprovedAction(approval.summary, input.config.workspaceRoot, toolRequest.path),
+          blockingReason:
+            pendingApprovals.length > 0
+              ? {
+                  kind: "waiting_approval",
+                  message: "Additional approvals are still pending.",
+                }
+              : undefined,
+          endedAt: pendingApprovals.length > 0 ? undefined : new Date().toISOString(),
+        });
         return {
           status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
           task: completedTask,
@@ -631,6 +737,10 @@ async function createControlPlane(input: {
       }
 
       const failedTask = await saveTaskStatus(input.stores, runningTask, "failed");
+      await updateRunStatus(run, "failed", {
+        activeTaskId: failedTask.taskId,
+        resultSummary: `Unable to complete approved action: ${outcome.reason}`,
+      });
       return {
         status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
         task: failedTask,
@@ -644,6 +754,10 @@ async function createControlPlane(input: {
       if (!approval) {
       throw new Error(`approval request ${approvalRequestId} not found`);
       }
+      const run = await input.stores.runStore.get(approval.runId);
+      if (!run) {
+        throw new Error(`run ${approval.runId} not found for approval ${approvalRequestId}`);
+      }
 
       await approvals.updateStatus(approvalRequestId, "rejected");
       const currentTask =
@@ -651,11 +765,24 @@ async function createControlPlane(input: {
         ({
           taskId: approval.taskId,
           threadId: approval.threadId,
+          runId: approval.runId,
           summary: approval.summary,
           status: "blocked",
         } satisfies ControlTask);
       const cancelledTask = await saveTaskStatus(input.stores, ensureControlTask(currentTask), "cancelled");
       const pendingApprovals = await input.stores.approvalStore.listPendingByThread(approval.threadId);
+      await updateRunStatus(run, pendingApprovals.length > 0 ? "waiting_approval" : "completed", {
+        activeTaskId: cancelledTask.taskId,
+        resultSummary: `Rejected ${approval.summary}`,
+        blockingReason:
+          pendingApprovals.length > 0
+            ? {
+                kind: "waiting_approval",
+                message: "Additional approvals are still pending.",
+              }
+            : undefined,
+        endedAt: pendingApprovals.length > 0 ? undefined : new Date().toISOString(),
+      });
 
       return {
         status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",

@@ -18,13 +18,9 @@ export type Thread = {
 } & DerivedThreadView;
 
 const allowedThreadTransitions: Record<ThreadStatus, readonly ThreadStatus[]> = {
-  idle: ["active"],
-  active: ["waiting_approval", "blocked", "interrupted", "completed", "failed"],
-  waiting_approval: ["active", "blocked", "interrupted", "completed", "failed"],
-  blocked: ["active", "interrupted", "completed", "failed"],
-  interrupted: ["active", "completed", "failed"],
-  completed: ["active"],
-  failed: ["active"],
+  active: ["idle", "archived"],
+  idle: ["active", "archived"],
+  archived: ["active"],
 };
 
 export function createThread(threadId: string, workspaceRoot: string = "", projectId: string = ""): Thread {

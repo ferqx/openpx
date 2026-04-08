@@ -1,3 +1,5 @@
+import type { Run } from "../domain/run";
+import type { Thread } from "../domain/thread";
 import type { ApprovalRequest } from "../domain/approval";
 import type { Task } from "../domain/task";
 import type { DerivedThreadView } from "../control/context/thread-compaction-types";
@@ -5,6 +7,8 @@ import type { DerivedThreadView } from "../control/context/thread-compaction-typ
 export type SessionThreadSummary = {
   threadId: string;
   status: string;
+  activeRunId?: string;
+  activeRunStatus?: Run["status"];
   narrativeSummary?: string;
   pendingApprovalCount?: number;
   blockingReasonKind?: "waiting_approval" | "human_recovery";
@@ -25,7 +29,7 @@ export type ProjectedSessionResult = DerivedThreadView & {
 export async function projectSessionResult(input: {
   thread: {
     threadId: string;
-    status: ProjectedSessionResult["status"];
+    status?: Thread["status"];
     recoveryFacts?: DerivedThreadView["recoveryFacts"];
     narrativeState?: DerivedThreadView["narrativeState"];
     workingSetWindow?: DerivedThreadView["workingSetWindow"];

@@ -1,5 +1,6 @@
 import { describe, expect, test, mock } from "bun:test";
 import type { ThreadNarrativeService } from "../../src/control/context/thread-narrative-service";
+import { createRun, transitionRun } from "../../src/domain/run";
 import { createSessionKernel } from "../../src/kernel/session-kernel";
 import { createThread } from "../../src/domain/thread";
 
@@ -23,6 +24,9 @@ describe("SessionKernel", () => {
           async listByThread() { return []; },
           async close() {},
         },
+        runStore: {
+          async getLatestByThread() { return undefined; },
+        },
         approvalStore: {
           async listPendingByThread() { return []; },
           async get() { return undefined; },
@@ -33,7 +37,7 @@ describe("SessionKernel", () => {
           const text = typeof input === "string" ? input : input.reason ?? "approved";
           return {
             status: "completed",
-            task: { taskId: "task-1", threadId, summary: text, status: "completed" },
+            task: { taskId: "task-1", threadId, runId: "run-1", summary: text, status: "completed" },
             approvals: [],
             summary: text,
           };
@@ -80,6 +84,9 @@ describe("SessionKernel", () => {
           async listByThread() { return []; },
           async close() {},
         },
+        runStore: {
+          async getLatestByThread() { return undefined; },
+        },
         approvalStore: {
           async listPendingByThread() { return []; },
           async get() { return undefined; },
@@ -90,7 +97,7 @@ describe("SessionKernel", () => {
           const text = typeof input === "string" ? input : input.reason ?? "approved";
           return {
             status: "completed",
-            task: { taskId: "task-completed", threadId, summary: "Stable work", status: "completed" },
+            task: { taskId: "task-completed", threadId, runId: "run-completed", summary: "Stable work", status: "completed" },
             approvals: [],
             summary: "Stable work",
           };
@@ -111,5 +118,48 @@ describe("SessionKernel", () => {
     // Wait for async background task to call narrative service
     await new Promise(resolve => setTimeout(resolve, 10));
     expect(narrativeService.processTaskUpdate).toHaveBeenCalled();
+  });
+
+  test("hydrates blocked status from the latest run even when the thread remains active", async () => {
+    const thread = createThread("thread-run-blocked", "/workspace", "project-1");
+    const blockedRun = transitionRun(
+      transitionRun(createRun({ runId: "run-blocked", threadId: thread.threadId, trigger: "approval_resume" }), "running"),
+      "blocked",
+    );
+
+    const kernel = createSessionKernel({
+      stores: {
+        threadStore: {
+          async getLatest() { return thread; },
+          async save() {},
+          async get() { return thread; },
+          async listByScope() { return [thread]; },
+          async close() {},
+        },
+        taskStore: {
+          async save() {},
+          async get() { return undefined; },
+          async listByThread() { return []; },
+          async close() {},
+        },
+        runStore: {
+          async getLatestByThread() { return blockedRun; },
+        },
+        approvalStore: {
+          async listPendingByThread() { return []; },
+          async get() { return undefined; },
+        },
+      },
+      controlPlane: {
+        async startRootTask() { throw new Error("not implemented"); },
+        async approveRequest() { throw new Error("not implemented"); },
+        async rejectRequest() { throw new Error("not implemented"); },
+      },
+      workspaceRoot: "/workspace",
+      projectId: "project-1",
+    });
+
+    const hydrated = await kernel.hydrateSession();
+    expect(hydrated?.status).toBe("blocked");
   });
 });

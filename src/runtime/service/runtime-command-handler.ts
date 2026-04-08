@@ -1,4 +1,5 @@
 import { createAppContext } from "../../app/bootstrap";
+import type { Run } from "../../domain/run";
 import { createThread, type Thread } from "../../domain/thread";
 import type { RuntimeScope } from "./runtime-scope";
 import type { RuntimeCommand } from "./runtime-types";
@@ -31,12 +32,25 @@ function createEmptySessionResult(scope: RuntimeScope): SessionCommandResult {
   };
 }
 
+function canResumeLatestRun(run: Run | undefined): boolean {
+  return run?.status === "blocked" || run?.status === "interrupted";
+}
+
+function canInterruptLatestRun(run: Run | undefined): boolean {
+  return (
+    run?.status === "created" ||
+    run?.status === "running" ||
+    run?.status === "waiting_approval" ||
+    run?.status === "blocked" ||
+    run?.status === "interrupted"
+  );
+}
+
 export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
   return async function handleRuntimeCommand(command: RuntimeCommand): Promise<SessionCommandResult> {
     if (command.kind === "new_thread") {
       const thread = createThread(crypto.randomUUID(), deps.scope.workspaceRoot, deps.scope.projectId);
-      await deps.context.stores.threadStore.save(thread);
-      deps.setActiveThreadId(thread.threadId);
+      await deps.touchThread(thread, "active");
       
       const result = await deps.context.kernel.hydrateSession();
       if (!result) throw new Error("failed to hydrate new thread");
@@ -53,11 +67,14 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
         throw new Error(`thread ${threadId} not found in scope ${scopeKey(deps.scope)}`);
       }
+      const latestRun = await deps.context.stores.runStore.getLatestByThread(thread.threadId);
 
       const nextStatus =
-        command.kind === "continue" && (thread.status === "interrupted" || thread.status === "blocked")
+        command.kind === "switch_thread"
           ? "active"
-          : undefined;
+          : command.kind === "continue" && (canResumeLatestRun(latestRun) || thread.status === "idle")
+            ? "active"
+            : undefined;
       await deps.touchThread(thread, nextStatus);
       
       const result = await deps.context.kernel.hydrateSession();
@@ -75,8 +92,9 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
         throw new Error(`thread ${threadId} not found in scope ${scopeKey(deps.scope)}`);
       }
+      const latestRun = await deps.context.stores.runStore.getLatestByThread(thread.threadId);
 
-       if (!["active", "waiting_approval", "blocked", "interrupted"].includes(thread.status)) {
+      if (!canInterruptLatestRun(latestRun) && thread.status !== "active") {
         const result = await deps.context.kernel.hydrateSession();
         if (!result) {
           throw new Error("failed to hydrate interrupted thread");
@@ -86,7 +104,7 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
 
       const cancelled = await deps.context.controlPlane.cancelThread(thread.threadId, "Interrupted from TUI");
       if (!cancelled) {
-        await deps.touchThread(thread, "interrupted");
+        await deps.touchThread(thread, "active");
       }
       await deps.context.kernel.interrupts.interruptThread(thread.threadId, "Interrupted from TUI");
 

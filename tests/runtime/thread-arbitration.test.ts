@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createAppContext } from "../../src/app/bootstrap";
+import { createRun, transitionRun } from "../../src/domain/run";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -21,7 +22,15 @@ describe("Thread Arbitration", () => {
     const state1 = await kernel.hydrateSession();
     const threadId = state1!.threadId;
     const thread = await context.stores.threadStore.get(threadId);
-    await context.stores.threadStore.save({ ...thread!, status: "blocked" });
+    const run = transitionRun(
+      transitionRun(
+        createRun({ runId: "run-blocked", threadId, trigger: "approval_resume" }),
+        "running",
+      ),
+      "blocked",
+    );
+    await context.stores.runStore.save(run);
+    await context.stores.threadStore.save({ ...thread!, status: "active" });
     
     const rev1 = (await context.stores.threadStore.get(threadId))!.revision;
 
@@ -30,6 +39,7 @@ describe("Thread Arbitration", () => {
     await context.stores.approvalStore.save(createApprovalRequest({
       approvalRequestId: approvalId,
       threadId,
+      runId: run.runId,
       taskId: "task_1",
       toolCallId: "tc_1",
       summary: "test",

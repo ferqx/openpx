@@ -6,13 +6,11 @@ import { threadId as sharedThreadId } from "../../src/shared/ids";
 describe("thread transitions", () => {
   test("allows the declared transition matrix", () => {
     const cases: Array<[string, Parameters<typeof transitionThread>[1]]> = [
-      ["active", "waiting_approval"],
-      ["active", "interrupted"],
-      ["active", "completed"],
-      ["waiting_approval", "active"],
-      ["interrupted", "completed"],
-      ["completed", "active"],
-      ["failed", "active"],
+      ["active", "idle"],
+      ["active", "archived"],
+      ["idle", "active"],
+      ["idle", "archived"],
+      ["archived", "active"],
     ];
 
     for (const [from, to] of cases) {
@@ -32,7 +30,7 @@ describe("thread transitions", () => {
   test("rejects a disallowed transition with a shared domain error", () => {
     const thread = createThread("thread_1");
 
-    expect(() => transitionThread(thread, "idle")).toThrow(DomainError);
-    expect(() => transitionThread(thread, "idle")).toThrow("invalid thread transition from active to idle");
+    expect(() => transitionThread(thread, "completed" as ThreadStatus)).toThrow(DomainError);
+    expect(() => transitionThread(thread, "completed" as ThreadStatus)).toThrow("invalid thread transition from active to completed");
   });
 });

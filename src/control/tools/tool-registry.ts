@@ -32,6 +32,12 @@ function buildDefaultTools(): ToolDefinition[] {
 }
 
 function summarizeRequest(request: ToolExecuteRequest, workspaceRoot?: string): string {
+  if (request.toolName === "exec" && request.command) {
+    const pieces = [request.command, ...(request.commandArgs ?? [])];
+    const rendered = pieces.join(" ").trim();
+    return rendered.length > 0 ? `exec ${rendered}` : "exec";
+  }
+
   let targetPath = request.path;
   if (workspaceRoot && request.path) {
     const relativePath = relative(workspaceRoot, request.path);
@@ -168,8 +174,12 @@ export function createToolRegistry(input: {
         const approvalRequest = await input.approvals.createPending({
           toolCallId: normalizedRequest.toolCallId,
           threadId: normalizedRequest.threadId,
+          runId: normalizedRequest.runId,
           taskId: normalizedRequest.taskId,
-          toolRequest: normalizedRequest,
+          toolRequest: {
+            ...normalizedRequest,
+            runId: normalizedRequest.runId ?? normalizedRequest.taskId,
+          },
           summary: summarizeRequest(normalizedRequest, workspaceRoot),
           risk: decision.risk.key,
         });
@@ -178,6 +188,7 @@ export function createToolRegistry(input: {
           await input.executionLedger.save({
             executionId: `${normalizedRequest.toolCallId}:exec`,
             threadId: normalizedRequest.threadId,
+            runId: normalizedRequest.runId,
             taskId: normalizedRequest.taskId,
             toolCallId: normalizedRequest.toolCallId,
             toolName: normalizedRequest.toolName,
@@ -201,6 +212,7 @@ export function createToolRegistry(input: {
         ledgerEntry = {
           executionId: `${normalizedRequest.toolCallId}:exec`,
           threadId: normalizedRequest.threadId,
+          runId: normalizedRequest.runId,
           taskId: normalizedRequest.taskId,
           toolCallId: normalizedRequest.toolCallId,
           toolName: normalizedRequest.toolName,
@@ -218,7 +230,7 @@ export function createToolRegistry(input: {
           ...normalizedRequest,
           request: normalizedRequest,
         });
-        const duration = Date.now() - startTime;
+        void (Date.now() - startTime);
 
         if (ledgerEntry) {
           await input.executionLedger.save({
@@ -301,6 +313,7 @@ export function createToolRegistry(input: {
         ledgerEntry = {
           executionId: `${normalizedRequest.toolCallId}:exec`,
           threadId: normalizedRequest.threadId,
+          runId: normalizedRequest.runId,
           taskId: normalizedRequest.taskId,
           toolCallId: normalizedRequest.toolCallId,
           toolName: normalizedRequest.toolName,

@@ -51,6 +51,7 @@ describe("Kernel Fidelity Benchmark (Real Model)", () => {
       task: { 
         taskId: "task-0", 
         threadId, 
+        runId: "run-0",
         summary: "Initialize project with px- prefix constraint", 
         status: "completed" 
       } 

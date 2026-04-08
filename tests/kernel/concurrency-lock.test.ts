@@ -23,13 +23,13 @@ describe("Kernel Revision Lock (Concurrency)", () => {
     // Client A projects a task
     const viewA = projector.project(baseView, {
       kind: "task",
-      task: { taskId: "A", threadId, summary: "Task A", status: "completed" }
+      task: { taskId: "A", threadId, runId: "run-A", summary: "Task A", status: "completed" }
     });
     
     // Client B projects a different task
     const viewB = projector.project(baseView, {
       kind: "task",
-      task: { taskId: "B", threadId, summary: "Task B", status: "completed" }
+      task: { taskId: "B", threadId, runId: "run-B", summary: "Task B", status: "completed" }
     });
 
     // Both should now be at revision 2 relative to Rev 1

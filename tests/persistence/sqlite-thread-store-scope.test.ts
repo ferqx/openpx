@@ -17,13 +17,13 @@ describe("SqliteThreadStore Scope", () => {
     await store.close();
   });
 
-  test("persists workspaceRoot, projectId, revision, and blocked status for a thread", async () => {
+  test("persists workspaceRoot, projectId, revision, and idle status for a thread", async () => {
     const thread = {
       ...createThread("thread-1"),
       workspaceRoot: "/path/to/workspace",
       projectId: "project-1",
       revision: 1,
-      status: "blocked" as const,
+      status: "idle" as const,
     };
 
     await store.save(thread);
@@ -33,7 +33,7 @@ describe("SqliteThreadStore Scope", () => {
     expect(reloaded?.workspaceRoot).toBe("/path/to/workspace");
     expect(reloaded?.projectId).toBe("project-1");
     expect(reloaded?.revision).toBe(1);
-    expect(reloaded?.status).toBe("blocked");
+    expect(reloaded?.status).toBe("idle");
   });
 
   test("increments revision on save", async () => {
@@ -46,12 +46,12 @@ describe("SqliteThreadStore Scope", () => {
 
     await store.save(thread);
     
-    const updatedThread = { ...thread, revision: 2, status: "completed" as const };
+    const updatedThread = { ...thread, revision: 2, status: "archived" as const };
     await store.save(updatedThread);
 
     const reloaded = await store.get("thread-1");
     expect(reloaded?.revision).toBe(2);
-    expect(reloaded?.status).toBe("completed");
+    expect(reloaded?.status).toBe("archived");
   });
 
   test("persists thread narrative summary and revision", async () => {
@@ -177,7 +177,7 @@ describe("SqliteThreadStore Scope", () => {
       workspaceRoot: "/legacy/workspace",
       projectId: "legacy-project",
       revision: 4,
-      status: "blocked" as const,
+      status: "idle" as const,
       recoveryFacts: {
         threadId: "legacy-thread",
         revision: 4,

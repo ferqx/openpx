@@ -56,6 +56,7 @@ export type ScreenChromeView = {
   };
   threads?: ThreadSummary[];
   showThreadPanel?: boolean;
+  exitConfirmText?: string;
 };
 
 export type ScreenComposerView = {
@@ -176,11 +177,12 @@ const ScreenFooterRegion = React.memo(function ScreenFooterRegion(input: {
   thinkingLevel?: string;
   workspaceRoot?: string;
   stage?: SessionStage;
+  exitConfirmText?: string;
 }) {
   return (
     <>
       {input.activeUtilityPane !== "settings" ? (
-        <Box key="composer" borderStyle="single" borderTop={true} borderBottom={false} borderLeft={false} borderRight={false} borderColor="gray" paddingTop={1}>
+        <Box key="composer" borderStyle="single" borderTop={true} borderBottom={true} borderLeft={false} borderRight={false} borderColor="gray">
           <Composer
             mode={input.composerMode}
             onSubmit={input.onSubmit}
@@ -197,6 +199,7 @@ const ScreenFooterRegion = React.memo(function ScreenFooterRegion(input: {
         thinkingLevel={input.thinkingLevel}
         workspaceRoot={input.workspaceRoot ?? ""}
         stage={input.stage}
+        exitConfirmText={input.exitConfirmText}
       />
     </>
   );
@@ -222,7 +225,7 @@ export function Screen(input: {
   });
 
   return (
-    <Box flexDirection="column" height="100%" paddingX={1}>
+    <Box flexDirection="column">
       <ScreenThreadRegion
         showThreadPanel={input.chromeView.showThreadPanel}
         threads={input.chromeView.threads}
@@ -231,10 +234,6 @@ export function Screen(input: {
 
       <Box
         key="stream"
-        flexGrow={layout.useAdaptiveWelcomeHeight ? 1 : 0}
-        height={layout.useAdaptiveWelcomeHeight ? undefined : layout.mainHeight}
-        minHeight={layout.useAdaptiveWelcomeHeight ? 6 : undefined}
-        overflow="hidden"
         flexDirection="column"
         justifyContent={input.conversationView.showWelcome ? "flex-start" : "flex-end"}
       >
@@ -247,17 +246,16 @@ export function Screen(input: {
             />
           </Box>
         ) : (
-          <InteractionStream 
-            messages={input.conversationView.messages}
-            tasks={input.conversationView.tasks}
-            approvals={input.conversationView.approvals}
-            modelStatus={input.conversationView.modelStatus}
-            performance={input.conversationView.performance}
-            narrativeSummary={input.conversationView.narrativeSummary}
-            viewportHeight={layout.mainHeight}
-            viewportWidth={stdout?.columns ?? 80}
-            scrollOffset={input.conversationView.streamScrollOffset}
-          />
+            <InteractionStream 
+              messages={input.conversationView.messages}
+              tasks={input.conversationView.tasks}
+              approvals={input.conversationView.approvals}
+              modelStatus={input.conversationView.modelStatus}
+              performance={input.conversationView.performance}
+              narrativeSummary={input.conversationView.narrativeSummary}
+              viewportWidth={stdout?.columns ?? 80}
+              scrollOffset={input.conversationView.streamScrollOffset}
+            />
         )}
       </Box>
 
@@ -301,6 +299,7 @@ export function Screen(input: {
         thinkingLevel={input.chromeView.thinkingLevel}
         workspaceRoot={input.chromeView.workspaceRoot}
         stage={input.chromeView.stage}
+        exitConfirmText={input.chromeView.exitConfirmText}
       />
     </Box>
   );

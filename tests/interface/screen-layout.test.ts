@@ -13,7 +13,6 @@ describe("screen layout", () => {
     ).toEqual({
       hasOverlayPane: false,
       overlayRows: 0,
-      mainHeight: 19,
       useAdaptiveWelcomeHeight: true,
     });
   });
@@ -31,6 +30,5 @@ describe("screen layout", () => {
     expect(layout.hasOverlayPane).toBe(true);
     expect(layout.overlayRows).toBeGreaterThanOrEqual(16);
     expect(layout.useAdaptiveWelcomeHeight).toBe(false);
-    expect(layout.mainHeight).toBeGreaterThanOrEqual(6);
   });
 });

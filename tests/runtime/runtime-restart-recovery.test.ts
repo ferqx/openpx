@@ -42,7 +42,7 @@ describe("Runtime Restart Recovery", () => {
     const recoveredTask = await secondBoot.stores.taskStore.get(task.taskId);
     const recoveredLedger = await secondBoot.stores.executionLedger.get("tc-recovery-1:exec");
 
-    expect(recoveredThread?.status).toBe("blocked");
+    expect(recoveredThread?.status).toBe("active");
     expect(recoveredTask?.status).toBe("blocked");
     expect(recoveredTask?.blockingReason?.kind).toBe("human_recovery");
     expect(recoveredLedger?.status).toBe("unknown_after_crash");

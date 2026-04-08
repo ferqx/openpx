@@ -3,6 +3,7 @@ export { answerViewSchema } from "./protocol/answer-view";
 export { approvalViewSchema } from "./protocol/approval-view";
 export { messageViewSchema } from "./protocol/message-view";
 export { protocolVersionSchema } from "./protocol/protocol-version";
+export { runViewSchema } from "./protocol/run-view";
 export { runtimeCommandSchema } from "./protocol/runtime-command-schema";
 export { runtimeEventEnvelopeSchema, runtimeEventSchema } from "./protocol/runtime-event-schema";
 export { runtimeSnapshotSchema } from "./protocol/runtime-snapshot-schema";
@@ -14,6 +15,7 @@ import { answerViewSchema } from "./protocol/answer-view";
 import { approvalViewSchema } from "./protocol/approval-view";
 import { messageViewSchema } from "./protocol/message-view";
 import { protocolVersionSchema } from "./protocol/protocol-version";
+import { runViewSchema } from "./protocol/run-view";
 import { runtimeCommandSchema } from "./protocol/runtime-command-schema";
 import { runtimeEventEnvelopeSchema, runtimeEventSchema } from "./protocol/runtime-event-schema";
 import { runtimeSnapshotSchema } from "./protocol/runtime-snapshot-schema";
@@ -42,6 +44,7 @@ export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export const runtimeThreadSummarySchema = threadViewSchema;
 
 export const runtimeTaskSummarySchema = taskViewSchema;
+export const runtimeRunSchema = runViewSchema;
 
 export const runtimePendingApprovalSchema = approvalViewSchema;
 

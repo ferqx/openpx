@@ -11,7 +11,7 @@ export class ThreadRegistry {
 
   async resolveActiveThread(scope: ThreadScope): Promise<Thread> {
     const latest = await this.threadStore.getLatest(scope);
-    if (latest && (latest.status === "active" || latest.status === "waiting_approval" || latest.status === "blocked")) {
+    if (latest && latest.status !== "archived") {
       return latest;
     }
 

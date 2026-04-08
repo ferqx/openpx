@@ -4,6 +4,7 @@ import { answerViewSchema } from "../../src/runtime/service/protocol/answer-view
 import { approvalViewSchema } from "../../src/runtime/service/protocol/approval-view";
 import { protocolVersionSchema } from "../../src/runtime/service/protocol/protocol-version";
 import { runtimeEventSchema } from "../../src/runtime/service/protocol/runtime-event-schema";
+import { runViewSchema } from "../../src/runtime/service/protocol/run-view";
 import { runtimeSnapshotSchema } from "../../src/runtime/service/protocol/runtime-snapshot-schema";
 import { taskViewSchema } from "../../src/runtime/service/protocol/task-view";
 import { threadViewSchema } from "../../src/runtime/service/protocol/thread-view";
@@ -42,13 +43,25 @@ describe("runtime protocol schemas", () => {
         projectId: "project-1",
         revision: 1,
         status: "active",
+        activeRunId: "run-1",
       }).status,
     ).toBe("active");
+
+    expect(
+      runViewSchema.parse({
+        runId: "run-1",
+        threadId: "thread-1",
+        status: "running",
+        trigger: "user_input",
+        startedAt: new Date().toISOString(),
+      }).status,
+    ).toBe("running");
 
     expect(
       taskViewSchema.parse({
         taskId: "task-1",
         threadId: "thread-1",
+        runId: "run-1",
         status: "running",
         summary: "Scan project",
       }).status,
@@ -58,6 +71,7 @@ describe("runtime protocol schemas", () => {
       approvalViewSchema.parse({
         approvalRequestId: "approval-1",
         threadId: "thread-1",
+        runId: "run-1",
         taskId: "task-1",
         toolCallId: "tool-1",
         summary: "apply_patch update src/app.ts",
@@ -93,6 +107,7 @@ describe("runtime protocol schemas", () => {
       projectId: "project-1",
       lastEventSeq: 7,
       activeThreadId: "thread-1",
+      activeRunId: "run-1",
       threads: [
         {
           threadId: "thread-1",
@@ -100,12 +115,23 @@ describe("runtime protocol schemas", () => {
           projectId: "project-1",
           revision: 1,
           status: "active",
+          activeRunId: "run-1",
+        },
+      ],
+      runs: [
+        {
+          runId: "run-1",
+          threadId: "thread-1",
+          status: "running",
+          trigger: "user_input",
+          startedAt: new Date().toISOString(),
         },
       ],
       tasks: [
         {
           taskId: "task-1",
           threadId: "thread-1",
+          runId: "run-1",
           status: "running",
           summary: "Scan project",
         },
@@ -125,6 +151,7 @@ describe("runtime protocol schemas", () => {
     });
 
     expect(parsed.workers).toHaveLength(1);
+    expect(parsed.runs).toHaveLength(1);
     expect(parsed.workers[0]?.role).toBe("planner");
   });
 
@@ -135,6 +162,7 @@ describe("runtime protocol schemas", () => {
 
   test("stable protocol schemas do not rely on z.any", () => {
     expect(hasZAny(threadViewSchema)).toBe(false);
+    expect(hasZAny(runViewSchema)).toBe(false);
     expect(hasZAny(taskViewSchema)).toBe(false);
     expect(hasZAny(approvalViewSchema)).toBe(false);
     expect(hasZAny(answerViewSchema)).toBe(false);

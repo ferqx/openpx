@@ -5,6 +5,7 @@ export type ExecutionStatus = "planned" | "started" | "completed" | "failed" | "
 export type ExecutionLedgerEntry = {
   executionId: string;
   threadId: string;
+  runId?: string;
   taskId: string;
   toolCallId: string;
   toolName: string;

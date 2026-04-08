@@ -14,7 +14,7 @@ export type TuiMessage = {
 export type SessionUpdateSource = "hydrate" | "command" | "event";
 
 function toRuntimeSessionStatus(
-  status: ProjectedSessionResult["status"] | RuntimeSessionState["status"] | undefined,
+  status: ProjectedSessionResult["status"] | RuntimeSessionState["status"] | RuntimeSessionState["threads"][number]["status"] | undefined,
 ): RuntimeSessionState["status"] {
   if (status === "waiting_approval") {
     return "waiting_approval";
@@ -49,6 +49,8 @@ export function mergeThreadViewIntoSession(
           projectId: existing?.projectId ?? projectId,
           revision: existing?.revision ?? index + 1,
           status: thread.status as RuntimeSessionState["threads"][number]["status"],
+          activeRunId: thread.activeRunId,
+          activeRunStatus: thread.activeRunStatus,
           narrativeSummary: thread.narrativeSummary,
           pendingApprovalCount: thread.pendingApprovalCount,
           blockingReasonKind: thread.blockingReasonKind,

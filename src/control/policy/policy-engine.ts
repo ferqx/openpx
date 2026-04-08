@@ -7,6 +7,9 @@ export type PolicyRequest = {
   action?: PatchAction;
   path?: string;
   changedFiles?: number;
+  command?: string;
+  commandArgs?: string[];
+  cwd?: string;
 };
 
 export type PolicyDecision =
@@ -33,6 +36,27 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
     const resolvedPath = resolve(path);
     const workspaceRelativePath = relative(workspaceRoot, resolvedPath);
     return workspaceRelativePath === "" || (!workspaceRelativePath.startsWith("..") && !isAbsolute(workspaceRelativePath));
+  }
+
+  function isReadOnlyExec(request: PolicyRequest): boolean {
+    const command = request.command;
+    if (!command) return false;
+    const args = request.commandArgs ?? [];
+
+    if (["pwd", "ls", "find", "rg", "cat", "head", "tail", "wc", "stat"].includes(command)) {
+      return true;
+    }
+
+    if (command === "sed") {
+      return !args.some((arg) => arg === "-i" || arg.startsWith("-i"));
+    }
+
+    if (command === "git") {
+      const subcommand = args[0];
+      return ["status", "diff", "show", "log", "branch", "rev-parse", "ls-files", "grep", "blame"].includes(subcommand ?? "");
+    }
+
+    return false;
   }
 
   return {
@@ -85,6 +109,30 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
         return {
           kind: "deny",
           reason: "reads outside the workspace are denied",
+          risk,
+        };
+      }
+
+      if (request.effect === "exec") {
+        if (request.cwd && !isWithinWorkspace(request.cwd)) {
+          return {
+            kind: "deny",
+            reason: "terminal commands outside the workspace are denied",
+            risk,
+          };
+        }
+
+        if (isReadOnlyExec(request)) {
+          return {
+            kind: "allow",
+            reason: "read-only terminal command",
+            risk,
+          };
+        }
+
+        return {
+          kind: "needs_approval",
+          reason: risk.reason,
           risk,
         };
       }

@@ -3,12 +3,12 @@ import { createThread, transitionThread } from "../../src/domain/thread";
 import { createTask, transitionTask } from "../../src/domain/task";
 
 describe("Thread Lifecycle", () => {
-  test("allows blocked status transitions for threads", () => {
+  test("allows container lifecycle transitions for threads", () => {
     const thread = createThread("thread-1");
-    const blockedThread = transitionThread(thread, "blocked");
-    expect(blockedThread.status).toBe("blocked");
+    const idleThread = transitionThread(thread, "idle");
+    expect(idleThread.status).toBe("idle");
 
-    const activeThread = transitionThread(blockedThread, "active");
+    const activeThread = transitionThread(idleThread, "active");
     expect(activeThread.status).toBe("active");
   });
 

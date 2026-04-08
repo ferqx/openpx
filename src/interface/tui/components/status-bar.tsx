@@ -8,6 +8,7 @@ export interface StatusBarProps {
   thinkingLevel?: string;
   workspaceRoot: string;
   stage?: SessionStage;
+  exitConfirmText?: string;
 }
 
 const THINKING_LABELS: Record<string, string> = {
@@ -50,22 +51,26 @@ function formatStage(stage?: SessionStage): { label: string; color: string } {
   }
 }
 
-export const StatusBar = React.memo(function StatusBar({ modelName, thinkingLevel, workspaceRoot, stage }: StatusBarProps) {
+export const StatusBar = React.memo(function StatusBar({ modelName, thinkingLevel, workspaceRoot, stage, exitConfirmText }: StatusBarProps) {
   const thinking = getThinkingDisplay(thinkingLevel);
   const stageDisplay = formatStage(stage);
 
   return (
-    <Box paddingX={1} justifyContent="space-between">
+    <Box justifyContent="space-between">
       <Box gap={1}>
         <Text color={theme.colors.dim}>{modelName ?? "unknown"}</Text>
         <Text color={theme.colors.dim}>·</Text>
-        <Text color={thinking.color}>mode:{thinking.label}</Text>
+        <Text color={thinking.color}>mode: {thinking.label}</Text>
         <Text color={theme.colors.dim}>·</Text>
-        <Text color={stageDisplay.color}>stage:{stageDisplay.label}</Text>
+        <Text color={stageDisplay.color}>stage: {stageDisplay.label}</Text>
       </Box>
 
       <Box gap={1}>
-        <Text color={theme.colors.dim}>{truncatePath(workspaceRoot)}</Text>
+        {exitConfirmText ? (
+          <Text color="yellow">{exitConfirmText}</Text>
+        ) : (
+          <Text color={theme.colors.dim}>{truncatePath(workspaceRoot)}</Text>
+        )}
       </Box>
     </Box>
   );

@@ -4,7 +4,7 @@ import { createControlTask } from "./task-types";
 import { prefixedUuid } from "../../shared/id-generators";
 
 export type TaskManager = {
-  createRootTask(threadId: string, summary: string): Promise<ControlTask>;
+  createRootTask(threadId: string, summary: string, runId?: string): Promise<ControlTask>;
 };
 
 async function appendTaskCreatedEvent(deps: {
@@ -42,10 +42,11 @@ export function createTaskManager(deps: {
   };
 }): TaskManager {
   return {
-    async createRootTask(threadId: string, summary: string) {
+    async createRootTask(threadId: string, summary: string, runId?: string) {
       const task = createControlTask({
         taskId: prefixedUuid("task"),
         threadId,
+        runId,
         summary,
       });
 

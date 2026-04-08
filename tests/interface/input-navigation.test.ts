@@ -30,7 +30,8 @@ const threads = [
     workspaceRoot: "/tmp/workspace",
     projectId: "project-1",
     revision: 2,
-    status: "completed" as const,
+    status: "idle" as const,
+    activeRunStatus: "completed" as const,
   },
 ];
 

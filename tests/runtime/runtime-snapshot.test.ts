@@ -8,12 +8,13 @@ describe("Runtime snapshot", () => {
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
       },
+      activeRunId: "run-1",
       activeThread: {
         threadId: "thread-1",
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
         revision: 2,
-        status: "completed",
+        status: "active",
       },
       threads: [
         {
@@ -21,11 +22,23 @@ describe("Runtime snapshot", () => {
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
           revision: 2,
-          status: "completed",
+          status: "active",
+          activeRunId: "run-1",
+          activeRunStatus: "completed",
           narrativeSummary: "Completed repo scan and isolated the runtime recovery path.",
           narrativeRevision: 1,
           pendingApprovalCount: 1,
           blockingReasonKind: "human_recovery",
+        },
+      ],
+      runs: [
+        {
+          runId: "run-1",
+          threadId: "thread-1",
+          status: "completed",
+          trigger: "user_input",
+          startedAt: new Date().toISOString(),
+          resultSummary: "Completed repo scan and isolated the runtime recovery path.",
         },
       ],
       tasks: [],
@@ -37,6 +50,9 @@ describe("Runtime snapshot", () => {
     });
 
     expect(snapshot.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
+    expect(snapshot.activeRunId).toBe("run-1");
+    expect(snapshot.runs[0]?.resultSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
+    expect(snapshot.threads[0]?.activeRunId).toBe("run-1");
     expect(snapshot.threads[0]?.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
     expect(snapshot.threads[0]?.pendingApprovalCount).toBe(1);
     expect(snapshot.threads[0]?.blockingReasonKind).toBe("human_recovery");
@@ -49,7 +65,21 @@ describe("Runtime snapshot", () => {
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
       },
+      activeRunId: "run-2",
       threads: [],
+      runs: [
+        {
+          runId: "run-2",
+          threadId: "thread-1",
+          status: "blocked",
+          trigger: "approval_resume",
+          startedAt: new Date().toISOString(),
+          blockingReason: {
+            kind: "human_recovery",
+            message: "Manual recovery required before continuing.",
+          },
+        },
+      ],
       tasks: [],
       pendingApprovals: [],
       workers: [],
@@ -60,7 +90,7 @@ describe("Runtime snapshot", () => {
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
         revision: 2,
-        status: "blocked",
+        status: "active",
         recoveryFacts: {
           threadId: "thread-1",
           revision: 2,
@@ -105,6 +135,8 @@ describe("Runtime snapshot", () => {
     });
 
     expect(snapshot.blockingReason?.kind).toBe("human_recovery");
+    expect(snapshot.activeRunId).toBe("run-2");
+    expect(snapshot.runs[0]?.status).toBe("blocked");
     expect(snapshot.narrativeSummary).toBe("Runtime snapshot migration is paused.");
     expect(snapshot.answers).toEqual([
       {

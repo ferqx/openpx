@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { main } from "../../src/app/main";
 import { App } from "../../src/interface/tui/app";
@@ -73,6 +73,11 @@ describe("TUI App", () => {
 
   async function pressCtrlJ(stdin: { write: (input: string) => void }) {
     stdin.write("\n");
+    await tick();
+  }
+
+  async function pressCtrlC(stdin: { write: (input: string) => void }) {
+    stdin.write("\u0003");
     await tick();
   }
 
@@ -305,14 +310,55 @@ describe("TUI App", () => {
 
     const frame = lastFrame();
 
-    expect(frame).toContain("How can openpx help?");
-    expect(frame).toContain("Ask openpx to plan, debug, or implement work in this");
-    expect(frame).toContain("workspace.");
-    expect(frame).toContain("Plan a refactor for this repo");
-    expect(frame).toContain("Find the bug causing this failure");
+    expect(frame).toContain("OpenPX");
+    expect(frame).toContain("Ask openpx... Press / for commands");
     expect(frame).not.toContain("Fresh launch");
     expect(frame).not.toContain("Quick actions");
     expect(frame).not.toContain("Previous thread summary should stay out of the main stream on launch.");
+  });
+
+  test("shows an exit hint on first ctrl+c and exits on the second press", async () => {
+    const kernel: TuiKernel = {
+      events: {
+        subscribe() {
+          return () => undefined;
+        },
+      },
+      async handleCommand() {
+        return createCompletedSessionResult();
+      },
+    };
+
+    const exitCalls: number[] = [];
+    const exitMock = mock((code?: number) => {
+      exitCalls.push(code ?? 0);
+      throw new Error("process.exit");
+    }) as typeof process.exit;
+    const originalExit = process.exit;
+    process.exit = exitMock;
+
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
+
+    try {
+      await waitFor(
+        () => (lastFrame() ?? "").includes("Ask openpx... Press / for commands"),
+        "expected app shell to render before testing ctrl+c",
+      );
+
+      await pressCtrlC(stdin);
+
+      await waitFor(
+        () => (lastFrame() ?? "").includes("Press Ctrl+C again to exit"),
+        "expected first ctrl+c to show exit confirmation text",
+      );
+      expect(exitCalls).toEqual([]);
+
+      expect(() => stdin.write("\u0003")).toThrow("process.exit");
+      await tick();
+      expect(exitCalls).toEqual([0]);
+    } finally {
+      process.exit = originalExit;
+    }
   });
 
   test("does not replay hydrated summary into a fresh launch after the first new message", async () => {
@@ -441,6 +487,7 @@ describe("TUI App", () => {
             {
               taskId: "task-2",
               threadId: "thread-repeat",
+              runId: "run-repeat-2",
               status: "running",
               summary: "Working on second answer",
             },
@@ -510,7 +557,7 @@ describe("TUI App", () => {
 
     await typeAndSubmit(stdin, "start");
     await waitFor(
-      () => !(lastFrame() ?? "").includes("How can openpx help?"),
+      () => !(lastFrame() ?? "").includes("OpenPX"),
       "expected first submission to leave the welcome shell",
     );
 
@@ -522,6 +569,7 @@ describe("TUI App", () => {
           {
             taskId: "task_running",
             threadId: "thread_1",
+            runId: "run-running",
             status: "running",
             summary: "Generating answer",
           },
@@ -543,6 +591,7 @@ describe("TUI App", () => {
           {
             taskId: "task_running",
             threadId: "thread_1",
+            runId: "run-running",
             status: "completed",
             summary: "Generating answer",
           },
@@ -631,7 +680,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 2,
-              status: "blocked",
+              status: "idle",
+              activeRunStatus: "blocked",
               narrativeSummary: "Manual recovery pending for a risky patch.",
               blockingReasonKind: "human_recovery",
             },
@@ -646,7 +696,7 @@ describe("TUI App", () => {
 
     const { lastFrame, stdin } = render(<App kernel={kernel} />);
     await waitFor(
-      () => (lastFrame() ?? "").includes("How can openpx help?"),
+      () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell before opening sessions pane",
     );
 
@@ -682,7 +732,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 4,
-              status: "completed",
+              status: "active",
+              activeRunStatus: "completed",
               narrativeSummary: "Current thread",
             },
             {
@@ -690,7 +741,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 3,
-              status: "completed",
+              status: "idle",
+              activeRunStatus: "completed",
               narrativeSummary: "Target thread",
             },
           ],
@@ -742,7 +794,8 @@ describe("TUI App", () => {
                 workspaceRoot: "/tmp/workspace",
                 projectId: "project-1",
                 revision: 4,
-                status: "completed",
+                status: "idle",
+                activeRunStatus: "completed",
                 narrativeSummary: "Current thread",
               },
               {
@@ -750,7 +803,8 @@ describe("TUI App", () => {
                 workspaceRoot: "/tmp/workspace",
                 projectId: "project-1",
                 revision: 3,
-                status: "completed",
+                status: "active",
+                activeRunStatus: "completed",
                 narrativeSummary: "Target thread",
               },
             ],
@@ -763,7 +817,7 @@ describe("TUI App", () => {
 
     const { lastFrame, stdin } = render(<App kernel={kernel} />);
     await waitFor(
-      () => (lastFrame() ?? "").includes("How can openpx help?"),
+      () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell before opening sessions pane",
     );
 
@@ -814,7 +868,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 4,
-              status: "completed",
+              status: "active",
+              activeRunStatus: "completed",
               narrativeSummary: "Current thread",
             },
             {
@@ -822,7 +877,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 3,
-              status: "completed",
+              status: "idle",
+              activeRunStatus: "completed",
               narrativeSummary: "Middle thread",
             },
             {
@@ -830,7 +886,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 2,
-              status: "completed",
+              status: "idle",
+              activeRunStatus: "completed",
               narrativeSummary: "Oldest thread",
             },
           ],
@@ -843,7 +900,7 @@ describe("TUI App", () => {
 
     const { lastFrame, stdin } = render(<App kernel={kernel} />);
     await waitFor(
-      () => (lastFrame() ?? "").includes("How can openpx help?"),
+      () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell before opening sessions pane",
     );
 
@@ -905,8 +962,8 @@ describe("TUI App", () => {
 
     const { lastFrame, stdin } = render(<App kernel={kernel} />);
     await waitFor(
-      () => (lastFrame() ?? "").includes("How can openpx help?"),
-      "expected welcome shell before opening history pane",
+      () => (lastFrame() ?? "").includes("OpenPX"),
+      "expected welcome shell before opening sessions pane",
     );
 
     await typeAndSubmit(stdin, "/history");
@@ -927,7 +984,7 @@ describe("TUI App", () => {
       60,
     );
 
-    expect(lastFrame()).toContain("How can openpx help?");
+    expect(lastFrame()).toContain("OpenPX");
   });
 
   test("shows a scroll indicator when the interaction stream overflows the viewport", async () => {
@@ -1110,7 +1167,7 @@ describe("TUI App", () => {
 
     const { lastFrame, stdin } = render(<App kernel={kernel} settingsStore={settingsStore} />);
     await waitFor(
-      () => (lastFrame() ?? "").includes("How can openpx help?"),
+      () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell before opening settings pane",
     );
 
@@ -1122,7 +1179,7 @@ describe("TUI App", () => {
     );
 
     const frame = lastFrame() ?? "";
-    expect(frame.indexOf("How can openpx help?")).toBeLessThan(frame.indexOf("Status   [Config]   Usage"));
+    expect(frame.indexOf("OpenPX")).toBeLessThan(frame.indexOf("Status   [Config]   Usage"));
   });
 
   test("settings pane can switch to project scope and close with escape without interrupting the runtime", async () => {
@@ -1335,6 +1392,7 @@ describe("TUI App", () => {
             {
               taskId: "task_1",
               threadId: "thread_1",
+              runId: "run_1",
               status: "blocked",
               summary: "delete src/old.ts",
               blockingReason: {
@@ -1347,6 +1405,7 @@ describe("TUI App", () => {
             {
               approvalRequestId: "approval_1",
               threadId: "thread_1",
+              runId: "run_1",
               taskId: "task_1",
               toolCallId: "tool_1",
               summary: "apply_patch delete_file src/old.ts",
@@ -1401,6 +1460,7 @@ describe("TUI App", () => {
             {
               taskId: "task_resume",
               threadId: "thread_resume",
+              runId: "run_resume",
               status: "blocked",
               summary: "delete src/resume-me.ts",
               blockingReason: {
@@ -1413,6 +1473,7 @@ describe("TUI App", () => {
             {
               approvalRequestId: "approval_resume",
               threadId: "thread_resume",
+              runId: "run_resume",
               taskId: "task_resume",
               toolCallId: "tool_resume",
               summary: "apply_patch delete_file src/resume-me.ts",
@@ -1432,13 +1493,13 @@ describe("TUI App", () => {
 
     const { lastFrame } = render(<App kernel={kernel} />);
     await waitFor(
-      () => (lastFrame() ?? "").includes("How can openpx help?"),
+      () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell to render before showing hydrated approval state",
     );
 
     const frame = lastFrame();
 
-    expect(frame).toContain("How can openpx help?");
+    expect(frame).toContain("OpenPX");
     expect(frame).not.toContain("Approval required before deleting src/resume-me.ts");
     expect(frame).not.toContain("apply_patch delete_file src/resume-me.ts");
   });
@@ -1472,13 +1533,13 @@ describe("TUI App", () => {
 
     const { lastFrame } = render(<App kernel={kernel} />);
     await waitFor(
-      () => (lastFrame() ?? "").includes("How can openpx help?"),
+      () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell to render before narrative fallback",
     );
 
     const frame = lastFrame();
 
-    expect(frame).toContain("How can openpx help?");
+    expect(frame).toContain("OpenPX");
     expect(frame).not.toContain("Completed repo scan and isolated runtime recovery work.");
   });
 
@@ -1512,7 +1573,8 @@ describe("TUI App", () => {
               workspaceRoot: "/tmp/workspace",
               projectId: "project-1",
               revision: 2,
-              status: "blocked",
+              status: "idle",
+              activeRunStatus: "blocked",
               narrativeSummary: "Manual recovery pending for a risky patch.",
               blockingReasonKind: "human_recovery",
             },
@@ -1530,13 +1592,13 @@ describe("TUI App", () => {
 
     const { lastFrame } = render(<App kernel={kernel} />);
     await waitFor(
-      () => (lastFrame() ?? "").includes("How can openpx help?"),
+      () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell to render before checking panel visibility",
     );
 
     const frame = lastFrame();
 
-    expect(frame).toContain("How can openpx help?");
+    expect(frame).toContain("OpenPX");
     expect(frame).not.toContain("THREADS");
     expect(frame).not.toContain("thread-blocked");
   });
@@ -1563,6 +1625,7 @@ describe("TUI App", () => {
             {
               taskId: "task_recovery",
               threadId: "thread_recovery",
+              runId: "run_recovery",
               status: "blocked",
               summary: "Apply risky patch",
               blockingReason: {
@@ -1584,13 +1647,13 @@ describe("TUI App", () => {
 
     const { lastFrame } = render(<App kernel={kernel} />);
     await waitFor(
-      () => (lastFrame() ?? "").includes("How can openpx help?"),
+      () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell to render before blocked recovery shell",
     );
 
     const frame = lastFrame();
 
-    expect(frame).toContain("How can openpx help?");
+    expect(frame).toContain("OpenPX");
     expect(frame).not.toContain("Manual recovery required for apply_patch");
     expect(frame).not.toMatch(/Input disabled for this thread/i);
   });
@@ -1633,6 +1696,7 @@ describe("TUI App", () => {
           {
             taskId: "task_live_recovery",
             threadId: "thread_live_recovery",
+            runId: "run_live_recovery",
             status: "blocked",
             summary: "Recover risky patch",
             blockingReason: {
@@ -1745,6 +1809,7 @@ describe("TUI App", () => {
         {
           taskId: "task-stage",
           threadId: "thread-executing",
+          runId: "run-stage",
           status: "blocked",
           summary: "Apply shell patch",
           blockingReason: {
@@ -1757,6 +1822,7 @@ describe("TUI App", () => {
         {
           approvalRequestId: "approval-stage",
           threadId: "thread-executing",
+          runId: "run-stage",
           taskId: "task-stage",
           toolCallId: "tool-stage",
           summary: "apply_patch update_file src/interface/tui/app.tsx",

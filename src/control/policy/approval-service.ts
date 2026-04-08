@@ -3,6 +3,7 @@ import { createApprovalRequest, type ApprovalRequest, type ApprovalToolRequest }
 export type CreateApprovalInput = {
   toolCallId: string;
   threadId: string;
+  runId?: string;
   taskId: string;
   toolRequest: ApprovalToolRequest;
   summary: string;
@@ -29,6 +30,7 @@ export function createApprovalService(input?: { idGenerator?: () => string }) {
         approvalRequestId: idGenerator(),
         toolCallId: request.toolCallId,
         threadId: request.threadId,
+        runId: request.runId,
         taskId: request.taskId,
         toolRequest: request.toolRequest,
         summary: request.summary,

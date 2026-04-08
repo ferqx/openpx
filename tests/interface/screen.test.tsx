@@ -31,11 +31,9 @@ describe("Screen", () => {
 
     expect(frame).not.toContain("openpx shell");
     expect(frame).not.toContain("thread 980256af-ce83-4ef3-a34b-83875e4cefe6");
-    expect(frame).toContain("How can openpx help?");
-    expect(frame).toContain("Ask openpx to plan, debug, or implement work in this workspace.");
-    expect(frame).toContain("Plan a refactor for this repo");
+    expect(frame).toContain("OpenPX");
+    expect(frame).toContain("Ask openpx... Press / for commands");
     expect(frame).not.toContain("Quick actions");
-    expect(frame).not.toContain("· Plan a refactor for this repo");
     expect(
       frame.includes("Ask openpx... Press / for commands") || frame.includes("mock-composer"),
     ).toBe(true);

@@ -1,3 +1,5 @@
+import type { Run } from "../domain/run";
+import type { Thread } from "../domain/thread";
 import { createEventBus, type KernelEvent } from "./event-bus";
 import { createInterruptService } from "./interrupt-service";
 import { createThreadService } from "./thread-service";
@@ -47,6 +49,10 @@ export type SessionControlPlaneResult = {
   approvals: ApprovalRequest[];
   summary: string;
   recommendationReason?: string;
+  lastCompletedToolCallId?: string;
+  lastCompletedToolName?: string;
+  pendingToolCallId?: string;
+  pendingToolName?: string;
 };
 
 export type SessionCommandResult = ProjectedSessionResult;
@@ -58,10 +64,33 @@ export type SessionKernel = {
   hydrateSession: () => Promise<SessionCommandResult | undefined>;
 };
 
+function toProjectedExecutionStatus(
+  latestRun: Run | undefined,
+  fallbackStatus: ProjectedSessionResult["status"] | Thread["status"],
+): ProjectedSessionResult["status"] {
+  if (!latestRun) {
+    return fallbackStatus === "archived" ? "completed" : fallbackStatus;
+  }
+
+  switch (latestRun.status) {
+    case "created":
+    case "running":
+      return "active";
+    case "failed":
+    case "interrupted":
+      return "blocked";
+    default:
+      return latestRun.status;
+  }
+}
+
 export function createSessionKernel(deps: {
   stores: {
     threadStore: ThreadStorePort;
     taskStore: TaskStorePort;
+    runStore: {
+      getLatestByThread(threadId: string): Promise<Run | undefined>;
+    };
     approvalStore: {
       listPendingByThread(threadId: string): Promise<ApprovalRequest[]>;
       get(id: string): Promise<ApprovalRequest | undefined>;
@@ -96,9 +125,12 @@ export function createSessionKernel(deps: {
     const threads = await deps.stores.threadStore.listByScope(currentScope);
     return Promise.all(threads.map(async (t) => {
       const approvals = await deps.stores.approvalStore.listPendingByThread(t.threadId);
+      const latestRun = await deps.stores.runStore.getLatestByThread(t.threadId);
       return {
         threadId: t.threadId,
-        status: t.status,
+        status: latestRun?.status ?? t.status,
+        activeRunId: latestRun?.runId,
+        activeRunStatus: latestRun?.status,
         narrativeSummary: t.narrativeState?.threadSummary,
         pendingApprovalCount: approvals.length,
         blockingReasonKind: t.recoveryFacts?.blocking?.kind
@@ -136,10 +168,22 @@ export function createSessionKernel(deps: {
     return createControlTask({
       taskId: task.taskId,
       threadId: task.threadId,
+      runId: task.runId,
       summary: task.summary ?? task.taskId,
       status: task.status,
       blockingReason: task.blockingReason,
     });
+  }
+
+  function hasDurableBlockingState(input: {
+    thread: { recoveryFacts?: DerivedThreadView["recoveryFacts"] };
+    tasks: Task[];
+  }): boolean {
+    if (input.thread.recoveryFacts?.blocking) {
+      return true;
+    }
+
+    return input.tasks.some((task) => task.status === "blocked" && task.blockingReason);
   }
 
   async function finalize(threadId: string, result: SessionControlPlaneResult): Promise<SessionCommandResult> {
@@ -171,11 +215,27 @@ export function createSessionKernel(deps: {
     });
     view = projector.project(view, { kind: "answer", answerId: prefixedUuid("ans"), summary: result.summary });
 
+    // Project ledger state updates
+    if (result.lastCompletedToolCallId) {
+      view = projector.project(view, {
+        kind: "tool_executed",
+        toolCallId: result.lastCompletedToolCallId,
+        toolName: result.lastCompletedToolName ?? "",
+      });
+    }
+    if (result.pendingToolCallId) {
+      view = projector.project(view, {
+        kind: result.status === "waiting_approval" ? "tool_blocked" : "tool_pending",
+        toolCallId: result.pendingToolCallId,
+        toolName: result.pendingToolName ?? "",
+      });
+    }
+
     // Persist the updated view back to the thread
     const nextThread = {
       ...thread,
       ...view,
-      status: result.status,
+      status: "active" as const,
       revision: (view.recoveryFacts?.revision ?? thread.revision ?? 1),
     };
     await deps.stores.threadStore.save(nextThread);
@@ -185,7 +245,7 @@ export function createSessionKernel(deps: {
     const commandResult = await projectSessionResult({
       thread: {
         threadId,
-        status: result.status,
+        status: nextThread.status,
         recoveryFacts: view.recoveryFacts,
         narrativeState: view.narrativeState,
         workingSetWindow: view.workingSetWindow,
@@ -217,14 +277,16 @@ export function createSessionKernel(deps: {
   async function hydrateSession(): Promise<SessionCommandResult | undefined> {
     const thread = await deps.stores.threadStore.getLatest(currentScope);
     if (!thread) return undefined;
+    const latestRun = await deps.stores.runStore.getLatestByThread(thread.threadId);
 
     const threadList = await getThreadSummaries();
     const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
     const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
+    const blockedWithoutRun = !latestRun && hasDurableBlockingState({ thread, tasks });
 
     return projectSessionResult({
       thread,
-      status: thread.status,
+      status: blockedWithoutRun ? "blocked" : toProjectedExecutionStatus(latestRun, thread.status),
       tasks,
       approvals,
       workspaceRoot: deps.workspaceRoot,
@@ -240,21 +302,25 @@ export function createSessionKernel(deps: {
     async handleCommand(command, expectedRevision) {
       if (command.type === "submit_input") {
         const latestThread = await deps.stores.threadStore.getLatest(currentScope);
+        const latestRun = latestThread ? await deps.stores.runStore.getLatestByThread(latestThread.threadId) : undefined;
         const { thread } = await resolveSubmitTargetThread({
           latestThread,
+          latestRun,
           expectedRevision,
           startThread: async () => threadService.startThread(),
           saveThread: async (nextThread) => deps.stores.threadStore.save(nextThread),
           ensureRevision: checkRevision,
         });
 
-        if (thread.status === "blocked") {
+        const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
+        const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
+        const blockedWithoutRun = !latestRun && hasDurableBlockingState({ thread, tasks });
+
+        if (latestRun?.status === "blocked" || blockedWithoutRun) {
           const threadList = await getThreadSummaries();
-          const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
-          const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
           return projectSessionResult({
             thread,
-            status: thread.status,
+            status: "blocked",
             tasks,
             approvals,
             workspaceRoot: deps.workspaceRoot,
@@ -297,11 +363,9 @@ export function createSessionKernel(deps: {
         });
 
         const threadList = await getThreadSummaries();
-        const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
-        const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
         return projectSessionResult({
           thread,
-          status: thread.status,
+          status: toProjectedExecutionStatus(latestRun, thread.status),
           tasks,
           approvals,
           workspaceRoot: deps.workspaceRoot,
@@ -335,9 +399,10 @@ export function createSessionKernel(deps: {
         const threadList = await getThreadSummaries();
         const tasks = await deps.stores.taskStore.listByThread(approvalThread.threadId);
         const approvals = await deps.stores.approvalStore.listPendingByThread(approvalThread.threadId);
+        const latestRun = await deps.stores.runStore.getLatestByThread(approvalThread.threadId);
         return projectSessionResult({
           thread: approvalThread,
-          status: approvalThread.status,
+          status: toProjectedExecutionStatus(latestRun, approvalThread.status),
           tasks,
           approvals,
           workspaceRoot: deps.workspaceRoot,
