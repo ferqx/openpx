@@ -1,6 +1,7 @@
 import type { CheckpointPort } from "../../../persistence/ports/checkpoint-port";
 import type { DerivedThreadView } from "../../../control/context/thread-compaction-types";
 import type { compactThreadView } from "../../../control/context/thread-compaction-policy";
+import type { PlannerResult } from "../../planning/planner-result";
 
 export type RootMode = "plan" | "execute" | "verify" | "done" | "waiting_approval" | "respond";
 
@@ -11,6 +12,7 @@ export type WorkerResult<TMode extends WorkerMode = WorkerMode> = {
   mode: TMode;
   isValid?: boolean;
   feedback?: string;
+  plannerResult?: PlannerResult;
 };
 
 export type WorkerExecutionContext = {
