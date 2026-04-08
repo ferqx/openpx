@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { buildExecutionInput, buildVerifierPrompt } from "../../src/app/worker-inputs";
+import {
+  buildExecutionArtifacts,
+  buildExecutionInput,
+  buildVerifierPrompt,
+} from "../../src/app/worker-inputs";
 
 describe("worker input builders", () => {
   test("prefers the active work package objective for execution", () => {
@@ -71,5 +75,44 @@ describe("worker input builders", () => {
     expect(prompt).toContain("Update startup message copy");
     expect(prompt).toContain("patch:src/app/main.ts");
     expect(prompt).toContain("tests/runtime/intake-normalize.test.ts");
+  });
+
+  test("builds compact artifacts for generic execution results", () => {
+    const artifacts = buildExecutionArtifacts({
+      summary: "Executed request: Update startup message copy",
+      currentWorkPackage: {
+        id: "pkg_startup_message",
+        objective: "Update startup message copy",
+        allowedTools: ["read_file", "apply_patch"],
+        inputRefs: ["thread:goal", "file:src/app/main.ts"],
+        expectedArtifacts: ["patch:src/app/main.ts"],
+      },
+    });
+
+    expect(artifacts).toEqual([
+      {
+        ref: "patch:src/app/main.ts",
+        kind: "patch",
+        summary: "Executed request: Update startup message copy",
+        workPackageId: "pkg_startup_message",
+      },
+    ]);
+  });
+
+  test("builds deterministic delete artifacts from executed paths", () => {
+    const artifacts = buildExecutionArtifacts({
+      summary: "Deleted src/old.ts",
+      currentWorkPackage: {
+        id: "pkg_delete",
+        objective: "Delete old source file",
+        allowedTools: ["apply_patch"],
+        inputRefs: ["thread:goal", "file:src/old.ts"],
+        expectedArtifacts: ["patch:src/old.ts"],
+      },
+      changedPath: "src/old.ts",
+    });
+
+    expect(artifacts[0]?.ref).toBe("patch:src/old.ts");
+    expect(artifacts[0]?.workPackageId).toBe("pkg_delete");
   });
 });

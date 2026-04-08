@@ -30,7 +30,7 @@ import { compactThreadView } from "../control/context/thread-compaction-policy";
 import type { ResumeControl } from "../runtime/graph/root/resume-control";
 import { createRun, transitionRun, type Run } from "../domain/run";
 import { prefixedUuid } from "../shared/id-generators";
-import { buildExecutionInput, buildVerifierPrompt } from "./worker-inputs";
+import { buildExecutionArtifacts, buildExecutionInput, buildVerifierPrompt } from "./worker-inputs";
 
 type AppStores = ReturnType<typeof createStores>;
 
@@ -483,9 +483,14 @@ async function createControlPlane(input: {
       });
       const deleteRequest = parseDeleteRequest(executionInput, input.config.workspaceRoot);
       if (!deleteRequest || !threadId || !taskId) {
+        const summary = `Executed request: ${executionInput}`;
         return {
-          summary: `Executed request: ${executionInput}`,
+          summary,
           mode: "execute",
+          latestArtifacts: buildExecutionArtifacts({
+            summary,
+            currentWorkPackage,
+          }),
         };
       }
 
@@ -533,6 +538,11 @@ async function createControlPlane(input: {
         return {
           summary,
           mode: "execute",
+          latestArtifacts: buildExecutionArtifacts({
+            summary,
+            currentWorkPackage,
+            changedPath: deleteRequest.relativePath,
+          }),
           lastCompletedToolCallId: `${taskId}:apply_patch`,
           lastCompletedToolName: "apply_patch",
         };

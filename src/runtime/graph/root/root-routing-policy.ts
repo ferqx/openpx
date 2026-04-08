@@ -12,11 +12,27 @@ export type RoutingDecision = {
   currentWorkPackageId?: string;
 };
 
+function collectCurrentWorkPackageArtifacts(state: {
+  currentWorkPackageId?: string;
+  artifacts?: ArtifactRecord[];
+  latestArtifacts?: ArtifactRecord[];
+}) {
+  const currentWorkPackageId = state.currentWorkPackageId;
+  if (!currentWorkPackageId) {
+    return [];
+  }
+
+  return [...(state.artifacts ?? []), ...(state.latestArtifacts ?? [])].filter(
+    (artifact) => artifact.workPackageId === currentWorkPackageId,
+  );
+}
+
 export function routeNext(state: {
   workPackages?: WorkPackage[];
   currentWorkPackageId?: string;
   pendingApproval?: PendingApprovalState;
   artifacts?: ArtifactRecord[];
+  latestArtifacts?: ArtifactRecord[];
   verificationReport?: VerificationReport;
 }): RoutingDecision {
   if (state.pendingApproval) {
@@ -45,8 +61,12 @@ export function routeNext(state: {
     };
   }
 
-  const artifacts = state.artifacts ?? [];
-  if (artifacts.length === 0) {
+  const currentArtifacts = collectCurrentWorkPackageArtifacts({
+    currentWorkPackageId,
+    artifacts: state.artifacts,
+    latestArtifacts: state.latestArtifacts,
+  });
+  if (currentArtifacts.length === 0) {
     return {
       route: "executor",
       mode: "execute",

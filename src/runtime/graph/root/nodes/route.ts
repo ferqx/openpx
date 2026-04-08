@@ -10,6 +10,7 @@ export function routeNode(state: {
   currentWorkPackageId?: string;
   pendingApproval?: PendingApprovalState;
   artifacts?: ArtifactRecord[];
+  latestArtifacts?: ArtifactRecord[];
   verificationReport?: VerificationReport;
   verifierPassed?: boolean; 
   verifierFeedback?: string; 
@@ -73,6 +74,7 @@ export function routeNode(state: {
     currentWorkPackageId: state.currentWorkPackageId,
     pendingApproval: state.pendingApproval,
     artifacts: state.artifacts,
+    latestArtifacts: state.latestArtifacts,
     verificationReport: state.verificationReport,
   });
 

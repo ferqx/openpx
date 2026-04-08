@@ -11,6 +11,7 @@ import { createExecutorWorkerGraph } from "../../workers/executor/graph";
 import { createVerifierWorkerGraph } from "../../workers/verifier/graph";
 import type { ResumeControl } from "./resume-control";
 import type { WorkPackage } from "../../planning/work-package";
+import type { ArtifactRecord } from "../../artifacts/artifact-index";
 
 function resolveCurrentWorkPackage(state: {
   workPackages?: WorkPackage[];
@@ -19,6 +20,21 @@ function resolveCurrentWorkPackage(state: {
   const workPackages = state.workPackages ?? [];
   const currentWorkPackageId = state.currentWorkPackageId ?? workPackages[0]?.id;
   return workPackages.find((item) => item.id === currentWorkPackageId);
+}
+
+function resolveArtifactsForCurrentWorkPackage(state: {
+  currentWorkPackageId?: string;
+  artifacts?: ArtifactRecord[];
+  latestArtifacts?: ArtifactRecord[];
+}) {
+  const currentWorkPackageId = state.currentWorkPackageId;
+  if (!currentWorkPackageId) {
+    return [];
+  }
+
+  return [...(state.artifacts ?? []), ...(state.latestArtifacts ?? [])].filter(
+    (artifact) => artifact.workPackageId === currentWorkPackageId,
+  );
 }
 
 export async function createRootGraph(context: RootGraphContext) {
@@ -87,7 +103,7 @@ export async function createRootGraph(context: RootGraphContext) {
         threadId: config.configurable?.thread_id as string | undefined,
         taskId: config.configurable?.task_id as string | undefined,
         currentWorkPackage,
-        artifacts: state.artifacts,
+        artifacts: resolveArtifactsForCurrentWorkPackage(state),
         plannerResult: state.plannerResult,
         configurable: config.configurable,
       });
@@ -98,7 +114,7 @@ export async function createRootGraph(context: RootGraphContext) {
         {
           input: state.input,
           currentWorkPackage,
-          artifacts: state.artifacts,
+          artifacts: resolveArtifactsForCurrentWorkPackage(state),
           plannerResult: state.plannerResult,
         },
         config,

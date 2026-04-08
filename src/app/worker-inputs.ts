@@ -9,6 +9,12 @@ type WorkerInputOptions = {
   plannerResult?: PlannerResult;
 };
 
+type ExecutionArtifactOptions = {
+  summary: string;
+  currentWorkPackage?: WorkPackage;
+  changedPath?: string;
+};
+
 export function buildExecutionInput(options: WorkerInputOptions): string {
   const rawInput = options.input.trim();
   const objective = options.currentWorkPackage?.objective.trim();
@@ -52,4 +58,29 @@ export function buildVerifierPrompt(options: WorkerInputOptions): string {
   }
 
   return sections.join("\n\n");
+}
+
+export function buildExecutionArtifacts(options: ExecutionArtifactOptions): ArtifactRecord[] {
+  const currentWorkPackage = options.currentWorkPackage;
+  if (!currentWorkPackage) {
+    return [];
+  }
+
+  const expectedRef =
+    options.changedPath
+      ? `patch:${options.changedPath}`
+      : currentWorkPackage.expectedArtifacts[0] ?? `summary:${currentWorkPackage.id}`;
+  const [kindCandidate] = expectedRef.split(":", 1);
+  const kind = kindCandidate === "patch" || kindCandidate === "test" || kindCandidate === "log" || kindCandidate === "summary"
+    ? kindCandidate
+    : "summary";
+
+  return [
+    {
+      ref: expectedRef,
+      kind,
+      summary: options.summary,
+      workPackageId: currentWorkPackage.id,
+    },
+  ];
 }

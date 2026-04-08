@@ -81,6 +81,42 @@ describe("root routing policy", () => {
     });
   });
 
+  test("ignores artifacts that belong to previous work packages", () => {
+    expect(
+      routeNext({
+        workPackages: [
+          {
+            id: "pkg_1",
+            objective: "Update startup message",
+            allowedTools: ["apply_patch"],
+            inputRefs: ["thread:goal"],
+            expectedArtifacts: ["patch:src/app/main.ts"],
+          },
+          {
+            id: "pkg_2",
+            objective: "Add tests",
+            allowedTools: ["apply_patch"],
+            inputRefs: ["thread:goal"],
+            expectedArtifacts: ["test:tests/app/main.test.ts"],
+          },
+        ],
+        currentWorkPackageId: "pkg_2",
+        artifacts: [
+          {
+            ref: "patch:src/app/main.ts",
+            kind: "patch",
+            summary: "Updated startup message copy",
+            workPackageId: "pkg_1",
+          },
+        ],
+      }),
+    ).toEqual({
+      route: "executor",
+      mode: "execute",
+      currentWorkPackageId: "pkg_2",
+    });
+  });
+
   test("routes to finish after verification passes", () => {
     expect(
       routeNext({

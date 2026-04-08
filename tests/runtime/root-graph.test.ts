@@ -82,6 +82,66 @@ describe("root graph", () => {
     expect(result.summary).toBe("executed startup message update");
   });
 
+  test("commits executor-produced latest artifacts after a follow-up verification turn", async () => {
+    const checkpointer = new MemorySaver();
+    const graph = await createRootGraph({
+      checkpointer,
+      planner: async () => ({
+        summary: "planned startup message update",
+        mode: "plan",
+        workPackages: [startupMessageWorkPackage],
+      }),
+      executor: async () => ({
+        summary: "executed startup message update",
+        mode: "execute",
+        latestArtifacts: [
+          {
+            ref: "patch:src/app/main.ts",
+            kind: "patch",
+            summary: "Updated startup message copy",
+            workPackageId: "pkg_startup_message",
+          },
+        ],
+      }),
+      verifier: async () => ({ summary: "verified", mode: "verify", isValid: true }),
+    });
+
+    const first = await graph.invoke(
+      {
+        input: "continue",
+        workPackages: [startupMessageWorkPackage],
+        currentWorkPackageId: "pkg_startup_message",
+      },
+      { configurable: { thread_id: "thread_artifact_commit", task_id: "task_artifact_commit" } },
+    );
+
+    expect(first.artifacts).toEqual([]);
+    expect(first.latestArtifacts).toEqual([
+      {
+        ref: "patch:src/app/main.ts",
+        kind: "patch",
+        summary: "Updated startup message copy",
+        workPackageId: "pkg_startup_message",
+      },
+    ]);
+
+    const second = await graph.invoke(
+      { input: "continue" },
+      { configurable: { thread_id: "thread_artifact_commit", task_id: "task_artifact_commit" } },
+    );
+
+    expect(second.artifacts).toEqual([
+      {
+        ref: "patch:src/app/main.ts",
+        kind: "patch",
+        summary: "Updated startup message copy",
+        workPackageId: "pkg_startup_message",
+      },
+    ]);
+    expect(second.latestArtifacts).toEqual([]);
+    expect(second.finalAnswer).toBe("verified");
+  });
+
   test("passes active work package context into executor and verifier", async () => {
     const checkpointer = new MemorySaver();
     let executorInput:
