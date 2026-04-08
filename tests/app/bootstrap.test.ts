@@ -254,11 +254,15 @@ describe("createAppContext", () => {
 
     const result = await ctx.controlPlane.approveRequest("approval-approve");
     const updatedRun = await ctx.stores.runStore.get(run.runId);
+    const ledgerEntries = await ctx.stores.executionLedger.listByThread(thread.threadId);
 
     expect(result.status).toBe("completed");
     expect(updatedRun?.runId).toBe(run.runId);
     expect(updatedRun?.status).toBe("completed");
     expect(updatedRun?.activeTaskId).toBe("task-approve");
+    expect(ledgerEntries).toHaveLength(1);
+    expect(ledgerEntries[0]?.runId).toBe(run.runId);
+    expect(ledgerEntries[0]?.toolName).toBe("apply_patch");
     expect(await Bun.file(filePath).text()).toBe("approved\n");
 
     await fs.rm(workspaceRoot, { recursive: true, force: true });

@@ -11,6 +11,11 @@ export type RunBlockingReason = {
   message: string;
 };
 
+export type RunLedgerState = {
+  lastCompletedToolCallId?: string;
+  pendingToolCallId?: string;
+};
+
 export type Run = {
   runId: ReturnType<typeof sharedRunId>;
   threadId: ReturnType<typeof sharedThreadId>;
@@ -23,6 +28,7 @@ export type Run = {
   resultSummary?: string;
   resumeToken?: string;
   blockingReason?: RunBlockingReason;
+  ledgerState?: RunLedgerState;
 };
 
 const allowedRunTransitions: Record<RunStatus, readonly RunStatus[]> = {
@@ -46,6 +52,7 @@ export function createRun(input: {
   resultSummary?: string;
   resumeToken?: string;
   blockingReason?: RunBlockingReason;
+  ledgerState?: RunLedgerState;
 }): Run {
   return {
     runId: sharedRunId(input.runId),
@@ -59,6 +66,7 @@ export function createRun(input: {
     resultSummary: input.resultSummary,
     resumeToken: input.resumeToken,
     blockingReason: input.blockingReason,
+    ledgerState: input.ledgerState,
   };
 }
 

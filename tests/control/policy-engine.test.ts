@@ -40,4 +40,41 @@ describe("PolicyEngine", () => {
 
     expect(decision.kind).toBe("deny");
   });
+
+  test("allows read-only exec commands within the workspace", () => {
+    const policy = createPolicyEngine({ workspaceRoot: "/repo" });
+    const decision = policy.evaluate({
+      toolName: "exec",
+      effect: "exec",
+      command: "pwd",
+      cwd: "/repo",
+    });
+
+    expect(decision.kind).toBe("allow");
+  });
+
+  test("requires approval for write-like exec commands within the workspace", () => {
+    const policy = createPolicyEngine({ workspaceRoot: "/repo" });
+    const decision = policy.evaluate({
+      toolName: "exec",
+      effect: "exec",
+      command: "touch",
+      commandArgs: ["tmp.txt"],
+      cwd: "/repo",
+    });
+
+    expect(decision.kind).toBe("needs_approval");
+  });
+
+  test("denies exec commands outside the workspace", () => {
+    const policy = createPolicyEngine({ workspaceRoot: "/repo" });
+    const decision = policy.evaluate({
+      toolName: "exec",
+      effect: "exec",
+      command: "pwd",
+      cwd: "/tmp",
+    });
+
+    expect(decision.kind).toBe("deny");
+  });
 });

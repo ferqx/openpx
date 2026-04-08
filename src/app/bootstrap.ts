@@ -474,9 +474,12 @@ async function createControlPlane(input: {
         };
       }
 
+      const currentTask = await input.stores.taskStore.get(taskId);
+
       const outcome = await toolRegistry.execute({
         toolCallId: `${taskId}:apply_patch`,
         threadId,
+        runId: currentTask?.runId,
         taskId,
         toolName: "apply_patch",
         action: "delete_file",
@@ -496,11 +499,14 @@ async function createControlPlane(input: {
         return {
           summary,
           mode: "execute",
+          pendingToolCallId: `${taskId}:apply_patch`,
+          pendingToolName: "apply_patch",
         };
       }
 
       if (outcome.kind === "executed") {
         const summary = `Deleted ${deleteRequest.relativePath}`;
+        
         await input.stores.eventLog.append({
           eventId: `event_${crypto.randomUUID()}`,
           threadId: threadId!,
@@ -512,6 +518,8 @@ async function createControlPlane(input: {
         return {
           summary,
           mode: "execute",
+          lastCompletedToolCallId: `${taskId}:apply_patch`,
+          lastCompletedToolName: "apply_patch",
         };
       }
 

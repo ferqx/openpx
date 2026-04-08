@@ -76,6 +76,7 @@ export function buildRuntimeSnapshot(input: {
       endedAt: run.endedAt,
       resultSummary: run.resultSummary,
       blockingReason: run.blockingReason,
+      ledgerState: run.ledgerState,
       resumeToken: run.resumeToken,
     })),
     tasks: input.tasks.map((task) => ({

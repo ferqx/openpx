@@ -56,13 +56,13 @@ export const StatusBar = React.memo(function StatusBar({ modelName, thinkingLeve
   const stageDisplay = formatStage(stage);
 
   return (
-    <Box paddingX={1} justifyContent="space-between">
+    <Box justifyContent="space-between">
       <Box gap={1}>
         <Text color={theme.colors.dim}>{modelName ?? "unknown"}</Text>
         <Text color={theme.colors.dim}>·</Text>
-        <Text color={thinking.color}>mode:{thinking.label}</Text>
+        <Text color={thinking.color}>mode: {thinking.label}</Text>
         <Text color={theme.colors.dim}>·</Text>
-        <Text color={stageDisplay.color}>stage:{stageDisplay.label}</Text>
+        <Text color={stageDisplay.color}>stage: {stageDisplay.label}</Text>
       </Box>
 
       <Box gap={1}>

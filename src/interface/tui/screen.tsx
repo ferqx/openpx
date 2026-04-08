@@ -182,7 +182,7 @@ const ScreenFooterRegion = React.memo(function ScreenFooterRegion(input: {
   return (
     <>
       {input.activeUtilityPane !== "settings" ? (
-        <Box key="composer" borderStyle="single" borderTop={true} borderBottom={false} borderLeft={false} borderRight={false} borderColor="gray" paddingTop={1}>
+        <Box key="composer" borderStyle="single" borderTop={true} borderBottom={true} borderLeft={false} borderRight={false} borderColor="gray">
           <Composer
             mode={input.composerMode}
             onSubmit={input.onSubmit}

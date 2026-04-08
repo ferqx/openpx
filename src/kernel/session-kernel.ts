@@ -49,6 +49,10 @@ export type SessionControlPlaneResult = {
   approvals: ApprovalRequest[];
   summary: string;
   recommendationReason?: string;
+  lastCompletedToolCallId?: string;
+  lastCompletedToolName?: string;
+  pendingToolCallId?: string;
+  pendingToolName?: string;
 };
 
 export type SessionCommandResult = ProjectedSessionResult;
@@ -210,6 +214,22 @@ export function createSessionKernel(deps: {
       content: result.summary,
     });
     view = projector.project(view, { kind: "answer", answerId: prefixedUuid("ans"), summary: result.summary });
+
+    // Project ledger state updates
+    if (result.lastCompletedToolCallId) {
+      view = projector.project(view, {
+        kind: "tool_executed",
+        toolCallId: result.lastCompletedToolCallId,
+        toolName: result.lastCompletedToolName ?? "",
+      });
+    }
+    if (result.pendingToolCallId) {
+      view = projector.project(view, {
+        kind: result.status === "waiting_approval" ? "tool_blocked" : "tool_pending",
+        toolCallId: result.pendingToolCallId,
+        toolName: result.pendingToolName ?? "",
+      });
+    }
 
     // Persist the updated view back to the thread
     const nextThread = {

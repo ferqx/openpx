@@ -12,6 +12,7 @@ describe("SqliteExecutionLedger", () => {
     const entry = {
       executionId: "exec-1",
       threadId: "thread-1",
+      runId: "run-1",
       taskId: "task-1",
       toolCallId: "tc-1",
       toolName: "apply_patch",
@@ -32,6 +33,7 @@ describe("SqliteExecutionLedger", () => {
     await ledger.save({ ...entry, status: "completed", resultJson: "{}", updatedAt: new Date().toISOString() });
     const completed = await ledger.get("exec-1");
     expect(completed?.status).toBe("completed");
+    expect(completed?.runId).toBe("run-1");
     expect(completed?.resultJson).toBe("{}");
   });
 
@@ -43,6 +45,7 @@ describe("SqliteExecutionLedger", () => {
     await ledger.save({
       executionId: "exec-1",
       threadId: "thread-1",
+      runId: "run-1",
       taskId: "task-1",
       toolCallId: "tc-1",
       toolName: "apply_patch",

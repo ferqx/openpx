@@ -8,6 +8,9 @@ export type RiskRequest = {
   action?: PatchAction;
   path?: string;
   changedFiles?: number;
+  command?: string;
+  commandArgs?: string[];
+  cwd?: string;
 };
 
 export type RiskClassification = {
@@ -31,6 +34,43 @@ export function isSensitivePath(path: string): boolean {
 }
 
 export function classifyRisk(request: RiskRequest): RiskClassification {
+  if (request.effect === "exec") {
+    const command = request.command ?? request.toolName;
+    const args = request.commandArgs ?? [];
+    const readOnlyCommands = ["pwd", "ls", "find", "rg", "cat", "head", "tail", "wc", "stat"];
+    const readOnlyGitCommands = ["status", "diff", "show", "log", "branch", "rev-parse", "ls-files", "grep", "blame"];
+
+    if (readOnlyCommands.includes(command)) {
+      return {
+        key: "exec.read_only",
+        level: "low",
+        reason: "read-only command",
+      };
+    }
+
+    if (command === "sed" && !args.some((arg) => arg === "-i" || arg.startsWith("-i"))) {
+      return {
+        key: "exec.read_only",
+        level: "low",
+        reason: "read-only command",
+      };
+    }
+
+    if (command === "git" && readOnlyGitCommands.includes(args[0] ?? "")) {
+      return {
+        key: "exec.read_only",
+        level: "low",
+        reason: "read-only command",
+      };
+    }
+
+    return {
+      key: `exec.${command}`,
+      level: "medium",
+      reason: `command ${command} requires approval`,
+    };
+  }
+
   if (request.effect === "apply_patch" && request.action === "delete_file") {
     return {
       key: "apply_patch.delete_file",

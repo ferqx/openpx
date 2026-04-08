@@ -199,6 +199,97 @@ describe("ToolRegistry", () => {
       });
     }
   });
+
+  test("executes read-only exec commands and records run-aware ledger entries", async () => {
+    const workspaceRoot = await createWorkspace();
+    const ledgerEntries: unknown[] = [];
+    const policy = createPolicyEngine({ workspaceRoot });
+    const approvals = createApprovalService();
+    const executionLedger = {
+      async save(entry: unknown) { ledgerEntries.push(entry); },
+      async get() { return undefined },
+      async listByThread() { return [] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
+    const registry = createToolRegistry({ policy, approvals, executionLedger });
+
+    const result = await registry.execute({
+      toolCallId: "tool_exec_1",
+      threadId: "thread_1",
+      runId: "run_1",
+      taskId: "task_1",
+      toolName: "exec",
+      args: {
+        command: "pwd",
+        cwd: workspaceRoot,
+      },
+    });
+
+    expect(result.kind).toBe("executed");
+    if (result.kind === "executed") {
+      expect(result.output).toMatchObject({
+        ok: true,
+        command: "pwd",
+        cwd: workspaceRoot,
+        exitCode: 0,
+      });
+    }
+
+    expect(ledgerEntries).toHaveLength(2);
+    expect(ledgerEntries[0]).toMatchObject({
+      runId: "run_1",
+      toolName: "exec",
+      status: "started",
+    });
+    expect(ledgerEntries[1]).toMatchObject({
+      runId: "run_1",
+      toolName: "exec",
+      status: "completed",
+    });
+  });
+
+  test("approval-gates write-like exec commands and stores a planned ledger entry", async () => {
+    const workspaceRoot = await createWorkspace();
+    const policy = createPolicyEngine({ workspaceRoot });
+    const approvals = createApprovalService();
+    const ledgerEntries: unknown[] = [];
+    const executionLedger = {
+      async save(entry: unknown) { ledgerEntries.push(entry); },
+      async get() { return undefined },
+      async listByThread() { return [] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
+    const registry = createToolRegistry({ policy, approvals, executionLedger });
+
+    const result = await registry.execute({
+      toolCallId: "tool_exec_2",
+      threadId: "thread_1",
+      runId: "run_1",
+      taskId: "task_1",
+      toolName: "exec",
+      args: {
+        command: "touch",
+        args: ["created-by-exec.txt"],
+        cwd: workspaceRoot,
+      },
+    });
+
+    expect(result.kind).toBe("blocked");
+    if (result.kind === "blocked") {
+      expect(result.approvalRequest.runId).toBe("run_1");
+      expect(result.approvalRequest.summary).toContain("touch");
+    }
+
+    expect(ledgerEntries).toHaveLength(1);
+    expect(ledgerEntries[0]).toMatchObject({
+      runId: "run_1",
+      toolName: "exec",
+      status: "planned",
+    });
+    expect(await Bun.file(join(workspaceRoot, "created-by-exec.txt")).exists()).toBe(false);
+  });
 });
 
 describe("applyPatchExecutor", () => {

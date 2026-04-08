@@ -15,6 +15,10 @@ export type ThreadProjectionInput =
   | { kind: "tool_result"; content: string }
   | { kind: "verifier_feedback"; content: string }
   | { kind: "message"; content: string }
+  | { kind: "tool_executed"; toolCallId: string; toolName: string }
+  | { kind: "tool_pending"; toolCallId: string; toolName: string }
+  | { kind: "tool_failed"; toolCallId: string; toolName: string }
+  | { kind: "tool_blocked"; toolCallId: string; toolName: string }
   | { kind: "retrieved_memory"; content: string }
   | { 
       kind: "environment"; 
@@ -387,6 +391,44 @@ export function createThreadStateProjector(
             workingSetChanged = true;
             nextView.workingSetWindow!.retrievedMemories.push(input.content);
           }
+          break;
+        }
+
+
+        case "tool_executed": {
+          factChanged = true;
+          nextView.recoveryFacts!.ledgerState = {
+            ...nextView.recoveryFacts!.ledgerState,
+            lastCompletedToolCallId: input.toolCallId,
+            pendingToolCallId: undefined,
+          };
+          break;
+        }
+
+        case "tool_pending": {
+          factChanged = true;
+          nextView.recoveryFacts!.ledgerState = {
+            ...nextView.recoveryFacts!.ledgerState,
+            pendingToolCallId: input.toolCallId,
+          };
+          break;
+        }
+
+        case "tool_failed": {
+          factChanged = true;
+          nextView.recoveryFacts!.ledgerState = {
+            ...nextView.recoveryFacts!.ledgerState,
+            pendingToolCallId: undefined,
+          };
+          break;
+        }
+
+        case "tool_blocked": {
+          factChanged = true;
+          nextView.recoveryFacts!.ledgerState = {
+            ...nextView.recoveryFacts!.ledgerState,
+            pendingToolCallId: input.toolCallId,
+          };
           break;
         }
 

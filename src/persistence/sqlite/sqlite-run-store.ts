@@ -16,6 +16,7 @@ type RunRow = {
   result_summary: string | null;
   resume_token: string | null;
   blocking_reason_json: string | null;
+  ledger_state_json: string | null;
 };
 
 export class SqliteRunStore implements RunStorePort {
@@ -32,8 +33,8 @@ export class SqliteRunStore implements RunStorePort {
   async save(run: Run): Promise<void> {
     this.db.run(
       `INSERT INTO runs (
-        run_id, thread_id, status, trigger, input_text, active_task_id, started_at, ended_at, result_summary, resume_token, blocking_reason_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        run_id, thread_id, status, trigger, input_text, active_task_id, started_at, ended_at, result_summary, resume_token, blocking_reason_json, ledger_state_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(run_id) DO UPDATE SET
         thread_id = excluded.thread_id,
         status = excluded.status,
@@ -44,7 +45,8 @@ export class SqliteRunStore implements RunStorePort {
         ended_at = excluded.ended_at,
         result_summary = excluded.result_summary,
         resume_token = excluded.resume_token,
-        blocking_reason_json = excluded.blocking_reason_json`,
+        blocking_reason_json = excluded.blocking_reason_json,
+        ledger_state_json = excluded.ledger_state_json`,
       [
         run.runId,
         run.threadId,
@@ -57,6 +59,7 @@ export class SqliteRunStore implements RunStorePort {
         run.resultSummary ?? null,
         run.resumeToken ?? null,
         run.blockingReason ? JSON.stringify(run.blockingReason) : null,
+        run.ledgerState ? JSON.stringify(run.ledgerState) : null,
       ],
     );
   }
@@ -64,7 +67,7 @@ export class SqliteRunStore implements RunStorePort {
   async get(runId: string): Promise<Run | undefined> {
     const row = this.db
       .query<RunRow, [string]>(
-        `SELECT run_id, thread_id, status, trigger, input_text, active_task_id, started_at, ended_at, result_summary, resume_token, blocking_reason_json
+        `SELECT run_id, thread_id, status, trigger, input_text, active_task_id, started_at, ended_at, result_summary, resume_token, blocking_reason_json, ledger_state_json
          FROM runs WHERE run_id = ?`,
       )
       .get(runId);
@@ -75,7 +78,7 @@ export class SqliteRunStore implements RunStorePort {
   async listByThread(threadId: string): Promise<Run[]> {
     const rows = this.db
       .query<RunRow, [string]>(
-        `SELECT run_id, thread_id, status, trigger, input_text, active_task_id, started_at, ended_at, result_summary, resume_token, blocking_reason_json
+        `SELECT run_id, thread_id, status, trigger, input_text, active_task_id, started_at, ended_at, result_summary, resume_token, blocking_reason_json, ledger_state_json
          FROM runs WHERE thread_id = ? ORDER BY rowid ASC`,
       )
       .all(threadId);
@@ -86,7 +89,7 @@ export class SqliteRunStore implements RunStorePort {
   async getLatestByThread(threadId: string): Promise<Run | undefined> {
     const row = this.db
       .query<RunRow, [string]>(
-        `SELECT run_id, thread_id, status, trigger, input_text, active_task_id, started_at, ended_at, result_summary, resume_token, blocking_reason_json
+        `SELECT run_id, thread_id, status, trigger, input_text, active_task_id, started_at, ended_at, result_summary, resume_token, blocking_reason_json, ledger_state_json
          FROM runs WHERE thread_id = ? ORDER BY rowid DESC LIMIT 1`,
       )
       .get(threadId);
@@ -114,5 +117,6 @@ function mapRunRow(row: RunRow): Run {
     resultSummary: row.result_summary ?? undefined,
     resumeToken: row.resume_token ?? undefined,
     blockingReason: row.blocking_reason_json ? JSON.parse(row.blocking_reason_json) : undefined,
+    ledgerState: row.ledger_state_json ? JSON.parse(row.ledger_state_json) : undefined,
   };
 }

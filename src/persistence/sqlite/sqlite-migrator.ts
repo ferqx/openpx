@@ -41,6 +41,7 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "runs", "result_summary", "TEXT");
   ensureColumn(db, "runs", "resume_token", "TEXT");
   ensureColumn(db, "runs", "blocking_reason_json", "TEXT");
+  ensureColumn(db, "runs", "ledger_state_json", "TEXT");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS memories (
@@ -127,6 +128,7 @@ export function migrateSqlite(db: Database): void {
     CREATE TABLE IF NOT EXISTS execution_ledger (
       execution_id TEXT PRIMARY KEY,
       thread_id TEXT NOT NULL,
+      run_id TEXT,
       task_id TEXT NOT NULL,
       tool_call_id TEXT NOT NULL,
       tool_name TEXT NOT NULL,
@@ -138,6 +140,7 @@ export function migrateSqlite(db: Database): void {
       updated_at TEXT NOT NULL
     )
   `);
+  ensureColumn(db, "execution_ledger", "run_id", "TEXT");
 
   db.run("CREATE INDEX IF NOT EXISTS idx_tasks_thread_id ON tasks (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_runs_thread_id ON runs (thread_id)");
