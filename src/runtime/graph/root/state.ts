@@ -6,6 +6,7 @@ import type {
   VerificationReport,
 } from "./context";
 import type { ResumeControl } from "./resume-control";
+import type { ArtifactRecord } from "../../artifacts/artifact-index";
 import type { 
   RecoveryFacts, 
   NarrativeState, 
@@ -31,12 +32,17 @@ export const RootState = Annotation.Root({
     reducer: (_, next) => next,
     default: () => false,
   }),
-  artifacts: Annotation<string[]>({
+  artifacts: Annotation<ArtifactRecord[]>({
     reducer: (_, next) => next,
     default: () => [],
   }),
   verificationReport: Annotation<VerificationReport | undefined>(),
   finalAnswer: Annotation<string | undefined>(),
+  latestArtifacts: Annotation<ArtifactRecord[]>({
+    reducer: (_, next) => next,
+    default: () => [],
+  }),
+  executionDetails: Annotation<unknown>(),
   recoveryFacts: Annotation<RecoveryFacts>(),
   narrativeState: Annotation<NarrativeState>(),
   workingSetWindow: Annotation<WorkingSetWindow>(),

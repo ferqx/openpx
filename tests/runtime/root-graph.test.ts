@@ -162,7 +162,7 @@ describe("root graph", () => {
     expect(result.currentWorkPackageId).toBe("pkg_startup_message");
   });
 
-  test("routes to the verifier after artifacts exist for the active work package", async () => {
+  test("commits and finishes after verifier passes for the active work package", async () => {
     const checkpointer = new MemorySaver();
     let verifierCalled = false;
     let plannerCalled = false;
@@ -197,8 +197,10 @@ describe("root graph", () => {
     expect(verifierCalled).toBe(true);
     expect(plannerCalled).toBe(false);
     expect(executorCalled).toBe(false);
-    expect(result.mode).toBe("verify");
+    expect(result.mode).toBe("done");
     expect(result.summary).toBe("verified");
+    expect(result.route).toBe("finish");
+    expect(result.currentWorkPackageId).toBeUndefined();
   });
 
   test("finishes immediately after verification already passed for all work packages", async () => {

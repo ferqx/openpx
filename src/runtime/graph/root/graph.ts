@@ -5,6 +5,7 @@ import { routeNode } from "./nodes/route";
 import { postTurnGuardNode } from "./nodes/post-turn-guard";
 import { approvalGateNode } from "./nodes/approval-gate";
 import { intakeNormalizeNode } from "./nodes/intake-normalize";
+import { phaseCommitNode } from "./nodes/phase-commit";
 import { createPlannerWorkerGraph } from "../../workers/planner/graph";
 import { createExecutorWorkerGraph } from "../../workers/executor/graph";
 import { createVerifierWorkerGraph } from "../../workers/verifier/graph";
@@ -50,6 +51,7 @@ export async function createRootGraph(context: RootGraphContext) {
     })
     .addNode("router", routeNode)
     .addNode("approval-gate", approvalGateNode)
+    .addNode("phase-commit", phaseCommitNode)
     .addNode("planner", async (state, config) => {
       return plannerGraph.invoke({ input: state.input }, config);
     })
@@ -82,6 +84,11 @@ export async function createRootGraph(context: RootGraphContext) {
         summary: result.summary,
         verifierPassed: result.isValid,
         verifierFeedback: result.feedback,
+        verificationReport: {
+          summary: result.summary,
+          passed: result.isValid,
+          feedback: result.feedback,
+        },
       };
     })
     .addNode("post-turn-guard", postTurnGuardNode)
@@ -137,6 +144,12 @@ export async function createRootGraph(context: RootGraphContext) {
     .addConditionalEdges("verifier", (state) => {
       if (state.verifierPassed === false) {
         return "router";
+      }
+      return "phase-commit";
+    })
+    .addConditionalEdges("phase-commit", (state) => {
+      if (state.mode === "execute") {
+        return "executor";
       }
       return END;
     })

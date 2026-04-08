@@ -1,11 +1,12 @@
 import type { CheckpointPort } from "../../../persistence/ports/checkpoint-port";
 import type { DerivedThreadView } from "../../../control/context/thread-compaction-types";
 import type { compactThreadView } from "../../../control/context/thread-compaction-policy";
+import type { ArtifactRecord } from "../../artifacts/artifact-index";
 import type { PlannerResult } from "../../planning/planner-result";
 import type { WorkPackage } from "../../planning/work-package";
 
 export type RootMode = "plan" | "execute" | "verify" | "done" | "waiting_approval" | "respond";
-export type RootRoute = RootMode | "unrouted";
+export type RootRoute = "planner" | "approval" | "executor" | "verifier" | "finish" | "unrouted";
 
 export type PendingApprovalState = {
   summary: string;
@@ -27,6 +28,7 @@ export type WorkerResult<TMode extends WorkerMode = WorkerMode> = {
   feedback?: string;
   plannerResult?: PlannerResult;
   workPackages?: WorkPackage[];
+  latestArtifacts?: ArtifactRecord[];
 };
 
 export type WorkerExecutionContext = {
