@@ -34,6 +34,15 @@ export function routeNode(state: {
     };
   }
 
+  if (state.mode === "waiting_approval") {
+    return {
+      mode: "waiting_approval",
+      route: "approval",
+      recommendationReason: undefined,
+      currentWorkPackageId: state.currentWorkPackageId,
+    };
+  }
+
   if (/\b(completed|done|finished)\b/.test(input)) {
     return { mode: "done", route: "finish", recommendationReason: undefined };
   }

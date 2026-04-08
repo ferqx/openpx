@@ -3,6 +3,7 @@ import type { RootGraphContext } from "./context";
 import { RootState } from "./state";
 import { routeNode } from "./nodes/route";
 import { postTurnGuardNode } from "./nodes/post-turn-guard";
+import { approvalGateNode } from "./nodes/approval-gate";
 import { intakeNormalizeNode } from "./nodes/intake-normalize";
 import { createPlannerWorkerGraph } from "../../workers/planner/graph";
 import { createExecutorWorkerGraph } from "../../workers/executor/graph";
@@ -20,6 +21,7 @@ export async function createRootGraph(context: RootGraphContext) {
       const view = threadId && context.getThreadView ? await context.getThreadView(threadId) : undefined;
       
       let input = state.input;
+      let nextResumeValue: string | ResumeControl | undefined;
       if (typeof state.resumeValue === "string") {
         const resumeText = state.resumeValue.toLowerCase();
         const isConfirmation = /\b(yes|ok|approve|confirm|start|proceed)\b/.test(resumeText);
@@ -27,6 +29,7 @@ export async function createRootGraph(context: RootGraphContext) {
           input = state.resumeValue;
         }
       } else if (state.resumeValue) {
+        nextResumeValue = state.resumeValue;
         const resumeControl = state.resumeValue as ResumeControl;
         if (resumeControl.kind === "approval_resolution" && resumeControl.decision === "rejected" && resumeControl.reason) {
           input = resumeControl.reason;
@@ -37,7 +40,7 @@ export async function createRootGraph(context: RootGraphContext) {
 
       return {
         input: normalizedInput.goal,
-        resumeValue: undefined, // Clear after use
+        resumeValue: nextResumeValue,
         ...(view ? {
           recoveryFacts: view.recoveryFacts,
           narrativeState: view.narrativeState,
@@ -46,6 +49,7 @@ export async function createRootGraph(context: RootGraphContext) {
       };
     })
     .addNode("router", routeNode)
+    .addNode("approval-gate", approvalGateNode)
     .addNode("planner", async (state, config) => {
       return plannerGraph.invoke({ input: state.input }, config);
     })
@@ -111,7 +115,7 @@ export async function createRootGraph(context: RootGraphContext) {
         case "verify":
           return "verifier";
         case "waiting_approval":
-          return "post-turn-guard";
+          return "approval-gate";
         case "done":
           return END;
         default:
@@ -120,6 +124,16 @@ export async function createRootGraph(context: RootGraphContext) {
     })
     .addEdge("planner", END)
     .addEdge("responder", END)
+    .addConditionalEdges("approval-gate", (state) => {
+      switch (state.mode) {
+        case "execute":
+          return "executor";
+        case "plan":
+          return "planner";
+        default:
+          return END;
+      }
+    })
     .addConditionalEdges("verifier", (state) => {
       if (state.verifierPassed === false) {
         return "router";

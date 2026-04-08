@@ -20,10 +20,27 @@ async function createWorkspace() {
   return dir;
 }
 
+async function waitFor<T>(load: () => Promise<T>, predicate: (value: T) => boolean, timeoutMs = 500): Promise<T> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const value = await load();
+    if (predicate(value)) {
+      return value;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  return load();
+}
+
 function createTestModelGateway() {
   return {
     async plan(input: { prompt: string }) {
       return { summary: `planned: ${input.prompt}` };
+    },
+    async execute() {
+      return { kind: "no_tool" as const, summary: "executed" };
     },
     async verify() {
       return { summary: "verified", isValid: true };
@@ -43,10 +60,15 @@ function createTestModelGateway() {
 describe("root graph interrupt/resume", () => {
   test("interrupts on high-risk recommendation and resumes with explicit approval control", async () => {
     const checkpointer = new MemorySaver();
+    let executorCalled = false;
+
     const graph = await createRootGraph({
       checkpointer,
       planner: async () => ({ summary: "planned", mode: "plan" }),
-      executor: async () => ({ summary: "executed", mode: "execute" }),
+      executor: async () => {
+        executorCalled = true;
+        return { summary: "executed", mode: "execute" };
+      },
       verifier: async () => ({ summary: "verified", mode: "verify" }),
     });
 
@@ -61,7 +83,7 @@ describe("root graph interrupt/resume", () => {
     }
 
     expect(interrupted[INTERRUPT][0]?.value).toEqual({
-      kind: "post-turn-review",
+      kind: "approval",
       mode: "waiting_approval",
       summary: "",
     });
@@ -72,8 +94,9 @@ describe("root graph interrupt/resume", () => {
     );
 
     expect(isInterrupted(resumed)).toBe(false);
-    expect(resumed.mode).toBe("waiting_approval");
-    expect(resumed.resumeValue).toEqual({ kind: "approval_resolution", decision: "approved" });
+    expect(executorCalled).toBe(true);
+    expect(resumed.mode).toBe("done");
+    expect(resumed.summary).toBe("executed");
   });
 
   test("hydrates legacy pending approvals into the kernel session view", async () => {
@@ -183,9 +206,10 @@ describe("root graph interrupt/resume", () => {
 
     expect(immediate.threadId).toBe("thread_legacy");
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    const hydrated = await ctx.kernel.hydrateSession();
+    const hydrated = await waitFor(
+      () => ctx.kernel.hydrateSession(),
+      (value) => (value?.approvals?.length ?? 0) === 0 && value?.tasks?.[0]?.status === "completed",
+    );
     expect(hydrated?.approvals).toHaveLength(0);
     expect(hydrated?.tasks?.[0]?.status).toBe("completed");
     expect(await Bun.file(targetPath).exists()).toBe(false);
