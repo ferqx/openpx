@@ -1,6 +1,8 @@
 import type { ArtifactRecord } from "../runtime/artifacts/artifact-index";
 import type { PlannerResult } from "../runtime/planning/planner-result";
 import type { WorkPackage } from "../runtime/planning/work-package";
+import type { ToolExecuteRequest } from "../control/tools/tool-types";
+import { isAbsolute, relative } from "node:path";
 
 type WorkerInputOptions = {
   input: string;
@@ -80,6 +82,35 @@ export function buildExecutionArtifacts(options: ExecutionArtifactOptions): Arti
       ref: expectedRef,
       kind,
       summary: options.summary,
+      workPackageId: currentWorkPackage.id,
+    },
+  ];
+}
+
+export function buildApprovedExecutionArtifacts(input: {
+  workspaceRoot: string;
+  toolRequest: ToolExecuteRequest;
+  summary: string;
+  currentWorkPackage?: WorkPackage;
+}): ArtifactRecord[] {
+  const currentWorkPackage = input.currentWorkPackage;
+  if (!currentWorkPackage) {
+    return [];
+  }
+
+  const requestPath = input.toolRequest.path;
+  const relativePath = requestPath && isAbsolute(requestPath)
+    ? relative(input.workspaceRoot, requestPath)
+    : requestPath;
+  const ref = relativePath && !relativePath.startsWith("..")
+    ? `patch:${relativePath}`
+    : currentWorkPackage.expectedArtifacts[0] ?? `summary:${currentWorkPackage.id}`;
+
+  return [
+    {
+      ref,
+      kind: "patch",
+      summary: input.summary,
       workPackageId: currentWorkPackage.id,
     },
   ];

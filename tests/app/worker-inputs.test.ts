@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildApprovedExecutionArtifacts,
   buildExecutionArtifacts,
   buildExecutionInput,
   buildVerifierPrompt,
@@ -114,5 +115,38 @@ describe("worker input builders", () => {
 
     expect(artifacts[0]?.ref).toBe("patch:src/old.ts");
     expect(artifacts[0]?.workPackageId).toBe("pkg_delete");
+  });
+
+  test("builds artifacts for approved tool requests with workspace-relative refs", () => {
+    const artifacts = buildApprovedExecutionArtifacts({
+      workspaceRoot: "/tmp/openpx-workspace",
+      toolRequest: {
+        toolCallId: "tool-approve",
+        threadId: "thread-approve",
+        taskId: "task-approve",
+        toolName: "apply_patch",
+        args: { content: "approved\n" },
+        action: "create_file",
+        path: "/tmp/openpx-workspace/approved.txt",
+        changedFiles: 1,
+      },
+      summary: "apply_patch create_file approved.txt",
+      currentWorkPackage: {
+        id: "pkg_approve",
+        objective: "Create approved file",
+        allowedTools: ["apply_patch"],
+        inputRefs: ["thread:goal"],
+        expectedArtifacts: ["patch:approved.txt"],
+      },
+    });
+
+    expect(artifacts).toEqual([
+      {
+        ref: "patch:approved.txt",
+        kind: "patch",
+        summary: "apply_patch create_file approved.txt",
+        workPackageId: "pkg_approve",
+      },
+    ]);
   });
 });

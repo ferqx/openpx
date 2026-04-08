@@ -187,6 +187,7 @@ describe("createAppContext", () => {
     expect(updatedRun?.runId).toBe(run.runId);
     expect(updatedRun?.status).toBe("completed");
     expect(updatedRun?.activeTaskId).toBe("task-approve");
+    expect(result.summary).toBe("apply_patch create_file approved.txt");
     expect(ledgerEntries).toHaveLength(1);
     expect(ledgerEntries[0]?.runId).toBe(run.runId);
     expect(ledgerEntries[0]?.toolName).toBe("apply_patch");
