@@ -1,5 +1,13 @@
 # Agent OS Reset Batch 1 Execution Brief
 
+Date: 2026-04-06
+Status: Working
+Related milestone: M1
+Roadmap entrypoint: `ROADMAP.md`
+Active design:
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this batch task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Execute the first implementation batch of the Agent OS reset by locking the reset baseline, stabilizing runtime protocol schemas, and refactoring the kernel into separated command, background, and projection responsibilities.

@@ -1,5 +1,16 @@
 # Screen Layout And Stream Isolation Implementation Plan
 
+Date: 2026-04-06
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This plan is historical shell-boundary work and should not override the reset-era runtime-first priorities.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Refactor the TUI screen layout and render-state boundaries so scrollable panes remain correct while streaming updates stop forcing unrelated list regions to re-render.

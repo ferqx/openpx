@@ -1,5 +1,16 @@
 # 规格说明书：TUI v1 Shell 设计
 
+Date: 2026-04-06
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This shell-focused design is preserved for historical reference, but it is not the active implementation baseline after the reset.
+
 ## 1. 背景
 
 agent os 内核、runtime 协议和基础 TUI 骨架已经趋于稳定，当前工作重点从“把系统跑起来”转向“把 shell 做成可长期使用的产品界面”。

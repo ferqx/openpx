@@ -425,4 +425,110 @@ describe("root graph", () => {
     expect(result.mode).toBe("done");
     expect(result.route).toBe("finish");
   });
+
+  test("consumes approved approval resume exactly once before moving to the next work package", async () => {
+    const checkpointer = new MemorySaver();
+    const executedApprovedRequestIds: string[] = [];
+    const genericExecutions: string[] = [];
+    const workPackages = [
+      {
+        id: "pkg_delete",
+        objective: "delete approved.txt",
+        allowedTools: ["apply_patch"],
+        inputRefs: ["thread:goal", "file:approved.txt"],
+        expectedArtifacts: ["patch:approved.txt"],
+      },
+      {
+        id: "pkg_followup",
+        objective: "summarize follow-up work",
+        allowedTools: ["read_file"],
+        inputRefs: ["thread:goal"],
+        expectedArtifacts: ["summary:pkg_followup"],
+      },
+    ];
+
+    const graph = await createRootGraph({
+      checkpointer,
+      planner: async () => ({
+        summary: "planned multi-step work",
+        mode: "plan",
+        workPackages,
+      }),
+      executor: async (input) => {
+        const resumedApprovalRequestId =
+          typeof input.configurable?.approval_request_id === "string"
+          && input.configurable.approval_request_id !== input.approvedApprovalRequestId
+            ? input.configurable.approval_request_id
+            : undefined;
+
+        if (resumedApprovalRequestId) {
+          executedApprovedRequestIds.push(resumedApprovalRequestId);
+          return {
+            summary: "Deleted approved.txt",
+            mode: "execute",
+            approvedApprovalRequestId: resumedApprovalRequestId,
+            latestArtifacts: [
+              {
+                ref: "patch:approved.txt",
+                kind: "patch",
+                summary: "Deleted approved.txt",
+                workPackageId: "pkg_delete",
+              },
+            ],
+          };
+        }
+
+        genericExecutions.push(input.currentWorkPackage?.id ?? "unknown");
+        return {
+          summary: `Executed ${input.currentWorkPackage?.id}`,
+          mode: "execute",
+          approvedApprovalRequestId: input.approvedApprovalRequestId,
+          latestArtifacts: [
+            {
+              ref: input.currentWorkPackage?.expectedArtifacts[0] ?? "summary:unknown",
+              kind: "summary",
+              summary: `Executed ${input.currentWorkPackage?.id}`,
+              workPackageId: input.currentWorkPackage?.id ?? "unknown",
+            },
+          ],
+        };
+      },
+      verifier: async (input) => ({
+        summary: `verified ${input.currentWorkPackage?.id}`,
+        mode: "verify",
+        isValid: true,
+      }),
+    });
+
+    const resumed = await graph.invoke(
+      {
+        input: "continue",
+        workPackages,
+        currentWorkPackageId: "pkg_delete",
+        approvedApprovalRequestId: undefined,
+      },
+      {
+        configurable: {
+          thread_id: "thread_approved_once",
+          task_id: "task_approved_once",
+          approval_request_id: "approval-once",
+        },
+      },
+    );
+    const followUp = await graph.invoke(
+      { input: "verify" },
+      {
+        configurable: {
+          thread_id: "thread_approved_once",
+          task_id: "task_approved_once",
+          approval_request_id: "approval-once",
+        },
+      },
+    );
+
+    expect(executedApprovedRequestIds).toEqual(["approval-once"]);
+    expect(genericExecutions).toEqual(["pkg_followup"]);
+    expect(resumed.latestArtifacts?.[0]?.workPackageId).toBe("pkg_delete");
+    expect(followUp.latestArtifacts?.[0]?.workPackageId).toBe("pkg_followup");
+  });
 });

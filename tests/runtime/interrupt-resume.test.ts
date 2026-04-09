@@ -20,6 +20,10 @@ async function createWorkspace() {
   return dir;
 }
 
+async function closeAppContext(ctx: Awaited<ReturnType<typeof createAppContext>>) {
+  await ctx.close();
+}
+
 async function waitFor<T>(load: () => Promise<T>, predicate: (value: T) => boolean, timeoutMs = 500): Promise<T> {
   const startedAt = Date.now();
 
@@ -89,7 +93,7 @@ describe("root graph interrupt/resume", () => {
     });
 
     const resumed = await graph.invoke(
-      new Command({ resume: { kind: "approval_resolution", decision: "approved" } }),
+      new Command({ resume: { kind: "approval_resolution", decision: "approved", approvalRequestId: "approval_interrupt" } }),
       { configurable: { thread_id: "thread_interrupt", task_id: "task_interrupt" } },
     );
 
@@ -151,6 +155,8 @@ describe("root graph interrupt/resume", () => {
     expect(hydrated?.tasks?.[0]?.status).toBe("blocked");
     expect(hydrated?.approvals?.[0]?.approvalRequestId).toBe("approval_legacy");
     expect(await Bun.file(targetPath).exists()).toBe(true);
+
+    await closeAppContext(ctx);
   });
 
   test("approves legacy pending delete requests without natural-language resume text", async () => {
@@ -213,6 +219,8 @@ describe("root graph interrupt/resume", () => {
     expect(hydrated?.approvals).toHaveLength(0);
     expect(hydrated?.tasks?.[0]?.status).toBe("completed");
     expect(await Bun.file(targetPath).exists()).toBe(false);
+
+    await closeAppContext(ctx);
   });
 
   test("rejects legacy pending delete requests without requiring checkpoint-backed resume", async () => {
@@ -275,5 +283,7 @@ describe("root graph interrupt/resume", () => {
     expect(hydrated?.approvals).toHaveLength(0);
     expect(hydrated?.tasks?.[0]?.status).toBe("cancelled");
     expect(await Bun.file(targetPath).exists()).toBe(true);
+
+    await closeAppContext(ctx);
   });
 });

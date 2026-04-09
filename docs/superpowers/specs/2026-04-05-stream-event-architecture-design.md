@@ -1,5 +1,16 @@
 # Stream Event Architecture Design
 
+Date: 2026-04-05
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This document is preserved as pre-reset event-layer exploration, not as the current protocol authority.
+
 ## Overview
 
 Add phase-level streaming event support to the openpx Agent OS kernel. The kernel emits structured stream events during LangGraph execution, enabling UI layers (CLI TUI, Web, App) to render agent progress progressively. CLI shows phase-level status, Web/App can implement rich progressive rendering.

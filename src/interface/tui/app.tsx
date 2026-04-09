@@ -575,33 +575,54 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
       const start = Date.now();
       updateConversationState((current) => ({
         ...current,
-        metricsStart: { thinking: start },
+        metricsStart: current.metricsStart.thinking
+          ? current.metricsStart
+          : { thinking: start },
         performance: { waitMs: 0, genMs: 0 },
       }));
       interval = setInterval(() => {
-        updateConversationState((current) => ({
-          ...current,
-          performance: { ...current.performance, waitMs: Date.now() - start },
-        }));
+        updateConversationState((current) => {
+          const thinkingStart = current.metricsStart.thinking ?? start;
+          return {
+            ...current,
+            performance: { ...current.performance, waitMs: Date.now() - thinkingStart },
+          };
+        });
       }, 100);
     } else if (conversationState.modelStatus === "responding") {
       const start = Date.now();
-      const waitTime = conversationState.metricsStart.thinking ? start - conversationState.metricsStart.thinking : 0;
+      const thinkingStart = conversationStateRef.current.metricsStart.thinking;
+      const waitTime = thinkingStart ? start - thinkingStart : 0;
       updateConversationState((current) => ({
         ...current,
-        metricsStart: { ...current.metricsStart, responding: start },
+        metricsStart: current.metricsStart.responding
+          ? current.metricsStart
+          : { ...current.metricsStart, responding: start },
         performance: { ...current.performance, waitMs: waitTime, genMs: 0 },
       }));
       interval = setInterval(() => {
-        updateConversationState((current) => ({
-          ...current,
-          performance: { ...current.performance, genMs: Date.now() - start },
-        }));
+        updateConversationState((current) => {
+          const respondingStart = current.metricsStart.responding ?? start;
+          return {
+            ...current,
+            performance: { ...current.performance, genMs: Date.now() - respondingStart },
+          };
+        });
       }, 100);
+    } else {
+      updateConversationState((current) => {
+        if (current.metricsStart.thinking === undefined && current.metricsStart.responding === undefined) {
+          return current;
+        }
+        return {
+          ...current,
+          metricsStart: {},
+        };
+      });
     }
 
     return () => { if (interval) clearInterval(interval); };
-  }, [conversationState.metricsStart.thinking, conversationState.modelStatus]);
+  }, [conversationState.modelStatus]);
 
   // 清理退出确认超时
   useEffect(() => {

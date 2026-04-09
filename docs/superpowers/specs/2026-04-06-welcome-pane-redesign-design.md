@@ -1,7 +1,15 @@
 # Welcome Pane Redesign
 
 Date: 2026-04-06
-Status: Draft for review
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This design is preserved as later-stage shell/UI reference rather than an active implementation driver.
 
 ## Goal
 

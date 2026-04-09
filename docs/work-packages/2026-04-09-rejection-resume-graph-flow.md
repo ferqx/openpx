@@ -1,7 +1,7 @@
 # Rejection Resume Graph Flow Implementation Plan
 
 Date: 2026-04-09
-Status: Working
+Status: Completed
 Related milestone: M1
 Roadmap entrypoint: `ROADMAP.md`
 Active design:
@@ -69,7 +69,7 @@ Active design:
   Run: `bun run typecheck`
   Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   Stage the changed files and commit with a message scoped to rejection resume graph flow.
 
 - [ ] **Step 4: Push and open PR**

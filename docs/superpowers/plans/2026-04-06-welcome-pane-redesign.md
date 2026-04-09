@@ -1,5 +1,16 @@
 # Welcome Pane Redesign Implementation Plan
 
+Date: 2026-04-06
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This document is preserved as a later-stage shell exploration, not a current implementation priority.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild the TUI welcome pane into a Claude-like minimal first-run screen with centered headline, muted supporting copy, and lightweight suggestion prompts.

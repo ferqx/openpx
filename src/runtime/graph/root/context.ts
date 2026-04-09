@@ -29,6 +29,11 @@ export type WorkerResult<TMode extends WorkerMode = WorkerMode> = {
   plannerResult?: PlannerResult;
   workPackages?: WorkPackage[];
   latestArtifacts?: ArtifactRecord[];
+  approvedApprovalRequestId?: string;
+  lastCompletedToolCallId?: string;
+  lastCompletedToolName?: string;
+  pendingToolCallId?: string;
+  pendingToolName?: string;
 };
 
 export type WorkerExecutionContext = {
@@ -38,6 +43,7 @@ export type WorkerExecutionContext = {
   currentWorkPackage?: WorkPackage;
   artifacts?: ArtifactRecord[];
   plannerResult?: PlannerResult;
+  approvedApprovalRequestId?: string;
   configurable?: Record<string, unknown>;
 };
 

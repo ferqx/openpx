@@ -1,5 +1,16 @@
 # TUI Optimization Design
 
+Date: 2026-04-05
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This document remains useful as historical shell-direction context, but it is no longer an active architecture driver.
+
 ## Overview
 
 Four targeted improvements to the openpx TUI: new session per launch, thinking process display, status bar redesign, and markdown rendering.
