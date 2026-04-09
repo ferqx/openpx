@@ -42,18 +42,29 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
     const command = request.command;
     if (!command) return false;
     const args = request.commandArgs ?? [];
+    const normalizedCommand = command.toLowerCase();
 
-    if (["pwd", "ls", "find", "rg", "cat", "head", "tail", "wc", "stat"].includes(command)) {
+    if (["pwd", "ls", "find", "rg", "cat", "head", "tail", "wc", "stat"].includes(normalizedCommand)) {
       return true;
     }
 
-    if (command === "sed") {
+    if (normalizedCommand === "sed") {
       return !args.some((arg) => arg === "-i" || arg.startsWith("-i"));
     }
 
-    if (command === "git") {
+    if (normalizedCommand === "git") {
       const subcommand = args[0];
       return ["status", "diff", "show", "log", "branch", "rev-parse", "ls-files", "grep", "blame"].includes(subcommand ?? "");
+    }
+
+    if (normalizedCommand === "powershell" || normalizedCommand === "powershell.exe" || normalizedCommand === "pwsh") {
+      const commandFlagIndex = args.findIndex((arg) => arg.toLowerCase() === "-command");
+      if (commandFlagIndex === -1) {
+        return false;
+      }
+
+      const script = args[commandFlagIndex + 1]?.trim().toLowerCase();
+      return script === "get-location" || script === "get-childitem";
     }
 
     return false;

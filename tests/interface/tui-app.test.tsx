@@ -989,7 +989,7 @@ describe("TUI App", () => {
 
   test("shows a scroll indicator when the interaction stream overflows the viewport", async () => {
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
-    let turn = 0;
+    const messages: Array<{ messageId: string; threadId: string; role: "user" | "assistant"; content: string }> = [];
 
     const kernel: TuiKernel = {
       events: {
@@ -1002,8 +1002,6 @@ describe("TUI App", () => {
         if (command.type === "thread_new") {
           return createCompletedSessionResult({ threadId: "thread-overflow" });
         }
-
-        turn += 1;
         return createCompletedSessionResult({ threadId: "thread-overflow" });
       },
     };
@@ -1012,12 +1010,35 @@ describe("TUI App", () => {
 
     for (let index = 0; index < 10; index += 1) {
       await typeAndSubmit(stdin, `message ${index + 1}`);
+      messages.push({
+        messageId: `msg-user-${index + 1}`,
+        threadId: "thread-overflow",
+        role: "user",
+        content: `message ${index + 1}`,
+      });
+      messages.push({
+        messageId: `msg-assistant-${index + 1}`,
+        threadId: "thread-overflow",
+        role: "assistant",
+        content: `response ${index + 1}`,
+      });
       emit?.({
         type: "thread.view_updated",
         payload: {
           threadId: "thread-overflow",
           status: "completed",
           summary: `response ${index + 1}`,
+          messages: [...messages],
+          answers: [
+            {
+              answerId: `answer-${index + 1}`,
+              threadId: "thread-overflow",
+              content: `response ${index + 1}`,
+            },
+          ],
+          approvals: [],
+          tasks: [],
+          workers: [],
         },
       });
       await tick(10);
@@ -1032,6 +1053,7 @@ describe("TUI App", () => {
 
   test("supports paging the interaction stream upward and back down", async () => {
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
+    const messages: Array<{ messageId: string; threadId: string; role: "user" | "assistant"; content: string }> = [];
 
     const kernel: TuiKernel = {
       events: {
@@ -1053,12 +1075,35 @@ describe("TUI App", () => {
 
     for (let index = 0; index < 10; index += 1) {
       await typeAndSubmit(stdin, `message ${index + 1}`);
+      messages.push({
+        messageId: `msg-user-${index + 1}`,
+        threadId: "thread-scroll",
+        role: "user",
+        content: `message ${index + 1}`,
+      });
+      messages.push({
+        messageId: `msg-assistant-${index + 1}`,
+        threadId: "thread-scroll",
+        role: "assistant",
+        content: `response ${index + 1}`,
+      });
       emit?.({
         type: "thread.view_updated",
         payload: {
           threadId: "thread-scroll",
           status: "completed",
           summary: `response ${index + 1}`,
+          messages: [...messages],
+          answers: [
+            {
+              answerId: `answer-${index + 1}`,
+              threadId: "thread-scroll",
+              content: `response ${index + 1}`,
+            },
+          ],
+          approvals: [],
+          tasks: [],
+          workers: [],
         },
       });
       await tick(10);
@@ -1438,6 +1483,175 @@ describe("TUI App", () => {
     expect(frame).toMatch(/Confirm work\?.*\[Y\/n\]/);
   });
 
+  test("renders worker state from protocol truth and clears it when the next thread view omits workers", async () => {
+    let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
+
+    const kernel: TuiKernel = {
+      events: {
+        subscribe(handler) {
+          emit = handler;
+          return () => undefined;
+        },
+      },
+      async handleCommand() {
+        return createCompletedSessionResult({
+          threadId: "thread-worker-ui",
+        });
+      },
+    };
+
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
+    await typeAndSubmit(stdin, "start workerized task");
+
+    emit?.({
+      type: "thread.view_updated",
+      payload: {
+        threadId: "thread-worker-ui",
+        status: "completed",
+        summary: "Workerized task in progress.",
+        tasks: [],
+        approvals: [],
+        answers: [],
+        messages: [],
+        workers: [
+          {
+            workerId: "worker-ui-1",
+            threadId: "thread-worker-ui",
+            taskId: "task-worker-ui",
+            role: "planner",
+            status: "running",
+            spawnReason: "hydrate worker block",
+          },
+        ],
+        workspaceRoot: "/tmp/workspace",
+        projectId: "project-1",
+        threads: [],
+      },
+    });
+    await waitFor(
+      () => (lastFrame() ?? "").includes("hydrate worker block"),
+      "expected worker state to render from thread view protocol truth",
+    );
+
+    emit?.({
+      type: "thread.view_updated",
+      payload: {
+        threadId: "thread-worker-ui",
+        status: "completed",
+        summary: "Workerized task complete.",
+        tasks: [],
+        approvals: [],
+        answers: [],
+        messages: [],
+        workspaceRoot: "/tmp/workspace",
+        projectId: "project-1",
+        threads: [],
+      },
+    });
+    await waitFor(
+      () => !(lastFrame() ?? "").includes("hydrate worker block"),
+      "expected worker block to clear when protocol truth omits workers",
+    );
+  });
+
+  test("session update followed by thread view update does not retain stale approval truth", async () => {
+    let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
+
+    const kernel: TuiKernel = {
+      events: {
+        subscribe(handler) {
+          emit = handler;
+          return () => undefined;
+        },
+      },
+      async handleCommand() {
+        return createCompletedSessionResult({
+          threadId: "thread-hydrated-approval",
+        });
+      },
+    };
+
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
+    await typeAndSubmit(stdin, "start");
+
+    emit?.({
+      type: "session.updated",
+      payload: {
+        status: "waiting_approval",
+        threadId: "thread-hydrated-approval",
+        summary: "Approval needed.",
+        workspaceRoot: "/tmp/workspace",
+        projectId: "project-1",
+        approvals: [
+          {
+            approvalRequestId: "approval-hydrated",
+            threadId: "thread-hydrated-approval",
+            runId: "run-hydrated",
+            taskId: "task-hydrated",
+            toolCallId: "tool-hydrated",
+            summary: "apply_patch update_file src/app.tsx",
+            risk: "apply_patch.update_file",
+            status: "pending",
+          },
+        ],
+        tasks: [
+          {
+            taskId: "task-hydrated",
+            threadId: "thread-hydrated-approval",
+            runId: "run-hydrated",
+            status: "blocked",
+            summary: "Apply patch",
+            blockingReason: {
+              kind: "waiting_approval",
+              message: "apply_patch update_file src/app.tsx",
+            },
+          },
+        ],
+        answers: [],
+        messages: [],
+        workers: [],
+        threads: [],
+      },
+    });
+    await waitFor(
+      () => (lastFrame() ?? "").includes("apply_patch update_file src/app.tsx"),
+      "expected stale approval truth to render before the next thread view update",
+    );
+
+    emit?.({
+      type: "thread.view_updated",
+      payload: {
+        threadId: "thread-hydrated-approval",
+        status: "completed",
+        summary: "Done.",
+        tasks: [],
+        approvals: [],
+        answers: [],
+        messages: [
+          {
+            messageId: "msg-done",
+            threadId: "thread-hydrated-approval",
+            role: "assistant",
+            content: "Done.",
+          },
+        ],
+        workers: [],
+        workspaceRoot: "/tmp/workspace",
+        projectId: "project-1",
+        threads: [],
+      },
+    });
+    await waitFor(
+      () => (lastFrame() ?? "").includes("Done."),
+      "expected final thread view update to render completed state",
+    );
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Done.");
+    expect(frame).not.toContain("Action Required");
+    expect(frame).not.toContain("apply_patch update_file src/app.tsx");
+  });
+
   test("keeps hydrated approval state out of the main stream until this launch creates a thread", async () => {
     const kernel: TuiKernel = {
       events: {
@@ -1669,28 +1883,34 @@ describe("TUI App", () => {
         },
       },
       async handleCommand() {
-        return createCompletedSessionResult();
+        return createCompletedSessionResult({
+          threadId: "thread_live_recovery",
+        });
       },
     };
 
-    const { lastFrame, stdin } = render(<App kernel={kernel} />);
-    await tick();
-    stdin.write("start work");
-    await tick();
-    stdin.write("\r");
-    await tick();
+    const { lastFrame } = render(<App kernel={kernel} />);
 
     emit?.({
-      type: "session.updated",
+      type: "thread.view_updated",
       payload: {
         status: "blocked",
         threadId: "thread_live_recovery",
         summary: "Manual recovery required from live event.",
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
-        blockingReason: {
-          kind: "human_recovery" as const,
-          message: "Manual recovery required from live event.",
+        recoveryFacts: {
+          threadId: "thread_live_recovery",
+          revision: 1,
+          schemaVersion: 1,
+          status: "blocked",
+          updatedAt: new Date().toISOString(),
+          pendingApprovals: [],
+          blocking: {
+            sourceTaskId: "task_live_recovery",
+            kind: "human_recovery" as const,
+            message: "Manual recovery required from live event.",
+          },
         },
         tasks: [
           {
@@ -1707,17 +1927,19 @@ describe("TUI App", () => {
         ],
         approvals: [],
         answers: [],
+        messages: [],
         workers: [],
         threads: [],
       },
     });
-    await tick();
-    await tick();
+    await waitFor(
+      () => (lastFrame() ?? "").includes("stage:blocked"),
+      "expected live blocked event to update shell stage without a hydrate refresh",
+    );
 
     const frame = lastFrame();
 
     expect(frame).toMatch(/Session blocked: manual recovery required/i);
-    expect(frame).toContain("Manual recovery required from live event.");
     expect(frame).toMatch(/Input disabled for this thread/i);
     expect(frame).toContain("stage:blocked");
   });

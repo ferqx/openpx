@@ -12,6 +12,7 @@ type AppContext = Awaited<ReturnType<typeof createAppContext>>;
 export class RuntimeScopedSession {
   private readonly eventBuffer: RuntimeEventEnvelope[] = [];
   private readonly maxBufferSize = 100;
+  private readonly eventSubscribers = new Set<(envelope: RuntimeEventEnvelope) => void>();
   private liveSeq = 0;
   private activeThreadId?: string;
   private readonly commandHandler: (command: RuntimeCommand) => Promise<SessionCommandResult>;
@@ -31,28 +32,33 @@ export class RuntimeScopedSession {
     });
 
     this.context.kernel.events.subscribe((event) => {
-      const envelope = createRuntimeEventEnvelope({
-        seq: ++this.liveSeq,
-        event,
-      });
-
-      this.eventBuffer.push(envelope);
-      if (this.eventBuffer.length > this.maxBufferSize) {
-        this.eventBuffer.shift();
-      }
+      this.recordLiveEvent(event);
     });
 
     this.context.kernel.events.subscribeStream((event) => {
-      const envelope = createRuntimeEventEnvelope({
-        seq: ++this.liveSeq,
-        event: { type: event.type, payload: event.payload },
+      this.recordLiveEvent({
+        type: event.type,
+        payload: event.payload,
       });
-
-      this.eventBuffer.push(envelope);
-      if (this.eventBuffer.length > this.maxBufferSize) {
-        this.eventBuffer.shift();
-      }
     });
+  }
+
+  private recordLiveEvent(event: { type: string; payload?: unknown }): RuntimeEventEnvelope {
+    const envelope = createRuntimeEventEnvelope({
+      seq: ++this.liveSeq,
+      event,
+    });
+
+    this.eventBuffer.push(envelope);
+    if (this.eventBuffer.length > this.maxBufferSize) {
+      this.eventBuffer.shift();
+    }
+
+    for (const subscriber of this.eventSubscribers) {
+      subscriber(envelope);
+    }
+
+    return envelope;
   }
 
   private async ensureActiveThread(): Promise<Thread> {
@@ -199,15 +205,12 @@ export class RuntimeScopedSession {
     const queue: RuntimeEventEnvelope[] = [];
     let resolveNext: (() => void) | null = null;
 
-    const unsubscribe = this.context.kernel.events.subscribe((event) => {
-      const envelope = createRuntimeEventEnvelope({
-        seq: ++this.liveSeq,
-        event,
-      });
+    const handleEnvelope = (envelope: RuntimeEventEnvelope) => {
       queue.push(envelope);
       resolveNext?.();
       resolveNext = null;
-    });
+    };
+    this.eventSubscribers.add(handleEnvelope);
 
     try {
       while (true) {
@@ -220,7 +223,7 @@ export class RuntimeScopedSession {
         });
       }
     } finally {
-      unsubscribe();
+      this.eventSubscribers.delete(handleEnvelope);
     }
   }
 }

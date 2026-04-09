@@ -1,9 +1,11 @@
 import { createAppContext } from "../../app/bootstrap";
 import type { Run } from "../../domain/run";
 import { createThread, type Thread } from "../../domain/thread";
+import { transitionThread } from "../../domain/thread";
 import type { RuntimeScope } from "./runtime-scope";
 import type { RuntimeCommand } from "./runtime-types";
 import type { SessionCommandResult } from "../../kernel/session-kernel";
+import type { WorkerView } from "./protocol/worker-view";
 
 type AppContext = Awaited<ReturnType<typeof createAppContext>>;
 
@@ -32,6 +34,30 @@ function createEmptySessionResult(scope: RuntimeScope): SessionCommandResult {
   };
 }
 
+function toWorkerView(worker: {
+  workerId: string;
+  threadId: string;
+  taskId: string;
+  role: WorkerView["role"];
+  status: WorkerView["status"];
+  spawnReason: string;
+  startedAt?: string;
+  endedAt?: string;
+  resumeToken?: string;
+}): WorkerView {
+  return {
+    workerId: worker.workerId,
+    threadId: worker.threadId,
+    taskId: worker.taskId,
+    role: worker.role,
+    status: worker.status,
+    spawnReason: worker.spawnReason,
+    startedAt: worker.startedAt,
+    endedAt: worker.endedAt,
+    resumeToken: worker.resumeToken,
+  };
+}
+
 function canResumeLatestRun(run: Run | undefined): boolean {
   return run?.status === "blocked" || run?.status === "interrupted";
 }
@@ -47,6 +73,42 @@ function canInterruptLatestRun(run: Run | undefined): boolean {
 }
 
 export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
+  async function hydrateOrEmpty() {
+    return (await deps.context.kernel.hydrateSession()) ?? createEmptySessionResult(deps.scope);
+  }
+
+  function getWorkerManager() {
+    const workerManager = deps.context.workerManager;
+    if (!workerManager) {
+      throw new Error("worker manager is not configured for this runtime");
+    }
+    return workerManager;
+  }
+
+  async function getWorkerThread(workerId: string): Promise<Thread | undefined> {
+    const worker = await deps.context.stores.workerStore.get(workerId);
+    if (!worker) {
+      return undefined;
+    }
+    const thread = await deps.context.stores.threadStore.get(worker.threadId);
+    if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
+      return undefined;
+    }
+    return thread;
+  }
+
+  function publishWorkerEvent(
+    type: "worker.spawned" | "worker.inspected" | "worker.resumed" | "worker.cancelled" | "worker.completed" | "worker.failed",
+    worker: ReturnType<typeof toWorkerView>,
+  ) {
+    deps.context.kernel.events.publish({
+      type,
+      payload: {
+        worker,
+      },
+    });
+  }
+
   return async function handleRuntimeCommand(command: RuntimeCommand): Promise<SessionCommandResult> {
     if (command.kind === "new_thread") {
       const thread = createThread(crypto.randomUUID(), deps.scope.workspaceRoot, deps.scope.projectId);
@@ -138,6 +200,84 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       });
       deps.setActiveThreadId(result.threadId);
       return result;
+    }
+
+    if (command.kind === "worker_spawn") {
+      const thread =
+        command.threadId
+          ? await deps.context.stores.threadStore.get(command.threadId)
+          : await deps.ensureActiveThread();
+      if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
+        throw new Error(`thread ${command.threadId ?? ""} not found in scope ${scopeKey(deps.scope)}`);
+      }
+
+      if (thread.status !== "active") {
+        await deps.touchThread(transitionThread(thread, "active"));
+      } else {
+        await deps.touchThread(thread, "active");
+      }
+
+      const worker = await getWorkerManager().spawn({
+        role: command.role,
+        taskId: command.taskId,
+        threadId: thread.threadId,
+        spawnReason: command.spawnReason,
+        resumeToken: command.resumeToken,
+      });
+      deps.setActiveThreadId(thread.threadId);
+      publishWorkerEvent("worker.spawned", toWorkerView(worker));
+      return await hydrateOrEmpty();
+    }
+
+    if (command.kind === "worker_inspect") {
+      const thread = await getWorkerThread(command.workerId);
+      if (!thread) {
+        throw new Error(`worker ${command.workerId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+      await deps.touchThread(thread, "active");
+      deps.setActiveThreadId(thread.threadId);
+      const worker = await getWorkerManager().inspect(command.workerId);
+      if (!worker) {
+        throw new Error(`worker ${command.workerId} not found`);
+      }
+      publishWorkerEvent("worker.inspected", toWorkerView(worker));
+      return await hydrateOrEmpty();
+    }
+
+    if (command.kind === "worker_resume") {
+      const thread = await getWorkerThread(command.workerId);
+      if (!thread) {
+        throw new Error(`worker ${command.workerId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+      await deps.touchThread(thread, "active");
+      deps.setActiveThreadId(thread.threadId);
+      const worker = await getWorkerManager().resume(command.workerId);
+      publishWorkerEvent("worker.resumed", toWorkerView(worker));
+      return await hydrateOrEmpty();
+    }
+
+    if (command.kind === "worker_cancel") {
+      const thread = await getWorkerThread(command.workerId);
+      if (!thread) {
+        throw new Error(`worker ${command.workerId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+      await deps.touchThread(thread, "active");
+      deps.setActiveThreadId(thread.threadId);
+      const worker = await getWorkerManager().cancel(command.workerId);
+      publishWorkerEvent(worker.status === "failed" ? "worker.failed" : "worker.cancelled", toWorkerView(worker));
+      return await hydrateOrEmpty();
+    }
+
+    if (command.kind === "worker_join") {
+      const thread = await getWorkerThread(command.workerId);
+      if (!thread) {
+        throw new Error(`worker ${command.workerId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+      await deps.touchThread(thread, "active");
+      deps.setActiveThreadId(thread.threadId);
+      const worker = await getWorkerManager().join(command.workerId);
+      publishWorkerEvent(worker.status === "failed" ? "worker.failed" : "worker.completed", toWorkerView(worker));
+      return await hydrateOrEmpty();
     }
 
     if (command.kind === "approve") {

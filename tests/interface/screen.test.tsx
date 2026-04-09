@@ -11,6 +11,7 @@ describe("Screen", () => {
           messages: [],
           tasks: [],
           approvals: [],
+          workers: [],
           showWelcome: true,
         }}
         utilityView={{}}

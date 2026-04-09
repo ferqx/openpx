@@ -717,6 +717,69 @@ git commit -m "docs: finalize agent os reset migration notes"
 - If worker lifecycle design expands further, split worker persistence and worker control tasks rather than broadening a single commit.
 - If runtime protocol changes force shell churn, prefer adapting `runtime-session.ts` first and UI components second.
 
+## Current Progress
+
+The active reset is now in late-stage convergence rather than early architecture setup.
+
+Already landed on the mainline:
+
+- stable runtime command, event, snapshot, and view contracts
+- split kernel responsibilities for command arbitration, projection, and background execution
+- explicit approval resolution commands
+- worker lifecycle persistence and stable runtime visibility
+- TUI migration from local canonical business truth to protocol-derived session truth
+
+Remaining active work for this plan:
+
+1. audit every TUI section against its single protocol truth source
+2. prove replay consistency for worker, approval, answer, and message rendering
+3. document reset completion status and hand the mainline off to hardening
+
+## Remaining Work Package
+
+### Work package: TUI protocol consumer audit and hardening handoff
+
+Exit criteria:
+
+- every visible TUI section has one declared protocol truth source
+- no TUI screen depends on preserved stale session arrays after `thread.view_updated`
+- worker, approval, answer, and history rendering match between hydration and replay
+- active reset docs explicitly state that the next mainline is hardening and recovery verification
+
+Focused validation:
+
+- `bun run typecheck`
+- `bun test tests/interface/session-sync.test.ts tests/interface/tui-app.test.tsx tests/interface/runtime-session.test.ts tests/runtime/kernel-tui-sync.test.ts tests/runtime/runtime-service.test.ts tests/runtime/worker-lifecycle-protocol.test.ts`
+- `bun test`
+- `bun run smoke:planner`
+
+## Hardening Follow-Up Package
+
+The next active package after reset completion is `M3 hardening / recovery verification`.
+
+Recovery matrix:
+
+| Path | Required proof |
+| --- | --- |
+| restart recovery | blocked, waiting approval, and completed session truth hydrate identically after restart |
+| reconnect + replay | client reconnect hydrates once, resumes from the latest event cursor, and does not replay from zero |
+| interrupt + resume | interrupt, approve, reject, and resume produce the same durable truth under hydration and replay |
+| worker lifecycle | spawn, inspect, resume, cancel, and join remain consistent between snapshot and replay |
+
+Lifecycle invariants:
+
+- `thread.view_updated` remains the only stable session view event for shell hydration
+- reconnect may replay missing events, but it must not introduce TUI-private business state
+- runtime event sequence must remain monotonic across buffered replay and live delivery
+- stale blocking, approval, answer, or worker truth must be cleared by fresh protocol state rather than preserved locally
+
+Hardening validation:
+
+- `bun run typecheck`
+- `bun test tests/runtime/runtime-restart-recovery.test.ts tests/runtime/hydrate-replay.test.ts tests/runtime/robust-events.test.ts tests/runtime/interrupt-resume.test.ts tests/runtime/runtime-service.test.ts tests/runtime/runtime-snapshot.test.ts tests/runtime/thread-arbitration.test.ts tests/runtime/kernel-tui-sync.test.ts tests/interface/runtime-session.test.ts tests/interface/remote-kernel.test.ts tests/interface/tui-app.test.tsx`
+- `bun test`
+- `bun run smoke:planner`
+
 ## Expected End State
 
 At the end of this plan:

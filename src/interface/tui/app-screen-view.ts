@@ -5,6 +5,7 @@ import type { SettingsConfig, SettingsConfigScope } from "./settings/config-type
 import type { UtilityPaneSessionSnapshot } from "./components/utility-pane";
 import type { TaskSummary } from "./components/task-panel";
 import type { ApprovalSummary } from "./components/approval-panel";
+import type { WorkerSummary } from "./components/worker-panel";
 
 type ConversationDisplayState = {
   modelStatus: "idle" | "thinking" | "responding";
@@ -22,6 +23,7 @@ export function buildConversationView(input: {
     messages: input.conversationState.messages,
     tasks: (input.session?.tasks ?? []) as TaskSummary[],
     approvals: (input.session?.approvals ?? []) as ApprovalSummary[],
+    workers: (input.session?.workers ?? []) as WorkerSummary[],
     modelStatus: input.conversationState.modelStatus,
     performance: input.conversationState.performance,
     narrativeSummary: input.session?.narrativeSummary,

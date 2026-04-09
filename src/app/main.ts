@@ -42,7 +42,8 @@ Options:
 
 export async function main(input?: MainInput) {
   // 检查是否在交互式终端中运行
-  if (!process.stdin.isTTY) {
+  const requiresInteractiveTty = !input?.mount;
+  if (requiresInteractiveTty && !process.stdin.isTTY) {
     console.error("Error: TUI requires an interactive terminal (tty).");
     console.error("Please run this command in a proper terminal application.");
     console.error("If using an IDE, try running from an external terminal.");

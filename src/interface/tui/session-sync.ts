@@ -13,6 +13,36 @@ export type TuiMessage = {
 
 export type SessionUpdateSource = "hydrate" | "command" | "event";
 
+function deriveAnswersFromRecoveryFacts(
+  threadId: string,
+  recoveryFacts: ProjectedSessionResult["recoveryFacts"],
+): RuntimeSessionState["answers"] {
+  const latestAnswer = recoveryFacts?.latestDurableAnswer;
+  if (!latestAnswer) {
+    return [];
+  }
+
+  return [
+    {
+      answerId: latestAnswer.answerId,
+      threadId,
+      content: latestAnswer.summary,
+    },
+  ];
+}
+
+function deriveMessagesFromRecoveryFacts(
+  threadId: string,
+  recoveryFacts: ProjectedSessionResult["recoveryFacts"],
+): NonNullable<RuntimeSessionState["messages"]> {
+  return (recoveryFacts?.conversationHistory ?? []).map((message) => ({
+    messageId: message.messageId,
+    threadId,
+    role: message.role,
+    content: message.content,
+  }));
+}
+
 function toRuntimeSessionStatus(
   status: ProjectedSessionResult["status"] | RuntimeSessionState["status"] | RuntimeSessionState["threads"][number]["status"] | undefined,
 ): RuntimeSessionState["status"] {
@@ -34,12 +64,15 @@ export function mergeThreadViewIntoSession(
   const status = toRuntimeSessionStatus(update.status);
   const workspaceRoot = update.workspaceRoot ?? current?.workspaceRoot ?? process.cwd();
   const projectId = update.projectId ?? current?.projectId ?? "unknown";
+  const taskBlockingReason = update.tasks?.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
   const blockingReason = update.recoveryFacts?.blocking
     ? {
         kind: update.recoveryFacts.blocking.kind,
         message: update.recoveryFacts.blocking.message,
       }
-    : current?.blockingReason;
+    : update.status === "blocked" || update.status === "waiting_approval"
+      ? taskBlockingReason
+      : undefined;
   const threads = update.threads
     ? update.threads.map((thread, index) => {
         const existing = current?.threads.find((candidate) => candidate.threadId === thread.threadId);
@@ -57,17 +90,19 @@ export function mergeThreadViewIntoSession(
         };
       })
     : current?.threads ?? [];
+  const answers = update.answers ?? deriveAnswersFromRecoveryFacts(update.threadId, update.recoveryFacts);
+  const messages = update.messages ?? deriveMessagesFromRecoveryFacts(update.threadId, update.recoveryFacts);
 
   return {
     status,
     stage: status === "waiting_approval" ? "awaiting_confirmation" : status === "blocked" ? "blocked" : "idle",
     threadId: update.threadId,
     summary: update.summary ?? current?.summary ?? "Awaiting answer",
-    tasks: update.tasks ?? current?.tasks ?? [],
-    approvals: update.approvals ?? current?.approvals ?? [],
-    answers: current?.answers ?? [],
-    messages: current?.messages ?? [],
-    workers: current?.workers ?? [],
+    tasks: update.tasks ?? [],
+    approvals: update.approvals ?? [],
+    answers,
+    messages,
+    workers: update.workers ?? [],
     workspaceRoot,
     projectId,
     blockingReason,
@@ -102,6 +137,18 @@ export function deriveMessagesFromSession(result: RuntimeSessionState | TuiSessi
     ];
   }
 
+  const summary = result.summary?.trim();
+  if (summary && summary !== "Awaiting answer") {
+    return [
+      {
+        id: `assistant-summary-${result.threadId ?? "unknown"}`,
+        role: "assistant",
+        content: summary,
+        timestamp: Date.now(),
+      },
+    ];
+  }
+
   const narrativeSummary = result.narrativeSummary?.trim();
   if (narrativeSummary && narrativeSummary !== "Awaiting answer") {
     return [
@@ -115,6 +162,29 @@ export function deriveMessagesFromSession(result: RuntimeSessionState | TuiSessi
   }
 
   return [];
+}
+
+export function buildDisplayMessages(input: {
+  session: RuntimeSessionState | undefined;
+  pendingUserMessage?: TuiMessage;
+  streamedAssistantMessage?: TuiMessage;
+}): TuiMessage[] {
+  const messages = input.session ? [...deriveMessagesFromSession(input.session)] : [];
+
+  if (input.pendingUserMessage) {
+    const alreadyPresent = messages.some(
+      (message) => message.role === "user" && message.content === input.pendingUserMessage?.content,
+    );
+    if (!alreadyPresent) {
+      messages.push(input.pendingUserMessage);
+    }
+  }
+
+  if (input.streamedAssistantMessage) {
+    messages.push(input.streamedAssistantMessage);
+  }
+
+  return messages;
 }
 
 export function findActiveThreadIndex(result: Pick<RuntimeSessionState, "threadId" | "threads">): number {

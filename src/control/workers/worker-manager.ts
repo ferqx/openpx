@@ -48,6 +48,47 @@ export function createWorkerManager(deps: {
     });
   }
 
+  async function fallbackLifecycleUpdate(
+    worker: WorkerRecord,
+    action: "inspect" | "resume" | "cancel" | "join",
+  ): Promise<WorkerRecord> {
+    if (action === "inspect") {
+      return worker;
+    }
+
+    if (action === "resume") {
+      const resumedStatus = worker.status === "created" || worker.status === "starting" ? "running" : worker.status;
+      if (worker.status === "paused" || resumedStatus === "running") {
+        return await persist(
+          transitionWorker(worker, "running", {
+            startedAt: worker.startedAt ?? new Date().toISOString(),
+          }),
+        );
+      }
+      return worker;
+    }
+
+    if (action === "cancel" && !["completed", "failed", "cancelled"].includes(worker.status)) {
+      return await persist(
+        transitionWorker(worker, "cancelled", {
+          endedAt: new Date().toISOString(),
+          resumeToken: undefined,
+        }),
+      );
+    }
+
+    if (action === "join" && !["completed", "failed", "cancelled"].includes(worker.status)) {
+      return await persist(
+        transitionWorker(worker, "completed", {
+          endedAt: new Date().toISOString(),
+          resumeToken: undefined,
+        }),
+      );
+    }
+
+    return worker;
+  }
+
   return {
     async spawn(input) {
       const workerId = prefixedUuid("worker");
@@ -91,7 +132,7 @@ export function createWorkerManager(deps: {
         return undefined;
       }
       if (!runtime) {
-        return worker;
+        return await fallbackLifecycleUpdate(worker, "inspect");
       }
 
       return await persist(applyRuntimeState(worker, await runtime.inspect()));
@@ -99,19 +140,19 @@ export function createWorkerManager(deps: {
 
     async resume(workerId) {
       const runtime = runtimes.get(workerId);
-      if (!runtime) {
-        throw new Error(`worker runtime ${workerId} not found`);
-      }
       const worker = await getWorkerOrThrow(workerId);
+      if (!runtime) {
+        return await fallbackLifecycleUpdate(worker, "resume");
+      }
       return await persist(applyRuntimeState(worker, await runtime.resume()));
     },
 
     async cancel(workerId) {
       const runtime = runtimes.get(workerId);
-      if (!runtime) {
-        throw new Error(`worker runtime ${workerId} not found`);
-      }
       const worker = await getWorkerOrThrow(workerId);
+      if (!runtime) {
+        return await fallbackLifecycleUpdate(worker, "cancel");
+      }
       const next = await persist(applyRuntimeState(worker, await runtime.cancel()));
       if (["completed", "failed", "cancelled"].includes(next.status)) {
         runtimes.delete(workerId);
@@ -121,10 +162,10 @@ export function createWorkerManager(deps: {
 
     async join(workerId) {
       const runtime = runtimes.get(workerId);
-      if (!runtime) {
-        throw new Error(`worker runtime ${workerId} not found`);
-      }
       const worker = await getWorkerOrThrow(workerId);
+      if (!runtime) {
+        return await fallbackLifecycleUpdate(worker, "join");
+      }
       const next = await persist(applyRuntimeState(worker, await runtime.join()));
       if (["completed", "failed", "cancelled"].includes(next.status)) {
         runtimes.delete(workerId);

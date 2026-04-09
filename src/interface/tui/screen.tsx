@@ -11,6 +11,7 @@ import { theme } from "./theme";
 import { computeScreenLayout } from "./screen-layout";
 import type { TaskSummary } from "./components/task-panel";
 import type { ApprovalSummary } from "./components/approval-panel";
+import type { WorkerSummary } from "./components/worker-panel";
 import type { UtilityPaneMode } from "./view-state";
 import type { SessionStage } from "../runtime/runtime-session";
 import type { ResolvedSettingsConfig } from "./settings/config-resolver";
@@ -27,6 +28,7 @@ export type ScreenConversationView = {
   messages: Message[];
   tasks: TaskSummary[];
   approvals: ApprovalSummary[];
+  workers: WorkerSummary[];
   modelStatus?: string;
   performance?: { waitMs: number; genMs: number };
   narrativeSummary?: string;
@@ -250,6 +252,7 @@ export function Screen(input: {
               messages={input.conversationView.messages}
               tasks={input.conversationView.tasks}
               approvals={input.conversationView.approvals}
+              workers={input.conversationView.workers}
               modelStatus={input.conversationView.modelStatus}
               performance={input.conversationView.performance}
               narrativeSummary={input.conversationView.narrativeSummary}
