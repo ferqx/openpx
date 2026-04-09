@@ -1,6 +1,7 @@
 import type { RuntimeService } from "./runtime-service";
 import { PROTOCOL_VERSION, PROTOCOL_VERSION_HEADER, runtimeCommandSchema } from "./runtime-types";
 import type { RuntimeScope } from "./runtime-service";
+import { ZodError } from "zod";
 
 function parseScope(url: URL): RuntimeScope | undefined {
   const workspaceRoot = url.searchParams.get("workspaceRoot");
@@ -75,6 +76,16 @@ export class RuntimeRouter {
           },
         });
       } catch (error: unknown) {
+        if (error instanceof ZodError) {
+          return Response.json({
+            error: "Invalid command payload",
+            details: error.flatten(),
+          }, {
+            status: 400,
+            headers: createProtocolHeaders(),
+          });
+        }
+
         const message = error instanceof Error ? error.message : "Unknown error";
         const stack = error instanceof Error ? error.stack : undefined;
         const details = error instanceof Error ? error.name : "UnknownError";

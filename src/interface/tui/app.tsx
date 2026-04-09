@@ -208,6 +208,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
   const activeThreadIdRef = useRef<string | undefined>(undefined);
   const utilitySessionSnapshotRef = useRef<UtilityPaneSessionSnapshot | undefined>(undefined);
   const conversationStateRef = useRef<ConversationDisplayState>(createInitialConversationDisplayState());
+  const hasLiveSessionActivityRef = useRef(false);
 
   function updateSelectedSessionIndex(next: number) {
     selectedSessionIndexRef.current = next;
@@ -225,6 +226,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
   });
 
   const handleSessionThreadSwitch = useEffectEvent(async (threadId: string) => {
+    hasLiveSessionActivityRef.current = true;
     const result = await input.kernel.handleCommand({
       type: "thread_switch",
       payload: { threadId },
@@ -379,6 +381,10 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     result: RuntimeSessionState | TuiSessionResult,
     source: SessionUpdateSource,
   ) => {
+    if (source !== "hydrate") {
+      hasLiveSessionActivityRef.current = true;
+    }
+
     const previousThreadId = activeThreadIdRef.current;
     const nextThreadId = result.threadId;
     const threadChanged = previousThreadId !== undefined && nextThreadId !== previousThreadId;
@@ -441,6 +447,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     }
 
     if (event.type === "thread.interrupted") {
+      hasLiveSessionActivityRef.current = true;
       updateConversationState((current) => ({
         ...current,
         modelStatus: "idle",
@@ -463,11 +470,13 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     }
 
     if (event.type === "stream.thinking_started") {
+      hasLiveSessionActivityRef.current = true;
       updateThinking({ content: "", startedAt: Date.now() });
       return;
     }
 
     if (event.type === "stream.thinking_chunk") {
+      hasLiveSessionActivityRef.current = true;
       const chunkContent = event.payload.content;
       updateThinking(
         conversationStateRef.current.thinking
@@ -481,6 +490,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     }
 
     if (event.type === "stream.text_chunk") {
+      hasLiveSessionActivityRef.current = true;
       const chunkContent = event.payload.content;
       if (chunkContent) {
         updateConversationState((current) => {
@@ -518,6 +528,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
       return;
     }
 
+    hasLiveSessionActivityRef.current = true;
     const result = await input.kernel.interruptCurrentThread();
     if (result) {
       syncSessionState(result, "command");
@@ -610,6 +621,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
       if (!input.kernel.hydrateSession) return;
       const result = await input.kernel.hydrateSession();
       if (cancelled || !result) return;
+      if (hasLiveSessionActivityRef.current) return;
       applyKernelResult(result, "hydrate");
     }
     void hydrate();
@@ -643,6 +655,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
       return true;
     }
 
+    hasLiveSessionActivityRef.current = true;
     const newThreadResult = await input.kernel.handleCommand({ type: "thread_new" });
     setLaunchState((current) => ({
       ...current,
@@ -668,6 +681,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
       ? { type: "approve_request", payload: { approvalRequestId } }
       : { type: "reject_request", payload: { approvalRequestId } };
 
+    hasLiveSessionActivityRef.current = true;
     const result = await input.kernel.handleCommand(command);
     applyKernelResult(result);
     return true;
@@ -724,6 +738,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     parsed: Exclude<TuiParsedInput, { kind: "command" }>,
     value: string,
   ) => {
+    hasLiveSessionActivityRef.current = true;
     await ensureLaunchThread();
     appendUserMessage(value);
     setActiveTaskIntent(parsed.kind === "plan" ? "plan" : "execute");

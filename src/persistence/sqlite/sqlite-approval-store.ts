@@ -78,6 +78,19 @@ export class SqliteApprovalStore {
     return rows.map(mapApprovalRow);
   }
 
+  async listByThread(threadId: string): Promise<ApprovalRequest[]> {
+    const rows = this.db
+      .query<ApprovalRow, [string]>(
+        `SELECT approval_request_id, thread_id, run_id, task_id, tool_call_id, request_json, summary, risk, status
+         FROM approvals
+         WHERE thread_id = ?
+         ORDER BY rowid ASC`,
+      )
+      .all(threadId);
+
+    return rows.map(mapApprovalRow);
+  }
+
   async close(): Promise<void> {
     if (this.owned) {
       this.db.close();

@@ -5,6 +5,9 @@
   "private": true,
   "scripts": {
     "dev": "bun run src/app/main.ts",
+    "eval:core": "bun run eval:suite --suite core-eval-suite --baseline-root-dir eval-baselines",
+    "eval:review": "bun run src/eval/run-review.ts",
+    "eval:suite": "bun run src/eval/run-suite.ts",
     "smoke:planner": "bun run src/app/smoke-planner.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
