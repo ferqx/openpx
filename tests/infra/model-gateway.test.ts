@@ -1,5 +1,10 @@
-import { describe, expect, test, mock } from "bun:test";
-import { createModelGateway, type ModelStatus } from "../../src/infra/model-gateway";
+import { describe, expect, test } from "bun:test";
+import {
+  createModelGateway,
+  parsePlannerModelOutput,
+  type ModelGatewayEvent,
+  type ModelStatus,
+} from "../../src/infra/model-gateway";
 
 describe("createModelGateway", () => {
   test("throws a clear error when OpenAI-style env-backed config is missing", () => {
@@ -20,12 +25,12 @@ describe("createModelGateway", () => {
       timeoutMs: 100,
     });
 
-    const events: any[] = [];
+    const events: ModelGatewayEvent[] = [];
     gateway.onEvent((e) => events.push(e));
 
     try {
       await gateway.plan({ prompt: "test" });
-    } catch (e) {
+    } catch {
       // Expected to fail because of fake URL
     }
 
@@ -48,11 +53,44 @@ describe("createModelGateway", () => {
 
     try {
       await gateway.plan({ prompt: "test" });
-    } catch (e) {
+    } catch {
       // Expected
     }
 
     expect(statuses).toContain("thinking");
     expect(statuses).toContain("idle");
+  });
+
+  test("parses structured planner output when the model returns a planner envelope", () => {
+    const parsed = parsePlannerModelOutput(
+      JSON.stringify({
+        summary: "Plan startup message work",
+        plannerResult: {
+          workPackages: [
+            {
+              id: "pkg_startup_message",
+              objective: "Update startup message copy",
+              allowedTools: ["read_file", "apply_patch"],
+              inputRefs: ["thread:goal", "file:src/app/main.ts"],
+              expectedArtifacts: ["patch:src/app/main.ts"],
+            },
+          ],
+          acceptanceCriteria: ["startup message updated"],
+          riskFlags: [],
+          approvalRequiredActions: [],
+          verificationScope: ["tests/runtime/intake-normalize.test.ts"],
+        },
+      }),
+    );
+
+    expect(parsed.summary).toBe("Plan startup message work");
+    expect(parsed.plannerResult?.workPackages[0]?.id).toBe("pkg_startup_message");
+  });
+
+  test("falls back to plain summary when planner output is not json", () => {
+    const parsed = parsePlannerModelOutput("Plan the work in one package.");
+    expect(parsed).toEqual({
+      summary: "Plan the work in one package.",
+    });
   });
 });

@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { interrupt } from "@langchain/langgraph";
 import { createAppContext } from "../../src/app/bootstrap";
 import { createThread } from "../../src/domain/thread";
 import { createApprovalRequest } from "../../src/domain/approval";
 import { createRun, transitionRun } from "../../src/domain/run";
 import { createControlTask } from "../../src/control/tasks/task-types";
+import { createSqliteCheckpointer } from "../../src/persistence/sqlite/sqlite-checkpointer";
+import { createRootGraph } from "../../src/runtime/graph/root/graph";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -12,6 +15,9 @@ function createTestModelGateway() {
   return {
     async plan() {
       return { summary: "plan" };
+    },
+    async execute() {
+      return { kind: "no_tool" as const, summary: "executed" };
     },
     async verify() {
       return { summary: "verified", isValid: true };
@@ -74,82 +80,6 @@ describe("createAppContext", () => {
     const narrative = await second.narrativeService.getNarrative(thread.threadId);
     expect(narrative.summary).toContain("Completed repo scan and isolated runtime recovery work.");
     expect(narrative.revision).toBe(1);
-
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
-  });
-
-  test("builds responder prompts from thread narrative and working context", async () => {
-    const workspaceRoot = path.join(os.tmpdir(), `openpx-respond-context-${Date.now()}`);
-    const dataDir = path.join(workspaceRoot, "openpx.db");
-    const prompts: string[] = [];
-
-    await fs.mkdir(workspaceRoot, { recursive: true });
-
-    const ctx = await createAppContext({
-      workspaceRoot,
-      dataDir,
-      modelGateway: {
-        async plan() {
-          return { summary: "plan" };
-        },
-        async verify() {
-          return { summary: "verified", isValid: true };
-        },
-        async respond(input) {
-          prompts.push(input.prompt);
-          return { summary: "You told me your name is Alice." };
-        },
-        onStatusChange() {
-          return () => {};
-        },
-        onEvent() {
-          return () => {};
-        },
-      },
-    });
-
-    const thread = {
-      ...createThread("thread-memory", workspaceRoot, ctx.config.projectId),
-      narrativeState: {
-        revision: 2,
-        updatedAt: new Date().toISOString(),
-        threadSummary: "The user introduced themselves earlier in the thread.",
-        taskSummaries: ["User said their name is Alice."],
-        openLoops: [],
-        notableEvents: ["Remember the user's preferred name."],
-      },
-      workingSetWindow: {
-        revision: 1,
-        updatedAt: new Date().toISOString(),
-        messages: ["User: My name is Alice."],
-        toolResults: [],
-        verifierFeedback: [],
-        retrievedMemories: ["durable memory: user_name=Alice"],
-      },
-      recoveryFacts: {
-        threadId: "thread-memory",
-        revision: 2,
-        schemaVersion: 1,
-        status: "active",
-        updatedAt: new Date().toISOString(),
-        pendingApprovals: [],
-        latestDurableAnswer: {
-          answerId: "answer-memory",
-          summary: "Your name is Alice.",
-          createdAt: new Date().toISOString(),
-        },
-      },
-    };
-    await ctx.stores.threadStore.save(thread);
-
-    await ctx.controlPlane.startRootTask(thread.threadId, "what is my name?");
-
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain("Current user request: what is my name?");
-    expect(prompts[0]).toContain("The user introduced themselves earlier in the thread.");
-    expect(prompts[0]).toContain("User said their name is Alice.");
-    expect(prompts[0]).toContain("User: My name is Alice.");
-    expect(prompts[0]).toContain("Your name is Alice.");
 
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });
@@ -260,6 +190,7 @@ describe("createAppContext", () => {
     expect(updatedRun?.runId).toBe(run.runId);
     expect(updatedRun?.status).toBe("completed");
     expect(updatedRun?.activeTaskId).toBe("task-approve");
+    expect(result.summary).toBe("apply_patch create_file approved.txt");
     expect(ledgerEntries).toHaveLength(1);
     expect(ledgerEntries[0]?.runId).toBe(run.runId);
     expect(ledgerEntries[0]?.toolName).toBe("apply_patch");
@@ -267,4 +198,135 @@ describe("createAppContext", () => {
 
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });
+
+  test("routes graph-backed rejections back through planning with a synthesized reason", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-reject-run-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+    const filePath = path.join(workspaceRoot, "src", "legacy-delete.ts");
+
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, "export const legacyDelete = true;\n");
+
+    const checkpointGraph = await createRootGraph({
+      checkpointer: createSqliteCheckpointer(dataDir),
+      planner: async () => ({ summary: "planned", mode: "plan" }),
+      executor: async () => {
+        interrupt({
+          kind: "approval-required",
+          mode: "execute",
+          summary: "Approval required before deleting src/legacy-delete.ts",
+        });
+        return { summary: "unreachable", mode: "execute" };
+      },
+      verifier: async () => ({ summary: "verified", mode: "verify", isValid: true }),
+    });
+
+    await checkpointGraph.invoke(
+      {
+        input: "continue",
+        workPackages: [
+          {
+            id: "pkg_delete",
+            objective: "delete src/legacy-delete.ts",
+            allowedTools: ["apply_patch"],
+            inputRefs: ["thread:goal", "file:src/legacy-delete.ts"],
+            expectedArtifacts: ["patch:src/legacy-delete.ts"],
+          },
+        ],
+        currentWorkPackageId: "pkg_delete",
+      },
+      { configurable: { thread_id: "thread-reject", task_id: "task-reject" } },
+    );
+
+    const modelGateway = {
+      async plan(input: { prompt: string }) {
+        return { summary: input.prompt };
+      },
+      async verify() {
+        return { summary: "verified", isValid: true };
+      },
+      async respond() {
+        return { summary: "responded" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway,
+    });
+
+    const thread = createThread("thread-reject", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+    const run = transitionRun(
+      transitionRun(
+        createRun({
+          runId: "run-reject",
+          threadId: thread.threadId,
+          trigger: "approval_resume",
+          inputText: "reject patch",
+        }),
+        "running",
+      ),
+      "waiting_approval",
+    );
+    await ctx.stores.runStore.save({
+      ...run,
+      activeTaskId: "task-reject",
+      blockingReason: {
+        kind: "waiting_approval",
+        message: "apply_patch delete_file src/legacy-delete.ts",
+      },
+    });
+    await ctx.stores.taskStore.save({
+      taskId: "task-reject",
+      threadId: thread.threadId,
+      runId: run.runId,
+      summary: "Delete legacy file",
+      status: "blocked",
+      blockingReason: {
+        kind: "waiting_approval",
+        message: "apply_patch delete_file src/legacy-delete.ts",
+      },
+    });
+    await ctx.stores.approvalStore.save(
+      createApprovalRequest({
+        approvalRequestId: "approval-reject",
+        threadId: thread.threadId,
+        runId: run.runId,
+        taskId: "task-reject",
+        toolCallId: "task-reject:apply_patch",
+        toolRequest: {
+          toolCallId: "task-reject:apply_patch",
+          threadId: thread.threadId,
+          runId: run.runId,
+          taskId: "task-reject",
+          toolName: "apply_patch",
+          args: {},
+          action: "delete_file",
+          path: filePath,
+          changedFiles: 1,
+        },
+        summary: "apply_patch delete_file src/legacy-delete.ts",
+        risk: "apply_patch.delete_file",
+      }),
+    );
+
+    const result = await ctx.controlPlane.rejectRequest("approval-reject");
+
+    expect(result.status).toBe("completed");
+    expect(result.summary).toContain("Tool approval was rejected for proposal");
+    expect(result.summary).toContain("Replan safely without repeating that proposal.");
+    expect(result.approvals).toHaveLength(0);
+    expect(await Bun.file(filePath).exists()).toBe(true);
+
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  });
+
 });

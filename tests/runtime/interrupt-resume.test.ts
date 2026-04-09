@@ -20,10 +20,27 @@ async function createWorkspace() {
   return dir;
 }
 
+async function waitFor<T>(load: () => Promise<T>, predicate: (value: T) => boolean, timeoutMs = 500): Promise<T> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const value = await load();
+    if (predicate(value)) {
+      return value;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  return load();
+}
+
 function createTestModelGateway() {
   return {
     async plan(input: { prompt: string }) {
       return { summary: `planned: ${input.prompt}` };
+    },
+    async execute() {
+      return { kind: "no_tool" as const, summary: "executed" };
     },
     async verify() {
       return { summary: "verified", isValid: true };
@@ -43,10 +60,15 @@ function createTestModelGateway() {
 describe("root graph interrupt/resume", () => {
   test("interrupts on high-risk recommendation and resumes with explicit approval control", async () => {
     const checkpointer = new MemorySaver();
+    let executorCalled = false;
+
     const graph = await createRootGraph({
       checkpointer,
       planner: async () => ({ summary: "planned", mode: "plan" }),
-      executor: async () => ({ summary: "executed", mode: "execute" }),
+      executor: async () => {
+        executorCalled = true;
+        return { summary: "executed", mode: "execute" };
+      },
       verifier: async () => ({ summary: "verified", mode: "verify" }),
     });
 
@@ -61,7 +83,7 @@ describe("root graph interrupt/resume", () => {
     }
 
     expect(interrupted[INTERRUPT][0]?.value).toEqual({
-      kind: "post-turn-review",
+      kind: "approval",
       mode: "waiting_approval",
       summary: "",
     });
@@ -72,8 +94,9 @@ describe("root graph interrupt/resume", () => {
     );
 
     expect(isInterrupted(resumed)).toBe(false);
-    expect(resumed.mode).toBe("waiting_approval");
-    expect(resumed.resumeValue).toEqual({ kind: "approval_resolution", decision: "approved" });
+    expect(executorCalled).toBe(true);
+    expect(resumed.mode).toBe("done");
+    expect(resumed.summary).toBe("executed");
   });
 
   test("hydrates legacy pending approvals into the kernel session view", async () => {
@@ -183,11 +206,74 @@ describe("root graph interrupt/resume", () => {
 
     expect(immediate.threadId).toBe("thread_legacy");
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    const hydrated = await ctx.kernel.hydrateSession();
+    const hydrated = await waitFor(
+      () => ctx.kernel.hydrateSession(),
+      (value) => (value?.approvals?.length ?? 0) === 0 && value?.tasks?.[0]?.status === "completed",
+    );
     expect(hydrated?.approvals).toHaveLength(0);
     expect(hydrated?.tasks?.[0]?.status).toBe("completed");
     expect(await Bun.file(targetPath).exists()).toBe(false);
+  });
+
+  test("rejects legacy pending delete requests without requiring checkpoint-backed resume", async () => {
+    const workspaceRoot = await createWorkspace();
+    const dataDir = join(workspaceRoot, "agent.sqlite");
+    const targetPath = join(workspaceRoot, "src/legacy-delete.ts");
+    await mkdir(join(workspaceRoot, "src"), { recursive: true });
+    await Bun.write(targetPath, "export const legacyDelete = true;\n");
+
+    const seedDb = createSqlite(dataDir);
+    migrateSqlite(seedDb);
+    seedDb.run(`INSERT INTO threads (thread_id, workspace_root, project_id, revision, status, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, [
+      "thread_legacy_reject",
+      workspaceRoot,
+      "legacy-project",
+      1,
+      "waiting_approval",
+      new Date().toISOString(),
+    ]);
+    seedDb.run(`INSERT INTO tasks (task_id, thread_id, summary, status) VALUES (?, ?, ?, ?)`, [
+      "task_legacy_reject",
+      "thread_legacy_reject",
+      "delete src/legacy-delete.ts",
+      "blocked",
+    ]);
+    seedDb.run(
+      `INSERT INTO approvals (approval_request_id, thread_id, task_id, tool_call_id, request_json, summary, risk, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "approval_legacy_reject",
+        "thread_legacy_reject",
+        "task_legacy_reject",
+        "tool_legacy_reject",
+        null,
+        "apply_patch delete_file src/legacy-delete.ts",
+        "apply_patch.delete_file",
+        "pending",
+      ],
+    );
+    seedDb.close();
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      projectId: "legacy-project",
+      modelGateway: createTestModelGateway(),
+    });
+
+    const immediate = await ctx.kernel.handleCommand({
+      type: "reject_request",
+      payload: { approvalRequestId: "approval_legacy_reject" },
+    });
+
+    expect(immediate.threadId).toBe("thread_legacy_reject");
+
+    const hydrated = await waitFor(
+      () => ctx.kernel.hydrateSession(),
+      (value) => (value?.approvals?.length ?? 0) === 0 && value?.tasks?.[0]?.status === "cancelled",
+    );
+    expect(hydrated?.approvals).toHaveLength(0);
+    expect(hydrated?.tasks?.[0]?.status).toBe("cancelled");
+    expect(await Bun.file(targetPath).exists()).toBe(true);
   });
 });
