@@ -11,6 +11,10 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 
+async function closeAppContext(ctx: Awaited<ReturnType<typeof createAppContext>>) {
+  await ctx.close();
+}
+
 function createTestModelGateway() {
   return {
     async plan() {
@@ -42,10 +46,12 @@ describe("createAppContext", () => {
       modelGateway: createTestModelGateway(),
     });
 
-    expect(ctx.config.workspaceRoot).toBe("/tmp/demo-workspace");
+    expect(ctx.config.workspaceRoot).toBe(path.resolve("/tmp/demo-workspace"));
     expect(ctx.config.checkpointConnString).toBe(":memory:");
     expect(ctx.config.model).toBeDefined();
     expect(typeof ctx.kernel.handleCommand).toBe("function");
+
+    await closeAppContext(ctx);
   });
 
   test("rehydrates durable thread narrative summaries across app boots", async () => {
@@ -81,6 +87,8 @@ describe("createAppContext", () => {
     expect(narrative.summary).toContain("Completed repo scan and isolated runtime recovery work.");
     expect(narrative.revision).toBe(1);
 
+    await closeAppContext(first);
+    await closeAppContext(second);
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });
 
@@ -109,6 +117,7 @@ describe("createAppContext", () => {
     expect(runs[0]?.status).toBe("completed");
     expect(runs[0]?.inputText).toBe("what is my name?");
 
+    await closeAppContext(ctx);
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });
 
@@ -196,6 +205,85 @@ describe("createAppContext", () => {
     expect(ledgerEntries[0]?.toolName).toBe("apply_patch");
     expect(await Bun.file(filePath).text()).toBe("approved\n");
 
+    await closeAppContext(ctx);
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  });
+
+  test("resumes approved delete execution through the graph and returns tool metadata", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-approve-resume-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+    const filePath = path.join(workspaceRoot, "approved.txt");
+
+    await fs.mkdir(workspaceRoot, { recursive: true });
+    await fs.writeFile(filePath, "approved\n");
+
+    const modelGateway = {
+      async plan() {
+        return {
+          summary: "plan delete",
+          plannerResult: {
+            workPackages: [
+              {
+                id: "pkg_delete",
+                objective: "delete approved.txt",
+                allowedTools: ["apply_patch"],
+                inputRefs: ["thread:goal", "file:approved.txt"],
+                expectedArtifacts: ["patch:approved.txt"],
+              },
+            ],
+            acceptanceCriteria: ["approved.txt is removed"],
+            riskFlags: [],
+            approvalRequiredActions: ["apply_patch.delete_file"],
+            verificationScope: ["workspace file state"],
+          },
+        };
+      },
+      async verify() {
+        return { summary: "verified", isValid: true };
+      },
+      async respond() {
+        return { summary: "responded" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway,
+    });
+
+    const thread = createThread("thread-approve-resume", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+
+    const blocked = await ctx.controlPlane.startRootTask(thread.threadId, "clean up approved artifact");
+    const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+    const interruptedRun = await ctx.stores.runStore.getLatestByThread(thread.threadId);
+
+    expect(blocked.status).toBe("waiting_approval");
+    expect(blocked.summary).toContain("Approval required before deleting approved.txt");
+    expect(approvalRequestId).toBeDefined();
+    expect(interruptedRun?.status).toBe("waiting_approval");
+
+    const resumed = await ctx.controlPlane.approveRequest(approvalRequestId!);
+    const completedRun = await ctx.stores.runStore.getLatestByThread(thread.threadId);
+    const ledgerEntries = await ctx.stores.executionLedger.listByThread(thread.threadId);
+
+    expect(resumed.status).toBe("completed");
+    expect(resumed.summary).toBe("Deleted approved.txt");
+    expect(resumed.lastCompletedToolCallId).toBe(`${blocked.task.taskId}:apply_patch`);
+    expect(resumed.lastCompletedToolName).toBe("apply_patch");
+    expect(resumed.approvals).toHaveLength(0);
+    expect(completedRun?.status).toBe("completed");
+    expect(ledgerEntries).toHaveLength(1);
+    expect(await Bun.file(filePath).exists()).toBe(false);
+
+    await closeAppContext(ctx);
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });
 
@@ -207,8 +295,9 @@ describe("createAppContext", () => {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, "export const legacyDelete = true;\n");
 
+    const checkpointSaver = createSqliteCheckpointer(dataDir);
     const checkpointGraph = await createRootGraph({
-      checkpointer: createSqliteCheckpointer(dataDir),
+      checkpointer: checkpointSaver,
       planner: async () => ({ summary: "planned", mode: "plan" }),
       executor: async () => {
         interrupt({
@@ -237,6 +326,7 @@ describe("createAppContext", () => {
       },
       { configurable: { thread_id: "thread-reject", task_id: "task-reject" } },
     );
+    await (checkpointSaver as { close?: () => Promise<void> }).close?.();
 
     const modelGateway = {
       async plan(input: { prompt: string }) {
@@ -326,6 +416,7 @@ describe("createAppContext", () => {
     expect(result.approvals).toHaveLength(0);
     expect(await Bun.file(filePath).exists()).toBe(true);
 
+    await closeAppContext(ctx);
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });
 

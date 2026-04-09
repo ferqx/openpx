@@ -1,5 +1,5 @@
 import { INTERRUPT, isInterrupted, Command, interrupt } from "@langchain/langgraph";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { createApprovalService, type ApprovalService, type CreateApprovalInput } from "../control/policy/approval-service";
 import { createPolicyEngine } from "../control/policy/policy-engine";
 import { createTaskManager } from "../control/tasks/task-manager";
@@ -40,6 +40,7 @@ import {
 type AppStores = ReturnType<typeof createStores>;
 type ResettableCheckpointer = ReturnType<typeof createSqliteCheckpointer> & {
   deleteThread(threadId: string): Promise<void>;
+  close?(): Promise<void>;
 };
 
 type ControlPlane = {
@@ -255,8 +256,8 @@ function summarizeApprovedAction(summary: string, workspaceRoot: string, request
     return summary;
   }
 
-  const relativePath = requestPath.startsWith(workspaceRoot)
-    ? requestPath.slice(workspaceRoot.length).replace(/^\/+/, "")
+  const relativePath = isAbsolute(requestPath)
+    ? relative(workspaceRoot, requestPath).replace(/\\/g, "/")
     : requestPath;
 
   if (summary.includes("delete_file")) {
@@ -273,6 +274,18 @@ function buildRejectedApprovalReason(summary: string): string {
     .replace(/^_+|_+$/g, "")
     .toLowerCase() || "rejected_proposal";
   return `Tool approval was rejected for proposal ${proposalToken}. Replan safely without repeating that proposal.`;
+}
+
+function resumeInputText(inputValue: string | ResumeControl): string {
+  if (typeof inputValue === "string") {
+    return inputValue;
+  }
+
+  if (inputValue.decision === "rejected") {
+    return inputValue.reason ?? "";
+  }
+
+  return "";
 }
 
 function canResetThreadCheckpoint(checkpointer: ReturnType<typeof createSqliteCheckpointer>): checkpointer is ResettableCheckpointer {
@@ -495,19 +508,75 @@ async function createControlPlane(input: {
         feedback: result.summary, // Assuming summary contains feedback when invalid
       };
     },
-    executor: async ({ input: text, threadId, taskId, currentWorkPackage, plannerResult, artifacts }) => {
+    executor: async ({
+      input: text,
+      threadId,
+      taskId,
+      currentWorkPackage,
+      plannerResult,
+      artifacts,
+      approvedApprovalRequestId,
+      configurable,
+    }) => {
       const executionInput = buildExecutionInput({
         input: text,
         currentWorkPackage,
         artifacts,
         plannerResult,
       });
+      const resumedApprovalRequestId =
+        typeof configurable?.approval_request_id === "string"
+        && configurable.approval_request_id !== approvedApprovalRequestId
+          ? configurable.approval_request_id
+          : undefined;
+      if (resumedApprovalRequestId) {
+        const approval = await approvals.get(resumedApprovalRequestId);
+        const approvedToolRequest = resolveApprovalToolRequest(approval, input.config.workspaceRoot);
+        if (approvedToolRequest && threadId && taskId) {
+          const approvedOutcome = await toolRegistry.executeApproved(approvedToolRequest);
+          if (approvedOutcome.kind !== "executed") {
+            return {
+              summary: `Unable to complete approved action: ${approvedOutcome.reason}`,
+              mode: "execute",
+              approvedApprovalRequestId: resumedApprovalRequestId,
+            };
+          }
+
+          const approvedSummary = summarizeApprovedAction(
+            approval?.summary ?? `Executed approved action: ${executionInput}`,
+            input.config.workspaceRoot,
+            approvedToolRequest.path,
+          );
+          await input.stores.eventLog.append({
+            eventId: `event_${crypto.randomUUID()}`,
+            threadId,
+            taskId,
+            type: "tool.executed",
+            payload: { summary: approvedSummary, output: approvedOutcome.output },
+            createdAt: new Date().toISOString(),
+          });
+          return {
+            summary: approvedSummary,
+            mode: "execute",
+            approvedApprovalRequestId: resumedApprovalRequestId,
+            latestArtifacts: buildApprovedExecutionArtifacts({
+              workspaceRoot: input.config.workspaceRoot,
+              toolRequest: approvedToolRequest,
+              summary: approvedSummary,
+              currentWorkPackage,
+            }),
+            lastCompletedToolCallId: approvedToolRequest.toolCallId,
+            lastCompletedToolName: approvedToolRequest.toolName,
+          };
+        }
+      }
       const deleteRequest = parseDeleteRequest(executionInput, input.config.workspaceRoot);
       if (!deleteRequest || !threadId || !taskId) {
         const summary = `Executed request: ${executionInput}`;
         return {
           summary,
           mode: "execute",
+          approvedApprovalRequestId,
           latestArtifacts: buildExecutionArtifacts({
             summary,
             currentWorkPackage,
@@ -552,19 +621,21 @@ async function createControlPlane(input: {
           const approval = await approvals.get(resolution.approvalRequestId);
           const approvedToolRequest = resolveApprovalToolRequest(approval, input.config.workspaceRoot);
           if (!approvedToolRequest) {
-            return {
-              summary,
-              mode: "execute",
-            };
-          }
+              return {
+                summary,
+                mode: "execute",
+                approvedApprovalRequestId,
+              };
+            }
 
           const approvedOutcome = await toolRegistry.executeApproved(approvedToolRequest);
           if (approvedOutcome.kind !== "executed") {
-            return {
-              summary: `Unable to complete approved action: ${approvedOutcome.reason}`,
-              mode: "execute",
-            };
-          }
+              return {
+                summary: `Unable to complete approved action: ${approvedOutcome.reason}`,
+                mode: "execute",
+                approvedApprovalRequestId,
+              };
+            }
 
           const approvedSummary = summarizeApprovedAction(
             approval?.summary ?? summary,
@@ -579,12 +650,13 @@ async function createControlPlane(input: {
             payload: { summary: approvedSummary, output: approvedOutcome.output },
             createdAt: new Date().toISOString(),
           });
-          return {
-            summary: approvedSummary,
-            mode: "execute",
-            latestArtifacts: buildApprovedExecutionArtifacts({
-              workspaceRoot: input.config.workspaceRoot,
-              toolRequest: approvedToolRequest,
+            return {
+              summary: approvedSummary,
+              mode: "execute",
+              approvedApprovalRequestId,
+              latestArtifacts: buildApprovedExecutionArtifacts({
+                workspaceRoot: input.config.workspaceRoot,
+                toolRequest: approvedToolRequest,
               summary: approvedSummary,
               currentWorkPackage,
             }),
@@ -595,6 +667,7 @@ async function createControlPlane(input: {
         return {
           summary,
           mode: "execute",
+          approvedApprovalRequestId,
           pendingToolCallId: `${taskId}:apply_patch`,
           pendingToolName: "apply_patch",
         };
@@ -614,6 +687,7 @@ async function createControlPlane(input: {
         return {
           summary,
           mode: "execute",
+          approvedApprovalRequestId,
           latestArtifacts: buildExecutionArtifacts({
             summary,
             currentWorkPackage,
@@ -636,6 +710,7 @@ async function createControlPlane(input: {
       return {
         summary: errorSummary,
         mode: "execute",
+        approvedApprovalRequestId,
       };
     },
     responder: async ({ input: text, threadId, taskId }) => {
@@ -682,7 +757,7 @@ async function createControlPlane(input: {
         task = ensureControlTask(lastTask);
         task = await saveTaskStatus(input.stores, task, "running");
       } else {
-        const text = typeof inputValue === "string" ? inputValue : inputValue.reason ?? "";
+        const text = resumeInputText(inputValue);
         run = await saveRun(
           createRun({
             runId: prefixedUuid("run"),
@@ -710,12 +785,16 @@ async function createControlPlane(input: {
                 configurable: {
                   thread_id: threadId,
                   task_id: task.taskId,
+                  approval_request_id:
+                    typeof inputValue !== "string" && inputValue.decision === "approved"
+                      ? inputValue.approvalRequestId
+                      : undefined,
                   signal: controller.signal,
                 },
               },
             )
           : await rootGraph.invoke(
-              { input: typeof inputValue === "string" ? inputValue : inputValue.reason ?? "" },
+              { input: resumeInputText(inputValue) },
               {
                 configurable: {
                   thread_id: threadId,
@@ -754,11 +833,11 @@ async function createControlPlane(input: {
           ? (graphResult as { recommendationReason?: string }).recommendationReason
           : undefined;
       const summary = isInterrupted(graphResult)
-        ? String(interruptValue?.summary ?? (typeof inputValue === "string" ? inputValue : inputValue.reason ?? ""))
+        ? String(interruptValue?.summary ?? resumeInputText(inputValue))
         : String(
             (graphResult as { summary?: string; recommendationReason?: string }).summary ??
             recommendationReason ??
-            (typeof inputValue === "string" ? inputValue : inputValue.reason ?? ""),
+            resumeInputText(inputValue),
           );
       await updateRunStatus(run, status === "waiting_approval" ? "waiting_approval" : "completed", {
         activeTaskId: finalTask.taskId,
@@ -779,6 +858,10 @@ async function createControlPlane(input: {
         approvals: approvalsForThread,
         summary,
         recommendationReason,
+        lastCompletedToolCallId: (graphResult as { lastCompletedToolCallId?: string } | undefined)?.lastCompletedToolCallId,
+        lastCompletedToolName: (graphResult as { lastCompletedToolName?: string } | undefined)?.lastCompletedToolName,
+        pendingToolCallId: (graphResult as { pendingToolCallId?: string } | undefined)?.pendingToolCallId,
+        pendingToolName: (graphResult as { pendingToolName?: string } | undefined)?.pendingToolName,
       };
     },
 
@@ -998,5 +1081,20 @@ export async function createAppContext(input: {
     kernel.events.publish(event);
   });
 
-  return { config, stores, controlPlane, kernel, narrativeService, scratchPolicy, memoryConsolidator, modelGateway };
+  async function close() {
+    await Promise.all([
+      stores.threadStore.close?.(),
+      stores.runStore.close?.(),
+      stores.taskStore.close?.(),
+      stores.approvalStore.close?.(),
+      stores.eventLog.close?.(),
+      stores.memoryStore.close?.(),
+      stores.executionLedger.close?.(),
+      stores.workerStore.close?.(),
+      (checkpointer as { close?: () => Promise<void> }).close?.(),
+    ]);
+    sqlite.close();
+  }
+
+  return { config, stores, controlPlane, kernel, narrativeService, scratchPolicy, memoryConsolidator, modelGateway, close };
   }

@@ -32,11 +32,16 @@ describe("SessionKernel", () => {
           async get() { return undefined; },
         },
       },
-      controlPlane: {
-        async startRootTask(threadId, input) {
-          const text = typeof input === "string" ? input : input.reason ?? "approved";
-          return {
-            status: "completed",
+        controlPlane: {
+          async startRootTask(threadId, input) {
+            const text =
+              typeof input === "string"
+                ? input
+                : input.decision === "rejected"
+                  ? input.reason ?? "approved"
+                  : "approved";
+            return {
+              status: "completed",
             task: { taskId: "task-1", threadId, runId: "run-1", summary: text, status: "completed" },
             approvals: [],
             summary: text,
@@ -92,11 +97,16 @@ describe("SessionKernel", () => {
           async get() { return undefined; },
         },
       },
-      controlPlane: {
-        async startRootTask(threadId, input) {
-          const text = typeof input === "string" ? input : input.reason ?? "approved";
-          return {
-            status: "completed",
+        controlPlane: {
+          async startRootTask(threadId, input) {
+            const text =
+              typeof input === "string"
+                ? input
+                : input.decision === "rejected"
+                  ? input.reason ?? "approved"
+                  : "approved";
+            return {
+              status: "completed",
             task: { taskId: "task-completed", threadId, runId: "run-completed", summary: "Stable work", status: "completed" },
             approvals: [],
             summary: "Stable work",

@@ -49,6 +49,7 @@ describe("approval gate node", () => {
       resumeValue: {
         kind: "approval_resolution",
         decision: "approved",
+        approvalRequestId: "approval-delete",
       },
       currentWorkPackageId: "pkg_delete",
     });

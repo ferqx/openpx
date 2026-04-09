@@ -103,6 +103,7 @@ export async function createRootGraph(context: RootGraphContext) {
         currentWorkPackage,
         artifacts: resolveArtifactsForCurrentWorkPackage(state),
         plannerResult: state.plannerResult,
+        approvedApprovalRequestId: state.approvedApprovalRequestId,
         configurable: config.configurable,
       });
     })
