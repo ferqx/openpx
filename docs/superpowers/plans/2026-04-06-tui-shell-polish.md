@@ -1,5 +1,16 @@
 # TUI Shell Polish Implementation Plan
 
+Date: 2026-04-06
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This document may still be useful for later productization work, but it is not part of the current top-priority implementation path.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Refine the TUI shell to feel closer to Claude/Codex style while preserving thread and runtime controls.

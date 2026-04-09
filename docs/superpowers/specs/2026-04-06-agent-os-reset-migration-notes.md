@@ -1,7 +1,9 @@
 # Agent OS Reset Migration Notes
 
 Date: 2026-04-06
-Status: Core reset implemented
+Status: Active
+Owner: openpx
+Related milestone: M1-M2
 
 ## Freeze Rules
 

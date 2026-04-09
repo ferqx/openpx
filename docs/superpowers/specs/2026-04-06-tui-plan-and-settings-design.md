@@ -1,5 +1,16 @@
 # 规格说明书：TUI `/plan`、命令提示与 Settings 设计
 
+Date: 2026-04-06
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This design is retained as later-stage product/UI exploration and is not part of the current implementation priority path.
+
 ## 1. 背景
 
 TUI v1 shell 已经具备欢迎页、单线程主流、slash command 基础入口、utility panes、approval 输入语义和 `Esc` 中断链。下一步需要补齐两个高频入口能力：

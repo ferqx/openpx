@@ -1,6 +1,16 @@
 # OpenWENPX Thread Compaction & Kernel Stabilization Plan (V1.1)
 
-**Date:** 2026-04-05
+Date: 2026-04-05
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This compaction plan is historical and should not be treated as a current implementation baseline.
+
 **Priority:** Kernel Stability > Full CLI TUI > Multi-Frontend (Deferred)
 
 ## 1. Goal

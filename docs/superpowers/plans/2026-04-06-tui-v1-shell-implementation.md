@@ -1,5 +1,16 @@
 # TUI v1 Shell Implementation Plan
 
+Date: 2026-04-06
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This shell-first plan is preserved for historical reference, but it is not the active implementation baseline after the reset.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first production-facing openpx TUI shell with a welcome-first launch flow, chat-first single-thread UX, slash commands, current-thread history, approval handling, and `Esc`-driven thread interruption.

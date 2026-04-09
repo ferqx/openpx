@@ -1,5 +1,13 @@
 # Agent OS Tail Convergence Implementation Plan
 
+Date: 2026-04-06
+Status: Working
+Related milestone: M2
+Roadmap entrypoint: `ROADMAP.md`
+Active design:
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Finish the remaining Agent OS convergence work by removing the last ambiguous UI/kernel/runtime boundaries without reopening core architecture drift.

@@ -1,5 +1,16 @@
 # TUI `/plan` And Settings Implementation Plan
 
+Date: 2026-04-06
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This document is retained as later-stage product/UI exploration and is not part of the current implementation priority path.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Upgrade the openpx TUI so `/plan` is a real planning-task entry with visible stage state, `/` input shows command suggestions, and `settings` becomes an interactive JSON-backed configuration editor with global defaults plus project overrides.

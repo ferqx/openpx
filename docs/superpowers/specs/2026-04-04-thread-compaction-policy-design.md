@@ -1,7 +1,15 @@
 # OpenWENPX Thread-Level Compaction Policy Design
 
 Date: 2026-04-04
-Status: Proposed
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This compaction-focused design is retained as historical context and must not override reset-era lifecycle priorities.
 
 ## 1. Goal
 

@@ -1,7 +1,15 @@
 # LangGraph + Bun Agent OS Design
 
 Date: 2026-04-01
-Status: Draft for user review
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This draft is preserved as early Agent OS direction, but it is no longer an active design baseline.
 
 ## Goal
 

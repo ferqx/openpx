@@ -1,5 +1,16 @@
 # LangGraph Bun Agent OS V1 Implementation Plan
 
+Date: 2026-04-01
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This plan has been superseded as the active implementation baseline by the reset design and reset plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a local, TUI-first agent OS kernel on Bun and LangGraph with explicit threads, tasks, workers, policy-gated tools, SQLite-backed persistence, and a user-facing answer pane that summarizes real code changes and verification.

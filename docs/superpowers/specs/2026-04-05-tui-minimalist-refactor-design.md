@@ -1,5 +1,16 @@
 # 规格说明书：TUI 极简重构与性能优化
 
+Date: 2026-04-05
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This design is preserved as historical shell exploration and is not an active implementation baseline.
+
 ## 1. 问题背景
 
 当前 openpx 的 TUI 存在两个主要问题：

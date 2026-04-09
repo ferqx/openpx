@@ -1,5 +1,11 @@
 # openpx
 
+## Current Roadmap
+
+Current planning authority lives in `ROADMAP.md`.
+
+Use `ROADMAP.md`, `AGENTS.md`, and `docs/active/` as the active baseline for implementation priorities.
+
 ## Install
 
 ```bash

@@ -1,6 +1,16 @@
 # OpenWENPX Kernel-First Compaction & Stabilization Plan (V1.4)
 
-**Date:** 2026-04-05
+Date: 2026-04-05
+Status: Historical
+Superseded by:
+- `ROADMAP.md`
+- `docs/superpowers/specs/2026-04-06-agent-os-reset-design.md`
+- `docs/superpowers/plans/2026-04-06-agent-os-reset-plan.md`
+
+## Reset Notice
+
+This compaction plan is historical and should not be treated as a current implementation baseline.
+
 **Priority:** Kernel Stability (Absolute) > Data Sync Readiness (Forward-Compatible) > Side-Effect Fidelity > CLI TUI
 
 ## 1. Goal
