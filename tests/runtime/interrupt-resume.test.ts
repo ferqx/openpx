@@ -214,4 +214,66 @@ describe("root graph interrupt/resume", () => {
     expect(hydrated?.tasks?.[0]?.status).toBe("completed");
     expect(await Bun.file(targetPath).exists()).toBe(false);
   });
+
+  test("rejects legacy pending delete requests without requiring checkpoint-backed resume", async () => {
+    const workspaceRoot = await createWorkspace();
+    const dataDir = join(workspaceRoot, "agent.sqlite");
+    const targetPath = join(workspaceRoot, "src/legacy-delete.ts");
+    await mkdir(join(workspaceRoot, "src"), { recursive: true });
+    await Bun.write(targetPath, "export const legacyDelete = true;\n");
+
+    const seedDb = createSqlite(dataDir);
+    migrateSqlite(seedDb);
+    seedDb.run(`INSERT INTO threads (thread_id, workspace_root, project_id, revision, status, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, [
+      "thread_legacy_reject",
+      workspaceRoot,
+      "legacy-project",
+      1,
+      "waiting_approval",
+      new Date().toISOString(),
+    ]);
+    seedDb.run(`INSERT INTO tasks (task_id, thread_id, summary, status) VALUES (?, ?, ?, ?)`, [
+      "task_legacy_reject",
+      "thread_legacy_reject",
+      "delete src/legacy-delete.ts",
+      "blocked",
+    ]);
+    seedDb.run(
+      `INSERT INTO approvals (approval_request_id, thread_id, task_id, tool_call_id, request_json, summary, risk, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "approval_legacy_reject",
+        "thread_legacy_reject",
+        "task_legacy_reject",
+        "tool_legacy_reject",
+        null,
+        "apply_patch delete_file src/legacy-delete.ts",
+        "apply_patch.delete_file",
+        "pending",
+      ],
+    );
+    seedDb.close();
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      projectId: "legacy-project",
+      modelGateway: createTestModelGateway(),
+    });
+
+    const immediate = await ctx.kernel.handleCommand({
+      type: "reject_request",
+      payload: { approvalRequestId: "approval_legacy_reject" },
+    });
+
+    expect(immediate.threadId).toBe("thread_legacy_reject");
+
+    const hydrated = await waitFor(
+      () => ctx.kernel.hydrateSession(),
+      (value) => (value?.approvals?.length ?? 0) === 0 && value?.tasks?.[0]?.status === "cancelled",
+    );
+    expect(hydrated?.approvals).toHaveLength(0);
+    expect(hydrated?.tasks?.[0]?.status).toBe("cancelled");
+    expect(await Bun.file(targetPath).exists()).toBe(true);
+  });
 });

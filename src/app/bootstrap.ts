@@ -38,6 +38,9 @@ import {
 } from "./worker-inputs";
 
 type AppStores = ReturnType<typeof createStores>;
+type ResettableCheckpointer = ReturnType<typeof createSqliteCheckpointer> & {
+  deleteThread(threadId: string): Promise<void>;
+};
 
 type ControlPlane = {
   startRootTask(threadId: string, input: string | ResumeControl): Promise<SessionControlPlaneResult>;
@@ -261,6 +264,19 @@ function summarizeApprovedAction(summary: string, workspaceRoot: string, request
   }
 
   return summary;
+}
+
+function buildRejectedApprovalReason(summary: string): string {
+  const proposalToken = summary
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase() || "rejected_proposal";
+  return `Tool approval was rejected for proposal ${proposalToken}. Replan safely without repeating that proposal.`;
+}
+
+function canResetThreadCheckpoint(checkpointer: ReturnType<typeof createSqliteCheckpointer>): checkpointer is ResettableCheckpointer {
+  return "deleteThread" in checkpointer && typeof checkpointer.deleteThread === "function";
 }
 
 function resolveApprovalToolRequest(
@@ -856,14 +872,41 @@ async function createControlPlane(input: {
     async rejectRequest(approvalRequestId: string) {
       const approval = await approvals.get(approvalRequestId);
       if (!approval) {
-      throw new Error(`approval request ${approvalRequestId} not found`);
+        throw new Error(`approval request ${approvalRequestId} not found`);
       }
-      const run = await input.stores.runStore.get(approval.runId);
-      if (!run) {
-        throw new Error(`run ${approval.runId} not found for approval ${approvalRequestId}`);
+      const run = approval.runId ? await input.stores.runStore.get(approval.runId) : undefined;
+      await approvals.updateStatus(approvalRequestId, "rejected");
+      const checkpoint = run
+        ? await input.checkpointer.getTuple({
+            configurable: {
+              thread_id: approval.threadId,
+            },
+          })
+        : undefined;
+
+      if (checkpoint && run) {
+        const currentTask =
+          (await input.stores.taskStore.get(approval.taskId)) ??
+          ({
+            taskId: approval.taskId,
+            threadId: approval.threadId,
+            runId: approval.runId,
+            summary: approval.summary,
+            status: "blocked",
+          } satisfies ControlTask);
+        const cancelledTask = await saveTaskStatus(input.stores, ensureControlTask(currentTask), "cancelled");
+        await updateRunStatus(run, "completed", {
+          activeTaskId: cancelledTask.taskId,
+          resultSummary: `Rejected ${approval.summary}`,
+          blockingReason: undefined,
+          endedAt: new Date().toISOString(),
+        });
+        if (canResetThreadCheckpoint(input.checkpointer)) {
+          await input.checkpointer.deleteThread(approval.threadId);
+        }
+        return controlPlane.startRootTask(approval.threadId, buildRejectedApprovalReason(approval.summary));
       }
 
-      await approvals.updateStatus(approvalRequestId, "rejected");
       const currentTask =
         (await input.stores.taskStore.get(approval.taskId)) ??
         ({
@@ -875,18 +918,20 @@ async function createControlPlane(input: {
         } satisfies ControlTask);
       const cancelledTask = await saveTaskStatus(input.stores, ensureControlTask(currentTask), "cancelled");
       const pendingApprovals = await input.stores.approvalStore.listPendingByThread(approval.threadId);
-      await updateRunStatus(run, pendingApprovals.length > 0 ? "waiting_approval" : "completed", {
-        activeTaskId: cancelledTask.taskId,
-        resultSummary: `Rejected ${approval.summary}`,
-        blockingReason:
-          pendingApprovals.length > 0
-            ? {
-                kind: "waiting_approval",
-                message: "Additional approvals are still pending.",
-              }
-            : undefined,
-        endedAt: pendingApprovals.length > 0 ? undefined : new Date().toISOString(),
-      });
+      if (run) {
+        await updateRunStatus(run, pendingApprovals.length > 0 ? "waiting_approval" : "completed", {
+          activeTaskId: cancelledTask.taskId,
+          resultSummary: `Rejected ${approval.summary}`,
+          blockingReason:
+            pendingApprovals.length > 0
+              ? {
+                  kind: "waiting_approval",
+                  message: "Additional approvals are still pending.",
+                }
+              : undefined,
+          endedAt: pendingApprovals.length > 0 ? undefined : new Date().toISOString(),
+        });
+      }
 
       return {
         status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",

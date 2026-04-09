@@ -7,7 +7,6 @@ import { approvalGateNode } from "./nodes/approval-gate";
 import { intakeNormalizeNode } from "./nodes/intake-normalize";
 import { phaseCommitNode } from "./nodes/phase-commit";
 import { createPlannerWorkerGraph } from "../../workers/planner/graph";
-import { createExecutorWorkerGraph } from "../../workers/executor/graph";
 import { createVerifierWorkerGraph } from "../../workers/verifier/graph";
 import type { ResumeControl } from "./resume-control";
 import type { WorkPackage } from "../../planning/work-package";
@@ -39,7 +38,6 @@ function resolveArtifactsForCurrentWorkPackage(state: {
 
 export async function createRootGraph(context: RootGraphContext) {
   const plannerGraph = await createPlannerWorkerGraph(context.planner);
-  const executorGraph = await createExecutorWorkerGraph(context.executor);
   const verifierGraph = await createVerifierWorkerGraph(context.verifier);
 
   const graph = new StateGraph(RootState)
