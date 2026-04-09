@@ -37,9 +37,47 @@ describe("RuntimeService", () => {
     expect(snapshot.messages).toEqual([]);
   });
 
-  test("starts one device runtime daemon and lets reconnecting clients reuse it across workspaces", async () => {
-    // This will likely need runtime-daemon logic
-    // For now, let's keep it as a placeholder as suggested by the plan
+  test("reuses scoped runtime truth within one device service and isolates other scopes", async () => {
+    await fs.mkdir(testDir, { recursive: true });
+    const dataDir = path.join(testDir, "runtime-service-multi-scope.sqlite");
+    const workspaceA = path.join(testDir, "workspace-a");
+    const workspaceB = path.join(testDir, "workspace-b");
+    await fs.mkdir(workspaceA, { recursive: true });
+    await fs.mkdir(workspaceB, { recursive: true });
+
+    const runtime = await createRuntimeService({ dataDir, workspaceRoot: workspaceA, projectId: "project-a" });
+
+    await runtime.handleCommand(
+      { kind: "new_thread" },
+      { workspaceRoot: workspaceA, projectId: "project-a" },
+    );
+    const firstScope = await runtime.getSnapshot({ workspaceRoot: workspaceA, projectId: "project-a" });
+    const firstThreadId = firstScope.activeThreadId;
+
+    expect(firstThreadId).toBeString();
+    expect(firstScope.threads).toHaveLength(1);
+
+    const rehydratedFirstScope = await runtime.getSnapshot({ workspaceRoot: workspaceA, projectId: "project-a" });
+    expect(rehydratedFirstScope.activeThreadId).toBe(firstThreadId);
+    expect(rehydratedFirstScope.threads).toHaveLength(1);
+
+    const isolatedSecondScope = await runtime.getSnapshot({ workspaceRoot: workspaceB, projectId: "project-b" });
+    expect(isolatedSecondScope.activeThreadId).toBeUndefined();
+    expect(isolatedSecondScope.threads).toEqual([]);
+
+    await runtime.handleCommand(
+      { kind: "new_thread" },
+      { workspaceRoot: workspaceB, projectId: "project-b" },
+    );
+    const secondScope = await runtime.getSnapshot({ workspaceRoot: workspaceB, projectId: "project-b" });
+
+    expect(secondScope.activeThreadId).toBeString();
+    expect(secondScope.activeThreadId).not.toBe(firstThreadId);
+    expect(secondScope.threads).toHaveLength(1);
+
+    const firstScopeAfterSecond = await runtime.getSnapshot({ workspaceRoot: workspaceA, projectId: "project-a" });
+    expect(firstScopeAfterSecond.activeThreadId).toBe(firstThreadId);
+    expect(firstScopeAfterSecond.threads).toHaveLength(1);
   });
 
   test("creates, switches, and continues threads within a scoped project", async () => {
@@ -299,5 +337,46 @@ describe("RuntimeService", () => {
     const snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId: "empty-project" });
     expect(snapshot.activeThreadId).toBeUndefined();
     expect(snapshot.threads).toEqual([]);
+  });
+
+  test("controls worker lifecycle through runtime commands and reflects it in snapshot truth", async () => {
+    await fs.mkdir(testDir, { recursive: true });
+    const dataDir = path.join(testDir, "runtime-service-worker-control.sqlite");
+    const projectId = "worker-control-project";
+    const app = await createAppContext({ dataDir, workspaceRoot: testDir, projectId });
+
+    const thread = createThread("thread-worker-control-1", testDir, projectId);
+    await app.stores.threadStore.save({ ...thread, status: "active" });
+    await app.stores.taskStore.save(createTask("task-worker-control-1", thread.threadId, "run-1", "Hydrate worker truth"));
+
+    const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
+
+    await runtime.handleCommand(
+      {
+        kind: "worker_spawn",
+        threadId: thread.threadId,
+        taskId: "task-worker-control-1",
+        role: "planner",
+        spawnReason: "hydrate runtime truth",
+      },
+      { workspaceRoot: testDir, projectId },
+    );
+
+    let snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
+    expect(snapshot.workers).toHaveLength(1);
+    expect(snapshot.workers[0]?.status).toBe("running");
+    expect(snapshot.workers[0]?.spawnReason).toBe("hydrate runtime truth");
+
+    const workerId = snapshot.workers[0]!.workerId;
+
+    await runtime.handleCommand(
+      { kind: "worker_join", workerId },
+      { workspaceRoot: testDir, projectId },
+    );
+
+    snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
+    expect(snapshot.workers[0]?.workerId).toBe(workerId);
+    expect(snapshot.workers[0]?.status).toBe("completed");
+    expect(snapshot.workers[0]?.endedAt).toBeString();
   });
 });

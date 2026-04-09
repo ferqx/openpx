@@ -19,7 +19,7 @@ import {
   buildUtilityView,
 } from "./app-screen-view";
 import {
-  deriveMessagesFromSession,
+  buildDisplayMessages,
   findActiveThreadIndex,
   mergeThreadViewIntoSession,
   type SessionUpdateSource,
@@ -41,7 +41,8 @@ type PerformanceState = {
 
 type ConversationDisplayState = {
   modelStatus: "idle" | "thinking" | "responding";
-  messages: Message[];
+  pendingUserMessage?: Message;
+  streamedAssistantMessage?: Message;
   thinking: ThinkingState | null;
   performance: PerformanceState;
   metricsStart: {
@@ -54,7 +55,6 @@ type ConversationDisplayState = {
 function createInitialConversationDisplayState(): ConversationDisplayState {
   return {
     modelStatus: "idle",
-    messages: [],
     thinking: null,
     performance: { waitMs: 0, genMs: 0 },
     metricsStart: {},
@@ -389,11 +389,19 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     if (threadChanged) {
       updateConversationState((current) => ({
         ...current,
-        messages: deriveMessagesFromSession(result),
+        pendingUserMessage: undefined,
+        streamedAssistantMessage: undefined,
         streamScrollOffset: 0,
       }));
       updateSelectedSessionIndex(findActiveThreadIndex(result));
       updateThinking(null);
+    }
+    if (source === "event" || source === "hydrate") {
+      updateConversationState((current) => ({
+        ...current,
+        pendingUserMessage: undefined,
+        streamedAssistantMessage: undefined,
+      }));
     }
     if (
       source !== "hydrate" &&
@@ -409,35 +417,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     result: TuiSessionResult,
     source: SessionUpdateSource = "command",
   ) => {
-    const { threadChanged } = syncSessionState(result, source);
-
-    if (source === "hydrate" || threadChanged) {
-      return;
-    }
-
-    if (result.summary && result.summary !== "Awaiting answer") {
-      updateConversationState((current) => {
-        const lastMsg = current.messages[current.messages.length - 1];
-        const messages = lastMsg && lastMsg.role === "assistant"
-          ? [...current.messages.slice(0, -1), {
-              ...lastMsg,
-              content: result.summary!,
-              timestamp: Date.now(),
-            }]
-          : [...current.messages, {
-              id: nextMessageId("assistant"),
-              role: "assistant" as const,
-              content: result.summary!,
-              timestamp: Date.now(),
-            }];
-
-        return {
-          ...current,
-          messages,
-          streamScrollOffset: 0,
-        };
-      });
-    }
+    syncSessionState(result, source);
   });
 
   const handleKernelEvent = useEffectEvent((event: TuiKernelEvent) => {
@@ -477,31 +457,8 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     if (event.type === "thread.view_updated") {
       const nextSession = mergeThreadViewIntoSession(sessionRef.current, event.payload);
       syncSessionState(nextSession, "event");
-      const summary = event.payload.summary;
-      if (summary && summary !== "Awaiting answer") {
-        const currentThinking = conversationStateRef.current.thinking;
-        updateConversationState((current) => {
-          const lastMsg = current.messages[current.messages.length - 1];
-          const assistantMsg: Message = {
-            id: nextMessageId("assistant"),
-            role: "assistant",
-            content: summary,
-            thinking: currentThinking?.content,
-            thinkingDuration: currentThinking?.duration,
-            timestamp: Date.now(),
-          };
-
-          return {
-            ...current,
-            messages: lastMsg && lastMsg.role === "assistant"
-              ? [...current.messages.slice(0, -1), assistantMsg]
-              : [...current.messages, assistantMsg],
-            streamScrollOffset: 0,
-          };
-        });
-        updateThinking(null);
-        setActiveTaskIntent(null);
-      }
+      updateThinking(null);
+      setActiveTaskIntent(null);
       return;
     }
 
@@ -528,28 +485,27 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
       if (chunkContent) {
         updateConversationState((current) => {
           const currentThinking = current.thinking;
-          const lastMsg = current.messages[current.messages.length - 1];
-          const messages: Message[] = lastMsg && lastMsg.role === "assistant"
-            ? [...current.messages.slice(0, -1), {
-                ...lastMsg,
-                content: lastMsg.content + chunkContent,
-                thinking: lastMsg.thinking ?? currentThinking?.content,
+          const streamedAssistantMessage = current.streamedAssistantMessage
+            ? {
+                ...current.streamedAssistantMessage,
+                content: current.streamedAssistantMessage.content + chunkContent,
+                thinking: current.streamedAssistantMessage.thinking ?? currentThinking?.content,
                 thinkingDuration:
-                  lastMsg.thinkingDuration ??
+                  current.streamedAssistantMessage.thinkingDuration ??
                   (currentThinking ? Date.now() - currentThinking.startedAt : undefined),
-              }]
-            : [...current.messages, {
+              }
+            : {
                 id: nextMessageId("assistant"),
                 role: "assistant" as const,
                 content: chunkContent,
                 thinking: currentThinking?.content,
                 thinkingDuration: currentThinking ? Date.now() - currentThinking.startedAt : undefined,
                 timestamp: Date.now(),
-              }];
+              };
 
           return {
             ...current,
-            messages,
+            streamedAssistantMessage,
             streamScrollOffset: 0,
           };
         });
@@ -663,19 +619,21 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
   const resetConversationMessages = useEffectEvent(() => {
     updateConversationState((current) => ({
       ...current,
-      messages: [],
+      pendingUserMessage: undefined,
+      streamedAssistantMessage: undefined,
     }));
   });
 
   const appendUserMessage = useEffectEvent((content: string) => {
     updateConversationState((current) => ({
       ...current,
-      messages: [...current.messages, {
+      pendingUserMessage: {
         id: nextMessageId("user"),
         role: "user" as const,
         content,
         timestamp: Date.now(),
-      }],
+      },
+      streamedAssistantMessage: undefined,
       streamScrollOffset: 0,
     }));
   });
@@ -867,21 +825,39 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     [session],
   );
 
+  const displayMessages = useMemo(
+    () => buildDisplayMessages({
+      session,
+      pendingUserMessage: conversationState.pendingUserMessage,
+      streamedAssistantMessage: conversationState.streamedAssistantMessage,
+    }),
+    [conversationState.pendingUserMessage, conversationState.streamedAssistantMessage, session],
+  );
+
   const conversationView = useMemo<ScreenConversationView>(() => {
     return buildConversationView({
-      conversationState,
+      conversationState: {
+        ...conversationState,
+        messages: displayMessages,
+      },
       session,
       hasCreatedThreadThisLaunch: launchState.hasCreatedThreadThisLaunch,
     });
   }, [
-    conversationState.messages,
     conversationState.modelStatus,
+    conversationState.pendingUserMessage,
     conversationState.performance,
+    conversationState.streamedAssistantMessage,
     conversationState.streamScrollOffset,
+    displayMessages,
     launchState.hasCreatedThreadThisLaunch,
     session?.approvals,
+    session?.answers,
+    session?.messages,
     session?.narrativeSummary,
     session?.tasks,
+    session?.summary,
+    session?.workers,
   ]);
 
   const utilityView = useMemo<ScreenUtilityView>(() => {

@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { runStatusSchema, sessionStatusSchema, threadStatusSchema, taskStatusSchema } from "../../../shared/schemas";
 import { approvalViewSchema } from "./approval-view";
+import { answerViewSchema } from "./answer-view";
+import { messageViewSchema } from "./message-view";
 import { protocolVersionSchema } from "./protocol-version";
 import { taskBlockingReasonSchema, taskViewSchema } from "./task-view";
+import { workerViewSchema } from "./worker-view";
 
 export const runtimeEventTypes = [
   "thread.started",
@@ -14,6 +17,12 @@ export const runtimeEventTypes = [
   "task.started",
   "task.completed",
   "task.failed",
+  "worker.spawned",
+  "worker.inspected",
+  "worker.resumed",
+  "worker.cancelled",
+  "worker.completed",
+  "worker.failed",
   "tool.executed",
   "tool.failed",
   "model.status",
@@ -130,6 +139,9 @@ const threadViewUpdatedPayloadSchema = z.object({
   recommendationReason: z.string().optional(),
   approvals: z.array(approvalViewSchema).optional(),
   tasks: z.array(taskViewSchema).optional(),
+  answers: z.array(answerViewSchema).optional(),
+  messages: z.array(messageViewSchema).optional(),
+  workers: z.array(workerViewSchema).optional(),
   workspaceRoot: z.string().optional(),
   projectId: z.string().optional(),
   threads: z.array(sessionThreadSummarySchema).optional(),
@@ -143,6 +155,10 @@ const taskLifecyclePayloadSchema = z.object({
   status: taskStatusSchema.optional(),
   blockingReason: taskBlockingReasonSchema.optional(),
   error: z.string().optional(),
+}).strict();
+
+const workerLifecyclePayloadSchema = z.object({
+  worker: workerViewSchema,
 }).strict();
 
 const threadStartedPayloadSchema = z.object({
@@ -234,6 +250,12 @@ export const runtimeEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("task.started"), payload: taskLifecyclePayloadSchema }),
   z.object({ type: z.literal("task.completed"), payload: taskLifecyclePayloadSchema }),
   z.object({ type: z.literal("task.failed"), payload: taskLifecyclePayloadSchema }),
+  z.object({ type: z.literal("worker.spawned"), payload: workerLifecyclePayloadSchema }),
+  z.object({ type: z.literal("worker.inspected"), payload: workerLifecyclePayloadSchema }),
+  z.object({ type: z.literal("worker.resumed"), payload: workerLifecyclePayloadSchema }),
+  z.object({ type: z.literal("worker.cancelled"), payload: workerLifecyclePayloadSchema }),
+  z.object({ type: z.literal("worker.completed"), payload: workerLifecyclePayloadSchema }),
+  z.object({ type: z.literal("worker.failed"), payload: workerLifecyclePayloadSchema }),
   z.object({ type: z.literal("tool.executed"), payload: toolEventPayloadSchema }),
   z.object({ type: z.literal("tool.failed"), payload: toolEventPayloadSchema }),
   z.object({ type: z.literal("model.status"), payload: modelStatusPayloadSchema }),

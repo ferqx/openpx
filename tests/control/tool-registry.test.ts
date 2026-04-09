@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, symlink, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApprovalService } from "../../src/control/policy/approval-service";
 import { createPolicyEngine } from "../../src/control/policy/policy-engine";
@@ -203,6 +203,8 @@ describe("ToolRegistry", () => {
   test("executes read-only exec commands and records run-aware ledger entries", async () => {
     const workspaceRoot = await createWorkspace();
     const ledgerEntries: unknown[] = [];
+    const command = process.platform === "win32" ? "powershell" : "pwd";
+    const commandArgs = process.platform === "win32" ? ["-NoProfile", "-Command", "Get-Location"] : [];
     const policy = createPolicyEngine({ workspaceRoot });
     const approvals = createApprovalService();
     const executionLedger = {
@@ -221,7 +223,8 @@ describe("ToolRegistry", () => {
       taskId: "task_1",
       toolName: "exec",
       args: {
-        command: "pwd",
+        command,
+        args: commandArgs,
         cwd: workspaceRoot,
       },
     });
@@ -230,10 +233,16 @@ describe("ToolRegistry", () => {
     if (result.kind === "executed") {
       expect(result.output).toMatchObject({
         ok: true,
-        command: "pwd",
+        command,
         cwd: workspaceRoot,
         exitCode: 0,
       });
+      const output = result.output as {
+        args?: string[];
+        stdout?: string;
+      };
+      expect(output.args).toEqual(commandArgs);
+      expect(output.stdout?.toLowerCase()).toContain(basename(workspaceRoot).toLowerCase());
     }
 
     expect(ledgerEntries).toHaveLength(2);

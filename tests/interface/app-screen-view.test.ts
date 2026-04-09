@@ -58,6 +58,7 @@ describe("app screen view builders", () => {
 
     expect(conversationView.showWelcome).toBe(true);
     expect(conversationView.modelStatus).toBe("responding");
+    expect(conversationView.workers).toEqual([]);
     expect(utilityView.selectedSessionThreadId).toBe("thread-1");
   });
 

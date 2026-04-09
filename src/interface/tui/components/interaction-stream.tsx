@@ -3,6 +3,8 @@ import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
 import type { TaskSummary } from './task-panel';
 import type { ApprovalSummary } from './approval-panel';
+import type { WorkerSummary } from './worker-panel';
+import { WorkerPanel } from './worker-panel';
 import { theme } from '../theme';
 import { Markdown } from './markdown';
 
@@ -19,6 +21,7 @@ export interface InteractionStreamProps {
   messages: Message[];
   tasks: TaskSummary[];
   approvals: ApprovalSummary[];
+  workers: WorkerSummary[];
   modelStatus?: string;
   performance?: { waitMs: number; genMs: number };
   narrativeSummary?: string;
@@ -85,6 +88,7 @@ export function InteractionStream({
   messages,
   tasks,
   approvals,
+  workers,
   modelStatus,
   performance,
   narrativeSummary,
@@ -96,6 +100,7 @@ export function InteractionStream({
     messages.length === 0 &&
     approvals.length === 0 &&
     tasks.length === 0 &&
+    workers.length === 0 &&
     Boolean(narrativeSummary);
   const contentWidth = Math.max(24, (viewportWidth ?? 80) - 6);
   const estimatedConversationLines =
@@ -108,6 +113,7 @@ export function InteractionStream({
       : 0) +
     (modelStatus === 'thinking' || modelStatus === 'responding' ? 2 : 0) +
     tasks.filter((task) => task.status === 'running').length +
+    workers.length +
     approvals.length * 3;
   const pageSize = 10;
   const messagesOverflow = messages.length > pageSize;
@@ -157,6 +163,7 @@ export function InteractionStream({
                   </Box>
                 )}
                 <Box flexDirection="column">
+                  <Text color={theme.colors.dim}>assistant</Text>
                   <Markdown>{msg.content}</Markdown>
                 </Box>
               </Box>
@@ -216,6 +223,7 @@ export function InteractionStream({
               </Box>
             </Box>
           ))}
+          <WorkerPanel workers={workers} />
         </Box>
       </Box>
 

@@ -226,6 +226,109 @@ describe("Remote Kernel", () => {
     ).toBe(false);
   });
 
+  test("hydrates first and subscribes after the snapshot cursor on initial connect", async () => {
+    const subscribeCalls: Array<number | undefined> = [];
+    const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
+      async getSnapshot() {
+        return {
+          protocolVersion: "1.0.0",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          lastEventSeq: 12,
+          activeThreadId: "thread-1",
+          activeRunId: undefined,
+          recommendationReason: undefined,
+          blockingReason: undefined,
+          threads: [],
+          runs: [],
+          tasks: [],
+          pendingApprovals: [],
+          answers: [],
+          workers: [],
+        };
+      },
+      async sendCommand() {
+        return undefined;
+      },
+      subscribeEvents(afterSeq?: number) {
+        subscribeCalls.push(afterSeq);
+        return {
+          async *[Symbol.asyncIterator]() {
+            await new Promise(() => undefined);
+          },
+        };
+      },
+    };
+
+    const kernel = createRemoteKernel(client);
+    const unsubscribe = kernel.events.subscribe(() => undefined);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    unsubscribe();
+
+    expect(subscribeCalls).toContain(12);
+  });
+
+  test("reconnects from the latest delivered sequence instead of replaying from zero", async () => {
+    const subscribeCalls: Array<number | undefined> = [];
+    let subscribeAttempt = 0;
+    const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
+      async getSnapshot() {
+        return {
+          protocolVersion: "1.0.0",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          lastEventSeq: subscribeAttempt === 0 ? 4 : 5,
+          activeThreadId: "thread-1",
+          activeRunId: undefined,
+          recommendationReason: undefined,
+          blockingReason: undefined,
+          threads: [],
+          runs: [],
+          tasks: [],
+          pendingApprovals: [],
+          answers: [],
+          workers: [],
+        };
+      },
+      async sendCommand() {
+        return undefined;
+      },
+      subscribeEvents(afterSeq?: number) {
+        subscribeCalls.push(afterSeq);
+        const currentAttempt = subscribeAttempt++;
+        return {
+          async *[Symbol.asyncIterator]() {
+            if (currentAttempt === 0) {
+              yield {
+                protocolVersion: "1.0.0" as const,
+                seq: 5,
+                timestamp: new Date().toISOString(),
+                traceId: "trace-1",
+                event: {
+                  type: "model.status" as const,
+                  payload: { status: "thinking" as const },
+                },
+              };
+              throw new Error("simulated disconnect");
+            }
+
+            await new Promise(() => undefined);
+          },
+        };
+      },
+    };
+
+    const kernel = createRemoteKernel(client);
+    const unsubscribe = kernel.events.subscribe(() => undefined);
+
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+    unsubscribe();
+
+    expect(subscribeCalls[0]).toBe(4);
+    expect(subscribeCalls[1]).toBe(5);
+  });
+
   test("exposes an interruptCurrentThread helper that forwards the runtime interrupt command", async () => {
     const sentCommands: unknown[] = [];
     const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {

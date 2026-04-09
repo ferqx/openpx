@@ -10,9 +10,11 @@ export function createRemoteKernel(client: RemoteRuntimeClient): TuiKernel {
   const handlers = new Set<(event: TuiKernelEvent) => void>();
   let lastRuntimeStatus: "connected" | "disconnected" = "disconnected";
   let eventLoopStarted = false;
+  let lastEventSeq = 0;
 
   const hydrateSession = async () => {
     const snapshot = await client.getSnapshot();
+    lastEventSeq = Math.max(lastEventSeq, snapshot.lastEventSeq ?? 0);
     return deriveRuntimeSession(snapshot);
   };
 
@@ -40,29 +42,20 @@ export function createRemoteKernel(client: RemoteRuntimeClient): TuiKernel {
     void (async () => {
       while (true) {
         try {
-          const events = client.subscribeEvents();
           emitRuntimeStatus("connected");
-          
-          // Whenever we connect/reconnect, trigger a hydration to sync state
-          // This ensures we catch up on events missed during disconnect.
-          void (async () => {
-            try {
-              const result = await hydrateSession();
-              if (result) {
-                const hydrationEvent: SessionUpdatedEvent = {
-                  type: "session.updated",
-                  payload: result,
-                };
-                for (const handler of handlers) {
-                  handler(hydrationEvent);
-                }
-              }
-            } catch (e) {
-              // Ignore hydration errors during initial connection
-            }
-          })();
+          const hydrated = await hydrateSession();
+          const hydrationEvent: SessionUpdatedEvent = {
+            type: "session.updated",
+            payload: hydrated,
+          };
+          for (const handler of handlers) {
+            handler(hydrationEvent);
+          }
+
+          const events = client.subscribeEvents(lastEventSeq);
 
           for await (const envelope of events) {
+            lastEventSeq = Math.max(lastEventSeq, envelope.seq);
             for (const handler of handlers) {
               handler(envelope.event);
             }

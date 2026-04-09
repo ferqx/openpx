@@ -107,6 +107,23 @@ describe("Stable Control API Compliance", () => {
     ).toBe(true);
   });
 
+  test("runtime command schema accepts worker lifecycle commands", () => {
+    expect(
+      schemas.RuntimeCommand.safeParse({
+        kind: "worker_spawn",
+        taskId: "task-1",
+        role: "planner",
+        spawnReason: "hydrate runtime truth",
+      }).success,
+    ).toBe(true);
+    expect(
+      schemas.RuntimeCommand.safeParse({
+        kind: "worker_resume",
+        workerId: "worker-1",
+      }).success,
+    ).toBe(true);
+  });
+
   test("POST /v1/commands rejects invalid commands", async () => {
     const command = { kind: "invalid_command" };
     const req = new Request("http://localhost/v1/commands", {
@@ -166,6 +183,24 @@ describe("Stable Control API Compliance", () => {
         },
       }).success,
     ).toBe(false);
+  });
+
+  test("runtime event schema accepts worker lifecycle events", () => {
+    expect(
+      schemas.RuntimeEvent.safeParse({
+        type: "worker.spawned",
+        payload: {
+          worker: {
+            workerId: "worker-1",
+            threadId: "thread-1",
+            taskId: "task-1",
+            role: "planner",
+            status: "running",
+            spawnReason: "hydrate runtime truth",
+          },
+        },
+      }).success,
+    ).toBe(true);
   });
 
   test("legacy endpoints still work for backward compatibility", async () => {

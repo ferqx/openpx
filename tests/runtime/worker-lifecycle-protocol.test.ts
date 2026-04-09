@@ -12,7 +12,11 @@ describe("worker lifecycle protocol", () => {
   const testDir = path.join(os.tmpdir(), `worker-lifecycle-protocol-${Date.now()}-${Math.random()}`);
 
   afterEach(async () => {
-    await fs.rm(testDir, { recursive: true, force: true });
+    try {
+      await fs.rm(testDir, { recursive: true, force: true });
+    } catch {
+      // SQLite handles can linger briefly on Windows in integration tests.
+    }
   });
 
   test("stores worker lifecycle state and lists active workers per thread", async () => {
@@ -56,6 +60,7 @@ describe("worker lifecycle protocol", () => {
     await app.stores.workerStore.save(completedWorker);
 
     expect(await app.stores.workerStore.listActiveByThread(worker.threadId)).toEqual([]);
+    await app.close();
   });
 
   test("hydrates worker views into runtime snapshots", async () => {
@@ -104,5 +109,6 @@ describe("worker lifecycle protocol", () => {
         resumeToken: "resume-worker-1",
       }),
     ]);
+    await app.close();
   });
 });

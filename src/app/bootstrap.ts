@@ -23,6 +23,8 @@ import { createModelGateway, ModelGatewayError, type ModelGateway } from "../inf
 import { resolveConfig } from "../shared/config";
 import { createThreadNarrativeService } from "../control/context/thread-narrative-service";
 import { createWorkerScratchPolicy } from "../control/context/worker-scratch-policy";
+import { createWorkerManager } from "../control/workers/worker-manager";
+import { createPassiveWorkerRuntimeFactory } from "../control/workers/worker-runtime";
 import { MemoryConsolidator } from "../control/context/memory-consolidator";
 import { transitionThread } from "../domain/thread";
 import { createEvent } from "../domain/event";
@@ -1062,6 +1064,10 @@ export async function createAppContext(input: {
   const memoryConsolidator = new MemoryConsolidator(stores.memoryStore, modelGateway);
 
   const controlPlane = await createControlPlane({ config, stores, checkpointer, modelGateway });
+  const workerManager = createWorkerManager({
+    runtimeFactory: createPassiveWorkerRuntimeFactory(),
+    workerStore: stores.workerStore,
+  });
   const kernel = createSessionKernel({
     stores,
     controlPlane,
@@ -1096,5 +1102,16 @@ export async function createAppContext(input: {
     sqlite.close();
   }
 
-  return { config, stores, controlPlane, kernel, narrativeService, scratchPolicy, memoryConsolidator, modelGateway, close };
-  }
+  return {
+    config,
+    stores,
+    controlPlane,
+    kernel,
+    narrativeService,
+    scratchPolicy,
+    memoryConsolidator,
+    modelGateway,
+    workerManager,
+    close,
+  };
+}

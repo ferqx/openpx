@@ -493,6 +493,61 @@ The reset is successful only when all of the following are true:
 - compaction/narrative systems can be disabled without collapsing the base thread/task/worker contract
 - all new implementation plans reference this document as the top-level architecture authority
 
+## 13.1 Current Reset Status
+
+Current status under this active reset baseline:
+
+- kernel coordination has been split enough that projection, command arbitration, and background control actions are no longer one monolith
+- worker lifecycle has entered the stable runtime protocol and snapshot/view surface
+- the TUI no longer keeps canonical local task, approval, answer, or worker truth
+- remaining reset work is audit and hardening work, not new shell feature work
+
+The next mainline after this reset is hardening and recovery verification, not shell polish.
+
+## 13.2 TUI Truth Mapping
+
+The TUI must follow this fixed truth mapping:
+
+| TUI section | Protocol source |
+| --- | --- |
+| thread list | `threads` |
+| conversation stream | `messages`, then `answers`, then `summary`, then `narrativeSummary` |
+| approval block | `approvals` plus `blockingReason` |
+| worker block | `workers` |
+| history pane | `messages`, `answers`, `narrativeSummary` |
+| status bar | `session.status`, `model.status`, `activeTaskIntent`, workspace metadata |
+| composer mode | `session.status` |
+
+Allowed local TUI state is limited to:
+
+- input and keyboard interaction state
+- utility pane visibility and selection state
+- transient display overlays such as pending user text, streamed assistant text, thinking metrics, and scroll offsets
+- local shell affordances such as exit confirmation and settings interactions
+
+If a screen cannot be rebuilt from snapshot plus ordered event replay, the protocol or session derivation is incomplete.
+
+## 13.3 Hardening Handoff
+
+The reset mainline is now considered structurally complete enough to enter M3 hardening.
+
+The next priority is to prove recovery behavior rather than continue architecture churn.
+
+M3 hardening focuses on:
+
+- daemon reuse and scoped runtime isolation
+- reconnect semantics driven by `snapshot + ordered event replay`
+- restart recovery for blocked, waiting approval, and completed threads
+- interrupt, resume, approval, and reject paths producing the same durable thread truth after hydration
+- worker lifecycle consistency between immediate runtime state, hydration, and replay
+
+The hardening rule is:
+
+- if recovery behavior is ambiguous, fix the runtime or protocol boundary
+- do not patch recovery gaps by storing more TUI-local business truth
+
+Exit from this phase requires an explicit recovery matrix in tests, not just informal manual confidence.
+
 ## 14. Document Policy Going Forward
 
 From this point onward:
