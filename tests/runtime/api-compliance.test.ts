@@ -125,13 +125,25 @@ describe("Stable Control API Compliance", () => {
   });
 
   test("POST /v1/commands rejects invalid commands", async () => {
+    const consoleErrorSpy = mock(() => undefined);
+    const originalConsoleError = console.error;
+    console.error = consoleErrorSpy as typeof console.error;
+
     const command = { kind: "invalid_command" };
-    const req = new Request("http://localhost/v1/commands", {
-      method: "POST",
-      body: JSON.stringify(command),
-    });
-    const res = await router.handle(req);
-    expect(res.status).toBe(400);
+    try {
+      const req = new Request("http://localhost/v1/commands", {
+        method: "POST",
+        body: JSON.stringify(command),
+      });
+      const res = await router.handle(req);
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error?: string; details?: unknown };
+      expect(body.error).toBe("Invalid command payload");
+      expect(body.details).toBeDefined();
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 
   test("GET /v1/events returns valid event stream", async () => {

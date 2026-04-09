@@ -256,6 +256,71 @@ restart / hydrate / replay 后状态一致。
 任何核心能力改动，至少新增或更新一个 scenario。  
 没有 scenario 的能力演进，不视为完成。
 
+当前默认本地 gate 入口为：
+
+- `bun run eval:core`
+- `bun run eval:review`
+
+对于 runtime / control 相关改动，`eval:core` 应视为默认验证命令之一。
+对于 fail / suspicious 产生的 review items，`eval:review` 是默认本地人工消费入口。
+这些入口都属于 internal developer eval workflow，不属于产品接口，也不面向最终使用者。
+
+当前这层 eval 明确定位为 fast deterministic control regression eval。
+它会真实写出 `scenario result / comparable object / outcome results / trajectory results / review queue items`，
+但默认不会调用真实模型做长链路 agent 执行评估，因此不能替代后续的 real agent eval。
+
+如果需要读取当前层的原始 eval 数据，而不是只看文本摘要：
+
+- `bun run eval:core --json`
+- `bun run eval:suite --suite core-eval-suite --json`
+- `bun run eval:review --json`
+
+这些 `--json` 导出都属于内部开发侧数据面；默认数据落在工作区内的 `.openpx/eval/eval.sqlite`。
+
+### 8.4 Internal command usage
+
+当前内部 eval 命令面按以下方式使用：
+
+- 跑默认 core gate：
+  - `bun run eval:core`
+- 跑指定 suite：
+  - `bun run eval:suite --suite core-eval-suite`
+- 跑指定 scenario：
+  - `bun run eval:suite --suite core-eval-suite --scenario approval-required-then-approved`
+- 更新 baseline：
+  - `bun run eval:suite --suite core-eval-suite --update-baseline --baseline-root-dir eval-baselines`
+- 查看 review queue：
+  - `bun run eval:review`
+  - `bun run eval:review --status closed`
+  - `bun run eval:review --stats-only`
+
+如果需要机器可读的原始结构化数据：
+
+- `bun run eval:core --json`
+- `bun run eval:suite --suite core-eval-suite --json`
+- `bun run eval:review --json`
+
+`eval:suite --json` 当前会返回：
+
+- `summary`
+- `suiteRun`
+- `scenarioResults`
+- `reviewItems`
+
+`eval:review --json` 当前会返回：
+
+- `filters`
+- `aggregate`
+- `items`
+
+如果需要直接检查底层 SQLite：
+
+- 默认路径：`.openpx/eval/eval.sqlite`
+- 关键表：
+  - `eval_suite_runs`
+  - `eval_scenario_results`
+  - `eval_review_queue`
+
 ---
 
 ## 9. Grader model
@@ -376,6 +441,24 @@ Review queue 用于沉淀高价值失败样本。
 
 ---
 
+## 12. Local Gate Discipline
+
+当前阶段先采用本地开发 gate，而不是远端 CI gate。
+
+默认要求：
+
+- `bun run eval:core`
+- `bun test tests/eval`
+- `bun run typecheck`
+
+其中：
+
+- `failed` 与 baseline regression 必须阻断
+- `suspicious` 先不阻断，但必须进入 review queue
+- review / baseline / scenario result 数据默认应写入独立 eval data dir，而不是普通 runtime 用户数据面
+
+---
+
 ## 12. Minimum eval requirement for any feature
 
 任何进入开发的新功能，至少必须携带：
@@ -473,6 +556,18 @@ TUI 可以展示：
 - behavior changes with eval updates
 - release candidates with full eval pass
 - review queue closure yield
+- review items closed with explicit resolution type
+
+当前内部统计口径下，`review queue closure yield` 至少应包括：
+
+- `open / triaged / closed` 数量
+- `closed by resolutionType` 数量
+- `closed with follow-up` 数量
+- `closed missing follow-up` 数量
+- `accepted_noise` 数量
+
+对于 suite-level internal eval runs，同样应输出一份 scoped aggregate，
+但口径只针对“当前 suite run 新产生的 review items”，不混入全库历史。
 
 ---
 

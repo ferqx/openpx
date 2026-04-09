@@ -149,6 +149,64 @@ export function migrateSqlite(db: Database): void {
   db.run("CREATE INDEX IF NOT EXISTS idx_events_thread_sequence ON events (thread_id, sequence)");
   db.run("CREATE INDEX IF NOT EXISTS idx_approvals_thread_id ON approvals (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_workers_thread_id ON workers (thread_id)");
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS eval_suite_runs (
+      suite_run_id TEXT PRIMARY KEY,
+      suite_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      completed_at TEXT
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS eval_scenario_results (
+      scenario_run_id TEXT PRIMARY KEY,
+      suite_run_id TEXT,
+      scenario_id TEXT NOT NULL,
+      scenario_version INTEGER NOT NULL,
+      family TEXT NOT NULL,
+      status TEXT NOT NULL,
+      thread_id TEXT,
+      primary_run_id TEXT,
+      primary_task_id TEXT,
+      comparable_json TEXT NOT NULL,
+      outcome_results_json TEXT NOT NULL,
+      trajectory_results_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS eval_review_queue (
+      review_item_id TEXT PRIMARY KEY,
+      scenario_run_id TEXT NOT NULL,
+      scenario_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      triage_status TEXT NOT NULL DEFAULT 'open',
+      resolution_type TEXT,
+      summary TEXT NOT NULL,
+      object_refs_json TEXT NOT NULL,
+      owner_note TEXT,
+      follow_up_json TEXT,
+      created_at TEXT NOT NULL,
+      closed_at TEXT
+    )
+  `);
+  ensureColumn(db, "eval_review_queue", "triage_status", "TEXT NOT NULL DEFAULT 'open'");
+  ensureColumn(db, "eval_review_queue", "resolution_type", "TEXT");
+  ensureColumn(db, "eval_review_queue", "owner_note", "TEXT");
+  ensureColumn(db, "eval_review_queue", "follow_up_json", "TEXT");
+  ensureColumn(db, "eval_review_queue", "closed_at", "TEXT");
+  migrateLegacyEvalReviewQueueStatus(db);
+
+  db.run("CREATE INDEX IF NOT EXISTS idx_eval_scenario_results_suite_run_id ON eval_scenario_results (suite_run_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_eval_review_queue_scenario_run_id ON eval_review_queue (scenario_run_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_eval_review_queue_triage_status ON eval_review_queue (triage_status)");
 }
 
 function ensureColumn(db: Database, tableName: string, columnName: string, columnDefinition: string): void {
@@ -160,4 +218,23 @@ function ensureColumn(db: Database, tableName: string, columnName: string, colum
   if (!columns.includes(columnName)) {
     db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
   }
+}
+
+function migrateLegacyEvalReviewQueueStatus(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(eval_review_queue)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("status")) {
+    return;
+  }
+
+  db.run(`
+    UPDATE eval_review_queue
+    SET triage_status = CASE
+      WHEN triage_status IS NULL OR triage_status = '' THEN status
+      ELSE triage_status
+    END
+  `);
 }

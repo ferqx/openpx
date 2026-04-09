@@ -10,6 +10,8 @@ import type { ResolvedSettingsConfig } from "../../src/interface/tui/settings/co
 
 describe("TUI App", () => {
   const tick = (delayMs = 0) => new Promise((resolve) => setTimeout(resolve, delayMs));
+  const stripAnsi = (value: string) => value.replace(/\u001B\[[0-9;]*m/g, "");
+
   function createCompletedSessionResult(overrides: Partial<RuntimeSessionState> = {}): RuntimeSessionState {
     return {
       status: "completed",
@@ -853,6 +855,7 @@ describe("TUI App", () => {
   });
 
   test("supports wrap-around and vim-style navigation in /sessions", async () => {
+    let hydrated = false;
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -860,6 +863,7 @@ describe("TUI App", () => {
         },
       },
       async hydrateSession() {
+        hydrated = true;
         return createCompletedSessionResult({
           threadId: "thread-active",
           threads: [
@@ -903,33 +907,38 @@ describe("TUI App", () => {
       () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell before opening sessions pane",
     );
+    await waitFor(
+      () => hydrated,
+      "expected launch hydration to complete before testing sessions navigation",
+      120,
+    );
 
     await typeAndSubmit(stdin, "/sessions");
     await waitFor(
-      () => (lastFrame() ?? "").includes("thread-oldest"),
+      () => stripAnsi(lastFrame() ?? "").includes("thread-oldest"),
       "expected sessions pane to list all scoped threads",
-      60,
+      120,
     );
 
-    expect(lastFrame()).toContain("❯ thread-active (active) [completed] Current thread");
+    expect(stripAnsi(lastFrame() ?? "")).toContain("❯ thread-active (active) [completed] Current thread");
 
     await pressArrowUp(stdin);
     await waitFor(
-      () => (lastFrame() ?? "").includes("❯ thread-oldest [completed] Oldest thread"),
+      () => stripAnsi(lastFrame() ?? "").includes("❯ thread-oldest [completed] Oldest thread"),
       "expected up arrow on the first item to wrap to the last thread",
       60,
     );
 
     stdin.write("k");
     await waitFor(
-      () => (lastFrame() ?? "").includes("❯ thread-middle [completed] Middle thread"),
+      () => stripAnsi(lastFrame() ?? "").includes("❯ thread-middle [completed] Middle thread"),
       "expected vim-style k navigation to move upward in the sessions list",
       60,
     );
 
     stdin.write("j");
     await waitFor(
-      () => (lastFrame() ?? "").includes("❯ thread-oldest [completed] Oldest thread"),
+      () => stripAnsi(lastFrame() ?? "").includes("❯ thread-oldest [completed] Oldest thread"),
       "expected vim-style j navigation to move downward in the sessions list",
       60,
     );
@@ -2294,7 +2303,7 @@ describe("TUI App", () => {
 
     const frame = lastFrame() ?? "";
     expect(frame).toContain("reasoning");
-    expect(frame).toContain("assistant");
+    expect(frame).toContain("Final answer.");
     expect(frame).toContain("responding");
     expect(frame).not.toContain("Responding...");
   });

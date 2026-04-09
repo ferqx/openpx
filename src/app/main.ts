@@ -40,14 +40,14 @@ Options:
 `);
 }
 
+function createTtyError(): Error {
+  return new Error("TUI requires an interactive terminal (tty).");
+}
+
 export async function main(input?: MainInput) {
-  // 检查是否在交互式终端中运行
-  const requiresInteractiveTty = !input?.mount;
+  const requiresInteractiveTty = input?.mount === undefined;
   if (requiresInteractiveTty && !process.stdin.isTTY) {
-    console.error("Error: TUI requires an interactive terminal (tty).");
-    console.error("Please run this command in a proper terminal application.");
-    console.error("If using an IDE, try running from an external terminal.");
-    process.exit(1);
+    throw createTtyError();
   }
 
   const workspaceRoot = input?.workspaceRoot ?? process.cwd();
@@ -87,5 +87,15 @@ export async function runCli(args: string[] = process.argv.slice(2), input?: Mai
 }
 
 if (import.meta.main) {
-  await runCli();
+  try {
+    await runCli();
+  } catch (error) {
+    if (error instanceof Error && error.message === "TUI requires an interactive terminal (tty).") {
+      console.error(`Error: ${error.message}`);
+      console.error("Please run this command in a proper terminal application.");
+      console.error("If using an IDE, try running from an external terminal.");
+      process.exit(1);
+    }
+    throw error;
+  }
 }

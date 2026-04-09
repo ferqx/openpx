@@ -51,6 +51,33 @@ Related docs:
 - 不接受没有 scenario 的核心能力改动
 - 不接受 release 完全脱离 scenario/eval
 
+### Current MVP foundation status
+
+当前已经落地一条最小闭环，作为后续季度工作的起点：
+
+- 内部 `src/eval/` foundation 已建立
+- 首批 4 个 core scenarios 已可执行
+- outcome checks 与 trajectory rules 已能自动运行
+- comparable object / scenario result / review queue 已持久化到 SQLite
+- review queue 已能从 fail / suspicious 结果自动生成样本
+- `bun run eval:suite` 开发入口已建立
+- `bun run eval:core` 本地默认 gate 入口已建立
+- `bun run eval:review` 本地 triage / close 入口已建立
+- repo 内版本化 baseline compare 已建立
+- 最小 dev gate 已建立：`failed` 或 baseline regression 退出非 0，`suspicious` 仅高亮不阻断
+- 这些 eval 入口都只属于 internal developer workflow，不属于产品对外能力
+- 当前这层明确是 fast deterministic control regression eval，不是 real agent eval
+- `eval:core` / `eval:suite` / `eval:review` 已支持 `--json`，可直接导出当前层原始结构化 eval 数据
+
+### Current execution baseline discipline
+
+- baseline JSON 是当前结构化回归权威源，SQLite 仅保存每次运行结果与 review queue
+- 只有预期行为变更且对应 scenario / checks / rules 已同步更新时，才允许刷新 baseline
+- runner / baseline compare / dev gate 是当前优先演进面；暂不扩展 TUI 或外部协议接口
+- 当前不接 GitHub Actions；本阶段 gate 仅约束本地开发工作流与默认验证命令
+- review queue closure 先只记录在 SQLite 结构化字段中，不强制导出 markdown
+- review queue / baseline / scenario result 默认应与普通 runtime 用户数据隔离存放
+
 ---
 
 ## 4. Phase 1 — Scenario baseline
@@ -336,6 +363,13 @@ Week 7–10
 - doc update
 - release note
 中的至少一项。
+
+当前本地消费入口为 `bun run eval:review`。
+review item 关闭时必须显式记录 resolution type 与 owner note，避免样本静默消失。
+`scenario / rule / doc` 类型关闭应尽量记录结构化 follow-up 引用；`accepted_noise` 仅作为例外路径。
+当前 internal developer workflow 下，`eval:review` 还应输出聚合统计，用于观察 closure yield 与 follow-up coverage。
+`eval:core` / `eval:suite` 也应在一次 suite run 结束后输出 scoped review queue aggregate，用于观察本轮新增样本概况。
+如果需要看原始 eval artifacts，而不是聚合摘要，应优先使用内部 `--json` 导出，而不是把这层误解为真实 agent 在线评估。
 
 ### Rule 5
 评估层的真相来自 runtime objects，不来自 UI 表象。
