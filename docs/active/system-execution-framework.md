@@ -232,6 +232,18 @@ Eval / Observability 负责把 OpenPX 从“能跑的 agent”
 - 1 个 outcome 判定
 - 1 个 trajectory 规则或 review hook
 
+另外，任何 real eval failure 都必须能够映射成：
+
+- 一个明确的 capability work package
+- 一个明确的系统责任层
+- 一个明确的 regression promotion 方向
+
+任何已稳定收口的 real-eval fix 也都必须继续前进一步：
+
+- 显式 promotion 到 foundation guardrails
+- 在更快的 deterministic/runtime regression 中守住
+- 保留 real lane 作为周期性真实性复核，而不是唯一守门方式
+
 ### 6.5 Forbidden patterns
 
 不允许：

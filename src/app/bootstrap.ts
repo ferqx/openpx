@@ -33,6 +33,11 @@ import type { ResumeControl } from "../runtime/graph/root/resume-control";
 import { createRun, transitionRun, type Run } from "../domain/run";
 import { prefixedUuid } from "../shared/id-generators";
 import {
+  buildRejectedApprovalReason,
+  deriveCapabilityMarkerFromApprovalSummary,
+  normalizePlannerOutput,
+} from "../runtime/planning/planner-normalization";
+import {
   buildApprovedExecutionArtifacts,
   buildExecutionArtifacts,
   buildExecutionInput,
@@ -269,15 +274,6 @@ function summarizeApprovedAction(summary: string, workspaceRoot: string, request
   return summary;
 }
 
-function buildRejectedApprovalReason(summary: string): string {
-  const proposalToken = summary
-    .trim()
-    .replace(/[^a-zA-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase() || "rejected_proposal";
-  return `Tool approval was rejected for proposal ${proposalToken}. Replan safely without repeating that proposal.`;
-}
-
 function resumeInputText(inputValue: string | ResumeControl): string {
   if (typeof inputValue === "string") {
     return inputValue;
@@ -487,12 +483,17 @@ async function createControlPlane(input: {
       
       const prompt = `${memoryContext}\nUser request: ${text}`;
       const result = await input.modelGateway.plan({ prompt, threadId, taskId, signal: getAbortSignal(threadId) });
+      const normalized = normalizePlannerOutput({
+        inputText: text,
+        summary: result.summary,
+        plannerResult: result.plannerResult,
+      });
       
       return {
-        summary: result.summary,
+        summary: normalized.summary,
         mode: "plan",
-        plannerResult: result.plannerResult,
-        workPackages: result.plannerResult?.workPackages ?? [],
+        plannerResult: normalized.plannerResult,
+        workPackages: normalized.plannerResult.workPackages,
       };
     },
     verifier: async ({ input: text, threadId, taskId, currentWorkPackage, artifacts, plannerResult }) => {
@@ -572,7 +573,11 @@ async function createControlPlane(input: {
           };
         }
       }
-      const deleteRequest = parseDeleteRequest(executionInput, input.config.workspaceRoot);
+      const normalizedMarker = currentWorkPackage?.capabilityMarker;
+      const useLegacyObjectiveFallback = normalizedMarker === undefined;
+      const deleteRequest = normalizedMarker === "respond_only"
+        ? undefined
+        : parseDeleteRequest(executionInput, input.config.workspaceRoot);
       if (!deleteRequest || !threadId || !taskId) {
         const summary = `Executed request: ${executionInput}`;
         return {
@@ -580,7 +585,7 @@ async function createControlPlane(input: {
           mode: "execute",
           approvedApprovalRequestId,
           latestArtifacts: buildExecutionArtifacts({
-            summary,
+            summary: useLegacyObjectiveFallback ? `${summary} (legacy objective fallback)` : summary,
             currentWorkPackage,
           }),
         };
@@ -989,7 +994,13 @@ async function createControlPlane(input: {
         if (canResetThreadCheckpoint(input.checkpointer)) {
           await input.checkpointer.deleteThread(approval.threadId);
         }
-        return controlPlane.startRootTask(approval.threadId, buildRejectedApprovalReason(approval.summary));
+        const capabilityMarker = approval.toolRequest?.toolName && approval.toolRequest?.action
+          ? `${approval.toolRequest.toolName}.${approval.toolRequest.action}`
+          : deriveCapabilityMarkerFromApprovalSummary(approval.summary);
+        return controlPlane.startRootTask(
+          approval.threadId,
+          buildRejectedApprovalReason(approval.summary, capabilityMarker),
+        );
       }
 
       const currentTask =

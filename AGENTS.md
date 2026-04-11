@@ -4,7 +4,7 @@ CLI-first agent OS for long-running code work. Built with Bun, React (Ink), and 
 
 ## Planning Baseline
 - `ROADMAP.md` is the active roadmap entrypoint.
-- `docs/active/2026-04-06-agent-os-reset-design.md` and `docs/active/2026-04-06-agent-os-reset-plan.md` are the active architecture and implementation baselines.
+- `docs/active/agent-os-reset-design.md` and `docs/active/agent-os-reset-plan.md` are the active architecture and implementation baselines.
 - Treat `docs/historical/2026-04-02-cli-runtime-roadmap-design.md` as historical context, not the current source of priority.
 - Superpowers-related skills must also follow `docs/README.md` and `docs/superpowers/README.md` when creating or updating documentation.
 

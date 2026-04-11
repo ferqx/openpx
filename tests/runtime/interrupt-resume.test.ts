@@ -62,7 +62,7 @@ function createTestModelGateway() {
 }
 
 describe("root graph interrupt/resume", () => {
-  test("interrupts on high-risk recommendation and resumes with explicit approval control", async () => {
+  test("interrupts on high-risk destructive recommendation and resumes with explicit approval control", async () => {
     const checkpointer = new MemorySaver();
     let executorCalled = false;
 
@@ -77,7 +77,7 @@ describe("root graph interrupt/resume", () => {
     });
 
     const interrupted = await graph.invoke(
-      { input: "delete src/old.ts" },
+      { input: "delete the entire src directory recursively" },
       { configurable: { thread_id: "thread_interrupt", task_id: "task_interrupt" } },
     );
 
@@ -282,6 +282,83 @@ describe("root graph interrupt/resume", () => {
     );
     expect(hydrated?.approvals).toHaveLength(0);
     expect(hydrated?.tasks?.[0]?.status).toBe("cancelled");
+    expect(await Bun.file(targetPath).exists()).toBe(true);
+
+    await closeAppContext(ctx);
+  });
+
+  test("does not enqueue a duplicate destructive side effect after recovery blocks an uncertain execution", async () => {
+    const workspaceRoot = await createWorkspace();
+    const dataDir = join(workspaceRoot, "agent.sqlite");
+    const targetPath = join(workspaceRoot, "src", "danger.ts");
+    await mkdir(join(workspaceRoot, "src"), { recursive: true });
+    await Bun.write(targetPath, "export const danger = true;\n");
+
+    const seedDb = createSqlite(dataDir);
+    migrateSqlite(seedDb);
+    seedDb.run(`INSERT INTO threads (thread_id, workspace_root, project_id, revision, status, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, [
+      "thread_recovery_gate",
+      workspaceRoot,
+      "legacy-project",
+      1,
+      "active",
+      new Date().toISOString(),
+    ]);
+    seedDb.run(
+      `INSERT INTO runs (run_id, thread_id, status, trigger, input_text, active_task_id, started_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "run_recovery_gate",
+        "thread_recovery_gate",
+        "running",
+        "user_input",
+        "delete src/danger.ts",
+        "task_recovery_gate",
+        new Date().toISOString(),
+      ],
+    );
+    seedDb.run(`INSERT INTO tasks (task_id, thread_id, run_id, summary, status) VALUES (?, ?, ?, ?, ?)`, [
+      "task_recovery_gate",
+      "thread_recovery_gate",
+      "run_recovery_gate",
+      "delete src/danger.ts",
+      "running",
+    ]);
+    seedDb.run(
+      `INSERT INTO execution_ledger (
+        execution_id, thread_id, run_id, task_id, tool_call_id, tool_name, args_json, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "exec_recovery_gate",
+        "thread_recovery_gate",
+        "run_recovery_gate",
+        "task_recovery_gate",
+        "task_recovery_gate:apply_patch",
+        "apply_patch",
+        JSON.stringify({ path: targetPath }),
+        "started",
+        new Date().toISOString(),
+        new Date().toISOString(),
+      ],
+    );
+    seedDb.close();
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      projectId: "legacy-project",
+      modelGateway: createTestModelGateway(),
+    });
+
+    const blocked = await ctx.kernel.handleCommand({
+      type: "submit_input",
+      payload: { text: "continue working" },
+    });
+
+    expect(blocked.status).toBe("blocked");
+    const ledgerEntries = await ctx.stores.executionLedger.listByThread("thread_recovery_gate");
+    expect(ledgerEntries).toHaveLength(1);
+    expect(ledgerEntries[0]?.status).toBe("unknown_after_crash");
     expect(await Bun.file(targetPath).exists()).toBe(true);
 
     await closeAppContext(ctx);

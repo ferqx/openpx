@@ -373,7 +373,7 @@ class MultiModelGateway implements ModelGateway {
         [
           "You are the planning worker.",
           "Return either a plain-text summary or JSON with this shape:",
-          '{"summary":"<concise plan summary>","plannerResult":{"workPackages":[{"id":"pkg_id","objective":"...","allowedTools":["read_file"],"inputRefs":["thread:goal"],"expectedArtifacts":["patch:file"]}],"acceptanceCriteria":["..."],"riskFlags":[],"approvalRequiredActions":[],"verificationScope":["..."]}}',
+          '{"summary":"<concise plan summary>","plannerResult":{"workPackages":[{"id":"pkg_id","objective":"...","capabilityMarker":"respond_only","capabilityFamily":"approval_gated_delete","requiresApproval":false,"allowedTools":["read_file"],"inputRefs":["thread:goal"],"expectedArtifacts":["patch:file"]}],"acceptanceCriteria":["..."],"riskFlags":[],"approvalRequiredActions":[],"verificationScope":["..."]}}',
         ].join(" "),
       ],
       ["human", input.prompt],

@@ -214,7 +214,7 @@ describe("root graph", () => {
     expect(verifierInput?.artifacts?.[0]?.ref).toBe("patch:src/app/main.ts");
   });
 
-  test("routes execute work to the executor even when the request mentions src/planner.ts", async () => {
+  test("keeps scoped single-file deletions on the normal planning path", async () => {
     const checkpointer = new MemorySaver();
     let plannerCalled = false;
     let executorCalled = false;
@@ -237,11 +237,11 @@ describe("root graph", () => {
       { configurable: { thread_id: "thread_2", task_id: "task_2" } },
     );
 
-    // Now it should be waiting_approval because of the RecommendationEngine
-    expect(result.mode).toBe("waiting_approval");
-    expect(result.recommendationReason).toContain("high-risk");
-    expect(plannerCalled).toBe(false);
-    expect(executorCalled).toBe(false); // Should NOT even call executor if recommended first
+    expect(result.mode).toBe("plan");
+    expect(result.route).toBe("planner");
+    expect(result.recommendationReason).toBeUndefined();
+    expect(plannerCalled).toBe(true);
+    expect(executorCalled).toBe(false);
   });
 
   test("hydrates the root state from persisted recovery facts and working set", async () => {

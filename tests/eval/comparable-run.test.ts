@@ -130,6 +130,84 @@ describe("normalizeComparableRun", () => {
     expect(comparable.eventMilestones.taskCompletedCount).toBe(1);
   });
 
+  test("detects reroute-to-planner for capability-based rejection reasons", () => {
+    const thread = createThread("thread_reject_capability", "/tmp/openpx", "project-openpx");
+    const waitingRun = transitionRun(
+      transitionRun(
+        createRun({
+          runId: "run_waiting_capability",
+          threadId: thread.threadId,
+          trigger: "approval_resume",
+          inputText: "delete src/approval-target.ts",
+        }),
+        "running",
+      ),
+      "waiting_approval",
+    );
+    const replannedRun = transitionRun(
+      transitionRun(
+        createRun({
+          runId: "run_replanned_capability",
+          threadId: thread.threadId,
+          trigger: "user_input",
+          inputText: "Tool approval was rejected for capability apply_patch.delete_file. Original summary: apply_patch delete_file src/approval-target.ts. Replan safely with avoid_same_capability_marker.",
+        }),
+        "running",
+      ),
+      "completed",
+    );
+
+    const blockedTask = {
+      ...createTask("task_waiting_capability", thread.threadId, waitingRun.runId, "Delete approval target"),
+      status: "cancelled" as const,
+      blockingReason: {
+        kind: "waiting_approval" as const,
+        message: "apply_patch delete_file src/approval-target.ts",
+      },
+    };
+    const replannedTask = {
+      ...createTask("task_replanned_capability", thread.threadId, replannedRun.runId, "Safe replan"),
+      status: "completed" as const,
+    };
+
+    const approval = {
+      ...createApprovalRequest({
+        approvalRequestId: "approval_reject_capability",
+        threadId: thread.threadId,
+        runId: waitingRun.runId,
+        taskId: blockedTask.taskId,
+        toolCallId: "tool_delete_capability",
+        toolRequest: {
+          toolCallId: "tool_delete_capability",
+          threadId: thread.threadId,
+          runId: waitingRun.runId,
+          taskId: blockedTask.taskId,
+          toolName: "apply_patch",
+          args: {},
+          action: "delete_file",
+          path: "/tmp/openpx/src/approval-target.ts",
+          changedFiles: 1,
+        },
+        summary: "apply_patch delete_file src/approval-target.ts",
+        risk: "apply_patch.delete_file",
+      }),
+      status: "rejected" as const,
+    };
+
+    const comparable = normalizeComparableRun({
+      thread,
+      runs: [waitingRun, replannedRun],
+      tasks: [blockedTask, replannedTask],
+      approvals: [approval],
+      events: [],
+      ledgerEntries: [],
+    });
+
+    expect(comparable.approvalFlow.rejectionReason).toContain("Tool approval was rejected for capability");
+    expect(comparable.approvalFlow.reroutedToPlanner).toBe(true);
+    expect(comparable.approvalFlow.graphResumeDetected).toBe(true);
+  });
+
   test("detects recovery and duplicate side-effect signals", () => {
     const thread = {
       ...createThread("thread_recovery", "/tmp/openpx", "project-openpx"),

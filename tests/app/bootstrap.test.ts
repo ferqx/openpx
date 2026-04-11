@@ -411,9 +411,112 @@ describe("createAppContext", () => {
     const result = await ctx.controlPlane.rejectRequest("approval-reject");
 
     expect(result.status).toBe("completed");
-    expect(result.summary).toContain("Tool approval was rejected for proposal");
-    expect(result.summary).toContain("Replan safely without repeating that proposal.");
+    expect(result.summary).toContain("continue safely without deleting files");
+    expect(result.summary).not.toContain("rejected for proposal");
     expect(result.approvals).toHaveLength(0);
+    expect(await Bun.file(filePath).exists()).toBe(true);
+
+    await closeAppContext(ctx);
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  });
+
+  test("replans rejected delete capability without reusing the same marker", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-reject-replan-marker-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+    const filePath = path.join(workspaceRoot, "src", "approval-target.ts");
+
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, "export const approvalTarget = true;\n");
+
+    let planCalls = 0;
+    const modelGateway = {
+      async plan() {
+        planCalls += 1;
+        if (planCalls === 1) {
+          return {
+            summary: "Plan a scoped delete that requires approval.",
+            plannerResult: {
+              workPackages: [
+                {
+                  id: "pkg_delete",
+                  objective: "Delete src/approval-target.ts after explicit approval",
+                  capabilityMarker: "apply_patch.delete_file" as const,
+                  capabilityFamily: "reject_replan_delete" as const,
+                  requiresApproval: true,
+                  replanHint: "avoid_same_capability_marker" as const,
+                  allowedTools: ["apply_patch"],
+                  inputRefs: ["thread:goal", "file:src/approval-target.ts"],
+                  expectedArtifacts: ["patch:src/approval-target.ts"],
+                },
+              ],
+              acceptanceCriteria: ["approval-target.ts is removed only after approval"],
+              riskFlags: [],
+              approvalRequiredActions: ["apply_patch.delete_file"],
+              verificationScope: ["workspace file state"],
+            },
+          };
+        }
+
+        return {
+          summary: "Continue safely without deleting files.",
+          plannerResult: {
+            workPackages: [
+                {
+                  id: "pkg_safe_replan",
+                  objective: "continue safely without deleting files",
+                  capabilityMarker: "respond_only" as const,
+                  capabilityFamily: "reject_replan_delete" as const,
+                  requiresApproval: false,
+                  replanHint: "avoid_same_capability_marker" as const,
+                  allowedTools: ["read_file"],
+                  inputRefs: ["thread:goal"],
+                  expectedArtifacts: ["response:safe-replan"],
+              },
+            ],
+            acceptanceCriteria: ["no file deletion occurs after rejection"],
+            riskFlags: [],
+            approvalRequiredActions: [],
+            verificationScope: ["workspace file state"],
+          },
+        };
+      },
+      async verify() {
+        return { summary: "verified", isValid: true };
+      },
+      async respond() {
+        return { summary: "responded" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway,
+    });
+
+    const thread = createThread("thread-reject-replan-marker", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+
+    const blocked = await ctx.controlPlane.startRootTask(
+      thread.threadId,
+      "Delete src/approval-target.ts, but if I reject it then continue safely without deleting files.",
+    );
+    const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+
+    expect(blocked.status).toBe("waiting_approval");
+    expect(approvalRequestId).toBeDefined();
+
+    const result = await ctx.controlPlane.rejectRequest(approvalRequestId!);
+
+    expect(result.status).toBe("completed");
+    expect(result.summary).toContain("continue safely without deleting files");
+    expect(result.summary).not.toContain("rejected for proposal");
     expect(await Bun.file(filePath).exists()).toBe(true);
 
     await closeAppContext(ctx);

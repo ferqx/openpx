@@ -4,6 +4,24 @@ export type RecommendationResult = {
 };
 
 export function createRecommendationEngine() {
+  function isScopedSingleFileDeletion(input: string): boolean {
+    const normalized = input.trim();
+    if (!/\b(delete|remove|drop)\b/i.test(normalized)) {
+      return false;
+    }
+
+    const mentionsSinglePath = /\b(?:delete|remove|drop)\s+[\w./-]+\.[a-z0-9]+\b/i.test(normalized);
+    if (mentionsSinglePath) {
+      return !/\b(all|multiple|every|entire|whole|recursive|recursively)\b/i.test(normalized);
+    }
+
+    if (/\b(all|multiple|every|entire|whole|recursive|recursively)\b/i.test(normalized)) {
+      return false;
+    }
+
+    return /\b(?:delete|remove|drop)\s+[\w./-]+\.[a-z0-9]+\b/i.test(normalized);
+  }
+
   function evaluateComplexity(input: string): number {
     let score = 0;
     // Check for "multiple components", "refactor", "across", etc.
@@ -27,7 +45,7 @@ export function createRecommendationEngine() {
     let score = 0;
     // Check for "delete", "remove", "drop", "wipe", "reset", "destroy"
     if (/\b(delete|remove|drop|wipe|reset|destroy|clear|truncate)\b/i.test(input)) {
-      score += 8;
+      score += isScopedSingleFileDeletion(input) ? 4 : 8;
     }
     // Check for sensitive areas
     if (/\b(production|prod|database|db|config|env|secrets|credentials|auth)\b/i.test(input)) {
@@ -48,6 +66,10 @@ export function createRecommendationEngine() {
 
   return {
     evaluate(input: string): RecommendationResult {
+      if (input.includes("avoid_same_capability_marker")) {
+        return { recommendTeam: false };
+      }
+
       const complexity = evaluateComplexity(input);
       const risk = evaluateRisk(input);
 

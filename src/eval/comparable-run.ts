@@ -57,6 +57,18 @@ function getDuplicateAliases(values: readonly string[]): string[] {
     .sort();
 }
 
+function isCapabilityReplanInput(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  return value.includes("Tool approval was rejected for proposal")
+    || (
+      value.includes("Tool approval was rejected for capability")
+      && value.includes("avoid_same_capability_marker")
+    );
+}
+
 export function normalizeComparableRun(input: NormalizeComparableRunInput): EvalComparableRun {
   const runAliasMap = createAliasMap(input.runs.map((run) => run.runId), "run");
   const taskAliasMap = createAliasMap(input.tasks.map((task) => task.taskId), "task");
@@ -79,12 +91,12 @@ export function normalizeComparableRun(input: NormalizeComparableRunInput): Eval
   const rejectionReason = resolution === "rejected"
     ? input.runs
         .map((run) => run.inputText ?? run.resultSummary)
-        .find((value) => typeof value === "string" && value.includes("Tool approval was rejected for proposal"))
+        .find((value) => typeof value === "string" && isCapabilityReplanInput(value))
     : undefined;
   const reroutedToPlanner = Boolean(
     rejectionReason
     && input.runs.some(
-      (run) => run.trigger === "user_input" && typeof run.inputText === "string" && run.inputText.includes("Tool approval was rejected for proposal"),
+      (run) => run.trigger === "user_input" && typeof run.inputText === "string" && isCapabilityReplanInput(run.inputText),
     ),
   );
   const toolExecutedCount = input.events.filter((event) => event.type === "tool.executed").length;

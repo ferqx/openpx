@@ -9,6 +9,7 @@ import {
   type ReviewQueueItem,
 } from "./eval-schema";
 import { SqliteEvalStore } from "../persistence/sqlite/sqlite-eval-store";
+import type { EvalReviewQueueRecord, EvalStorePort } from "../persistence/ports/eval-store-port";
 import { resolveEvalDataDir as resolveInternalEvalDataDir } from "./eval-data-dir";
 
 type EvalReviewCommandIo = {
@@ -385,6 +386,15 @@ function buildFollowUp(input: {
     });
   }
   return undefined;
+}
+
+export async function persistReviewQueueItemsToStore(
+  store: Pick<EvalStorePort, "saveReviewRecords">,
+  items: ReviewQueueItem[],
+): Promise<ReviewQueueItem[]> {
+  const records: EvalReviewQueueRecord[] = items.map((item) => ({ item }));
+  await store.saveReviewRecords(records);
+  return items;
 }
 
 export async function listReviewQueueItems(input: {

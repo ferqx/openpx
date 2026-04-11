@@ -87,4 +87,28 @@ describe("approval gate node", () => {
       resumeValue: undefined,
     });
   });
+
+  test("falls back to the original input when a rejection omits a reason", () => {
+    const result = approvalGateNode({
+      input: "delete src/old.ts",
+      mode: "waiting_approval",
+      pendingApproval: {
+        summary: "delete src/old.ts",
+      },
+      resumeValue: {
+        kind: "approval_resolution",
+        decision: "rejected",
+        approvalRequestId: "approval-delete",
+      },
+    });
+
+    expect(result).toEqual({
+      approved: false,
+      input: "delete src/old.ts",
+      mode: "plan",
+      pendingApproval: undefined,
+      route: "planner",
+      resumeValue: undefined,
+    });
+  });
 });

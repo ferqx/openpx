@@ -201,6 +201,7 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "eval_review_queue", "resolution_type", "TEXT");
   ensureColumn(db, "eval_review_queue", "owner_note", "TEXT");
   ensureColumn(db, "eval_review_queue", "follow_up_json", "TEXT");
+  ensureColumn(db, "eval_review_queue", "metadata_json", "TEXT");
   ensureColumn(db, "eval_review_queue", "closed_at", "TEXT");
   migrateLegacyEvalReviewQueueStatus(db);
 

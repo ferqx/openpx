@@ -70,6 +70,7 @@ describe("createModelGateway", () => {
             {
               id: "pkg_startup_message",
               objective: "Update startup message copy",
+              capabilityMarker: "respond_only",
               allowedTools: ["read_file", "apply_patch"],
               inputRefs: ["thread:goal", "file:src/app/main.ts"],
               expectedArtifacts: ["patch:src/app/main.ts"],
@@ -85,6 +86,7 @@ describe("createModelGateway", () => {
 
     expect(parsed.summary).toBe("Plan startup message work");
     expect(parsed.plannerResult?.workPackages[0]?.id).toBe("pkg_startup_message");
+    expect(parsed.plannerResult?.workPackages[0]?.capabilityMarker).toBe("respond_only");
   });
 
   test("falls back to plain summary when planner output is not json", () => {

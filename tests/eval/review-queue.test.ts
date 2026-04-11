@@ -405,4 +405,80 @@ describe("eval review queue", () => {
     await store.close();
     await fs.rm(rootDir, { recursive: true, force: true });
   });
+
+  test("preserves metadata when queue rows are updated through normal triage operations", async () => {
+    const store = new SqliteEvalStore(":memory:");
+
+    await store.saveReviewRecords([
+      {
+        item: {
+          reviewItemId: "review_meta_1",
+          scenarioRunId: "scenario_run_meta_1",
+          scenarioId: "scenario-meta",
+          sourceType: "trajectory_rule",
+          sourceId: "trajectory.resume_lineage_stability",
+          severity: "high",
+          triageStatus: "open",
+          resolutionType: undefined,
+          summary: "real eval metadata should survive updates",
+          objectRefs: {
+            threadId: "thread_meta_1",
+            runIds: ["run_meta_1"],
+            taskIds: ["task_meta_1"],
+            approvalIds: [],
+          },
+          ownerNote: undefined,
+          followUp: undefined,
+          createdAt: "2026-04-11T00:00:00.000Z",
+          closedAt: undefined,
+        },
+        metadataJson: JSON.stringify({
+          version: 1,
+          lane: "real-eval",
+          runId: "run_meta_1",
+          failureClass: "graph_bypass_after_approval",
+          impactedObject: "run:run_meta_1",
+          nextSuggestedAction: "resume via graph",
+          status: "failed",
+        }),
+      },
+    ]);
+
+    await store.saveReviewItem({
+      reviewItemId: "review_meta_1",
+      scenarioRunId: "scenario_run_meta_1",
+      scenarioId: "scenario-meta",
+      sourceType: "trajectory_rule",
+      sourceId: "trajectory.resume_lineage_stability",
+      severity: "medium",
+      triageStatus: "triaged",
+      resolutionType: undefined,
+      summary: "updated summary",
+      objectRefs: {
+        threadId: "thread_meta_1",
+        runIds: ["run_meta_1"],
+        taskIds: ["task_meta_1"],
+        approvalIds: [],
+      },
+      ownerNote: "triaged for follow-up",
+      followUp: undefined,
+      createdAt: "2026-04-11T00:00:00.000Z",
+      closedAt: undefined,
+    });
+
+    await store.updateReviewItem({
+      reviewItemId: "review_meta_1",
+      triageStatus: "closed",
+      resolutionType: "accepted_noise",
+      ownerNote: "closed without erasing metadata",
+      closedAt: "2026-04-11T00:01:00.000Z",
+    });
+
+    const [record] = await store.listReviewRecords({ scenarioId: "scenario-meta" });
+    expect(record?.item.triageStatus).toBe("closed");
+    expect(record?.metadataJson).toContain("\"lane\":\"real-eval\"");
+    expect(record?.metadataJson).toContain("\"runId\":\"run_meta_1\"");
+
+    await store.close();
+  });
 });

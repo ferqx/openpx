@@ -11,7 +11,7 @@ import {
   type UpdateReviewQueueItemInput,
   updateReviewQueueItemInputSchema,
 } from "../../eval/eval-schema";
-import type { EvalStorePort } from "../ports/eval-store-port";
+import type { EvalReviewQueueRecord, EvalStorePort } from "../ports/eval-store-port";
 import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
@@ -53,6 +53,7 @@ type EvalReviewQueueRow = {
   object_refs_json: string;
   owner_note: string | null;
   follow_up_json: string | null;
+  metadata_json: string | null;
   created_at: string;
   closed_at: string | null;
 };
@@ -139,44 +140,58 @@ export class SqliteEvalStore implements EvalStorePort {
     return rows.map(mapScenarioResultRow);
   }
 
+  async saveReviewRecords(records: EvalReviewQueueRecord[]): Promise<void> {
+    const parsedRecords = records.map((record) => ({
+      item: evalReviewQueueItemSchema.parse(record.item),
+      metadataJson: record.metadataJson ?? null,
+    }));
+
+    this.db.transaction((entries: typeof parsedRecords) => {
+      for (const record of entries) {
+        this.db.run(
+          `INSERT INTO eval_review_queue (
+            review_item_id, scenario_run_id, scenario_id, source_type, source_id, severity, triage_status, resolution_type,
+            summary, object_refs_json, owner_note, follow_up_json, metadata_json, created_at, closed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(review_item_id) DO UPDATE SET
+            scenario_run_id = excluded.scenario_run_id,
+            scenario_id = excluded.scenario_id,
+            source_type = excluded.source_type,
+            source_id = excluded.source_id,
+            severity = excluded.severity,
+            triage_status = excluded.triage_status,
+            resolution_type = excluded.resolution_type,
+            summary = excluded.summary,
+            object_refs_json = excluded.object_refs_json,
+            owner_note = excluded.owner_note,
+            follow_up_json = excluded.follow_up_json,
+            metadata_json = COALESCE(excluded.metadata_json, eval_review_queue.metadata_json),
+            created_at = excluded.created_at,
+            closed_at = excluded.closed_at`,
+          [
+            record.item.reviewItemId,
+            record.item.scenarioRunId,
+            record.item.scenarioId,
+            record.item.sourceType,
+            record.item.sourceId,
+            record.item.severity,
+            record.item.triageStatus,
+            record.item.resolutionType ?? null,
+            record.item.summary,
+            JSON.stringify(record.item.objectRefs),
+            record.item.ownerNote ?? null,
+            record.item.followUp ? JSON.stringify(record.item.followUp) : null,
+            record.metadataJson,
+            record.item.createdAt,
+            record.item.closedAt ?? null,
+          ],
+        );
+      }
+    })(parsedRecords);
+  }
+
   async saveReviewItem(item: ReviewQueueItem): Promise<void> {
-    const parsed = evalReviewQueueItemSchema.parse(item);
-    this.db.run(
-      `INSERT INTO eval_review_queue (
-        review_item_id, scenario_run_id, scenario_id, source_type, source_id, severity, triage_status, resolution_type,
-        summary, object_refs_json, owner_note, follow_up_json, created_at, closed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(review_item_id) DO UPDATE SET
-        scenario_run_id = excluded.scenario_run_id,
-        scenario_id = excluded.scenario_id,
-        source_type = excluded.source_type,
-        source_id = excluded.source_id,
-        severity = excluded.severity,
-        triage_status = excluded.triage_status,
-        resolution_type = excluded.resolution_type,
-        summary = excluded.summary,
-        object_refs_json = excluded.object_refs_json,
-        owner_note = excluded.owner_note,
-        follow_up_json = excluded.follow_up_json,
-        created_at = excluded.created_at,
-        closed_at = excluded.closed_at`,
-      [
-        parsed.reviewItemId,
-        parsed.scenarioRunId,
-        parsed.scenarioId,
-        parsed.sourceType,
-        parsed.sourceId,
-        parsed.severity,
-        parsed.triageStatus,
-        parsed.resolutionType ?? null,
-        parsed.summary,
-        JSON.stringify(parsed.objectRefs),
-        parsed.ownerNote ?? null,
-        parsed.followUp ? JSON.stringify(parsed.followUp) : null,
-        parsed.createdAt,
-        parsed.closedAt ?? null,
-      ],
-    );
+    await this.saveReviewRecords([{ item }]);
   }
 
   async getReviewItem(reviewItemId: string): Promise<ReviewQueueItem | undefined> {
@@ -187,6 +202,11 @@ export class SqliteEvalStore implements EvalStorePort {
   }
 
   async listReviewItems(filters?: EvalReviewQueueFilters): Promise<ReviewQueueItem[]> {
+    const records = await this.listReviewRecords(filters);
+    return records.map((record) => record.item);
+  }
+
+  async listReviewRecords(filters?: EvalReviewQueueFilters): Promise<EvalReviewQueueRecord[]> {
     const parsedFilters = evalReviewQueueFiltersSchema.parse(filters ?? {});
     const clauses: string[] = [];
     const values: string[] = [];
@@ -216,7 +236,10 @@ export class SqliteEvalStore implements EvalStorePort {
     const rows = this.db
       .query<EvalReviewQueueRow, string[]>(`SELECT * FROM eval_review_queue ${whereClause} ORDER BY created_at ASC`)
       .all(...values);
-    return rows.map(mapReviewQueueRow);
+    return rows.map((row) => ({
+      item: mapReviewQueueRow(row),
+      metadataJson: row.metadata_json ?? undefined,
+    }));
   }
 
   async updateReviewItem(input: UpdateReviewQueueItemInput): Promise<ReviewQueueItem> {
