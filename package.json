@@ -11,7 +11,8 @@
     "eval:suite": "bun run src/eval/run-suite.ts",
     "smoke:planner": "bun run src/app/smoke-planner.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "validation:run": "bun run src/validation/run-suite.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

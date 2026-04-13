@@ -96,6 +96,8 @@ export function createSessionKernel(deps: {
   workspaceRoot?: string;
   projectId?: string;
 }): SessionKernel {
+  // 面向 UI 的命令边界。kernel 负责解析 durable context、启动后台
+  // control-plane 工作，并返回当前时刻的 session 投影视图。
   const events = createEventBus<KernelEvent>();
   const threadService = createThreadService({
     threadStore: deps.stores.threadStore,
@@ -266,6 +268,9 @@ export function createSessionKernel(deps: {
     interrupts,
     hydrateSession,
     async handleCommand(command, expectedRevision) {
+      // 所有命令分支都遵循同一个形状：
+      // 先解析当前 thread/run/task 状态 -> 再启动后台工作 ->
+      // 然后立刻返回当前最合理的投影视图。
       if (command.type === "submit_input") {
         const latestThread = await deps.stores.threadStore.getLatest(currentScope);
         const submitContext = await resolveSubmitCommandContext({

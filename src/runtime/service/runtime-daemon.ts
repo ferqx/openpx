@@ -9,6 +9,8 @@ export type RuntimeDaemonOptions = {
   projectId?: string;
 };
 
+// daemon 的所有权在这里。TUI 应优先复用同一 workspace/project 的既有
+// runtime，而不是再创建并行的进程内 runtime。
 function resolveProjectId(workspaceRoot: string, projectId?: string): string {
   return projectId ?? resolve(workspaceRoot).split("/").pop() ?? "default-project";
 }
@@ -43,6 +45,7 @@ export async function ensureRuntime(options: RuntimeDaemonOptions) {
   const lockFile = join(lockDir, "device-runtime.daemon.json");
   
   if (existsSync(lockFile)) {
+    // 只有当记录的端口仍然服务于同一个 scope 时，才复用这个 daemon。
     const info = JSON.parse(readFileSync(lockFile, "utf-8"));
     try {
       const snapshotUrl = new URL(`http://localhost:${info.port}/snapshot`);

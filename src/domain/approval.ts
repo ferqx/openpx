@@ -6,6 +6,9 @@ import {
   toolCallId as sharedToolCallId,
 } from "../shared/ids";
 
+// ApprovalRequest 表示一次必须经过人工确认的高风险工具动作。
+// 它把 thread/run/task/toolCall 串起来，确保批准点始终可以回到
+// 正确的执行上下文继续推进。
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 export type ApprovalToolRequest = {

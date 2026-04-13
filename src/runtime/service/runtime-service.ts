@@ -31,6 +31,7 @@ class DeviceRuntimeService implements RuntimeService {
       return existing;
     }
 
+    // 为每个 workspace/project 对缓存一个 scoped runtime session。
     const created = createAppContext({
       dataDir: this.options.dataDir,
       workspaceRoot: scope.workspaceRoot,

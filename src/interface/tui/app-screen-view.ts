@@ -6,16 +6,15 @@ import type { UtilityPaneSessionSnapshot } from "./components/utility-pane";
 import type { TaskSummary } from "./components/task-panel";
 import type { ApprovalSummary } from "./components/approval-panel";
 import type { WorkerSummary } from "./components/worker-panel";
-
-type ConversationDisplayState = {
-  modelStatus: "idle" | "thinking" | "responding";
-  messages: ScreenConversationView["messages"];
-  performance: { waitMs: number; genMs: number };
-  streamScrollOffset: number;
-};
+import type { ConversationDisplayState } from "./app-state-support";
 
 export function buildConversationView(input: {
-  conversationState: ConversationDisplayState;
+  conversationState: Pick<
+    ConversationDisplayState,
+    "modelStatus" | "performance" | "streamScrollOffset"
+  > & {
+    messages: ScreenConversationView["messages"];
+  };
   session?: RuntimeSessionState;
   hasCreatedThreadThisLaunch: boolean;
 }): ScreenConversationView {

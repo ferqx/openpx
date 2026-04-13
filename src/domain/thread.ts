@@ -6,6 +6,8 @@ import { z } from "zod";
 
 export type ThreadStatus = z.infer<typeof threadStatusSchema>;
 
+// Thread 表示一条长期协作线。它负责承载 workspace/project 归属、
+// durable narrative，以及跨多个 run 持续存在的上下文。
 export type Thread = {
   threadId: ReturnType<typeof sharedThreadId>;
   workspaceRoot: string;

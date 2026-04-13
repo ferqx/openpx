@@ -6,6 +6,8 @@ import { z } from "zod";
 export type RunStatus = z.infer<typeof runStatusSchema>;
 export type RunTrigger = z.infer<typeof runTriggerSchema>;
 
+// Run 表示 thread 内的一次执行尝试。它负责记录这一次尝试的状态、
+// 触发方式、当前 activeTask，以及等待 approval 或恢复阻塞的原因。
 export type RunBlockingReason = {
   kind: "waiting_approval" | "human_recovery" | "environment_block";
   message: string;

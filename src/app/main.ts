@@ -7,6 +7,8 @@ import { createRemoteKernel } from "../interface/runtime/remote-kernel";
 import { resolve, join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 
+// 产品主入口：启动或复用共享 runtime daemon，然后通过 remote-kernel
+// 桥接把 Ink TUI 挂到 runtime 上。
 type MainInput = {
   workspaceRoot?: string;
   projectId?: string;
@@ -54,12 +56,14 @@ export async function main(input?: MainInput) {
   const projectId = input?.projectId ?? resolveProjectId(workspaceRoot);
   const dataDir = input?.dataDir ?? process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ".openpx";
 
+  // 第一步：确保当前 workspace/project 只有一个 runtime 进程在提供服务。
   const runtimeInfo = await ensureRuntime({
     workspaceRoot,
     projectId,
     dataDir,
   });
 
+  // 第二步：通过协议层把 TUI 连接到 runtime 状态，而不是在 UI 进程里再造一套状态。
   const scopedClient = new RuntimeClient(`http://localhost:${runtimeInfo.port}`, {
     workspaceRoot,
     projectId,

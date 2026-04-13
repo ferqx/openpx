@@ -1,41 +1,32 @@
-# openpx Project Guide
+# CLAUDE.md
 
-CLI-first agent OS for long-running code work. Built with Bun, React (Ink), and LangGraph.
+此文件不是 OpenPX 的架构或规划权威。
 
-## Core Commands
-- **Run TUI**: `bun dev` (Starts the shared runtime and attaches the high-fidelity shell)
-- **Run Tests**: `bun test` (Full suite including domain, persistence, and runtime tests)
-- **Type Check**: `bun run typecheck` or `bunx tsc --noEmit`
-- **Smoke Test**: `bun run smoke:planner` (Verifies planner model connectivity)
+按以下顺序使用根级文件：
 
-## Project Structure
-- `src/app/`: Bootstrap logic and main entrypoints.
-- `src/kernel/`: The SessionKernel, Command Bus, and Thread services.
-- `src/runtime/`: LangGraph implementation (Root Graph and Specialized Workers).
-- `src/interface/`: TUI components (Ink-based) and Runtime Client.
-- `src/control/`: Policy engine, Task management, and Tool registry.
-- `src/domain/`: Core entities (Thread, Task, Event, Memory).
-- `src/persistence/`: SQLite implementations for all ports.
-- `src/shared/`: Config, ID generators, and Zod schemas.
+1. `CONTROL.md`
+2. `AGENTS.md`
+3. `ROADMAP.md`
 
-## Tech Stack & Standards
-- **Runtime**: Bun 1.x
-- **Language**: TypeScript (Strict mode)
-- **Orchestration**: LangGraph.js
-- **UI**: React 19 + Ink 6 (High-fidelity ANSI output)
-- **Database**: SQLite (via `bun:sqlite`)
-- **Model Access**: LangChain OpenAI / ModelGateway
-- **API**: local HTTP (Control) + SSE (Events)
+如果此文件与上述任何文件冲突，忽略此文件。
 
-## Architecture Principles
-1. **Runtime-First**: The shared runtime is the single source of truth.
-2. **Durable Recovery**: Every effectful tool call is logged in a durable ledger.
-3. **Context Discipline**: Three-layer model (Narrative, Working, Scratch) prevents context drift.
-4. **Multi-Project**: Threads and runtimes are isolated per workspace/projectId.
-5. **Human-in-the-Loop**: High-risk actions and team recommendations require explicit confirmation.
+## 残留环境说明
 
-## Development Workflow
-- Always use `bun test` before committing.
-- Follow TDD for new domain or runtime features.
-- Update `api-schema.ts` when changing protocol types.
-- Maintain `CLAUDE.md` and roadmap specs as the project evolves.
+- 主要产品入口：`bun run dev`
+- 直接 TUI 入口：`bun run src/app/main.ts`
+- 主要验证命令：
+  - `bun test`
+  - `bun run typecheck`
+  - `bun run smoke:planner`
+
+## 次要工具通道
+
+这些是内部工具通道，不是替代产品架构：
+
+- `bun run eval:core`
+- `bun run eval:suite`
+- `bun run eval:review`
+- `bun run eval:real`
+- `bun run validation:run`
+
+有关运行时主轴、子系统分类、脚本状态和仓库控制规则，请阅读 `CONTROL.md`。

@@ -1,30 +1,37 @@
 # openpx
 
-## Current Roadmap
+## 当前路线图
 
-Current planning authority lives in `ROADMAP.md`.
+当前仓库控制权威位于 `CONTROL.md`。
 
-Use `ROADMAP.md`, `AGENTS.md`, and `docs/active/` as the active baseline for implementation priorities.
+当信息来源不一致时，按以下顺序判断：
 
-## Install
+1. 运行行为
+2. 测试
+3. 代码
+4. `CONTROL.md` 中的白名单文档
+
+`ROADMAP.md` 仍是路线图入口。长期仓库文档采用根级模型。
+
+## 安装
 
 ```bash
 bun install
 ```
 
-## Run TUI
+## 运行 TUI
 
 ```bash
 bun run dev
 ```
 
-You can also start it directly:
+也可以直接启动：
 
 ```bash
 bun run src/app/main.ts
 ```
 
-## Run Tests
+## 运行测试
 
 ```bash
 bun test
@@ -34,9 +41,13 @@ bun test
 bun run typecheck
 ```
 
-## Smoke / Verification
+## 控制恢复
 
-Run these commands in order when checking the developer experience:
+如果需要了解当前运行时主轴、支持脚本、子系统分类或哪些文档可以指导工作，请先阅读 `CONTROL.md`。
+
+## 烟雾测试 / 验证
+
+检查开发体验时，按顺序运行以下命令：
 
 ```bash
 bun test
@@ -45,28 +56,28 @@ bun run src/app/main.ts --help
 bun run smoke:planner
 ```
 
-Expected results:
+预期结果：
 
-- `bun test` passes
-- `bun run typecheck` passes
-- `bun run src/app/main.ts --help` prints usage and exits without launching the TUI
-- `bun run smoke:planner` prints a real planner summary when `OPENAI_*` variables are configured; expect a real model call that can take around 1-2 minutes in local use
+- `bun test` 通过
+- `bun run typecheck` 通过
+- `bun run src/app/main.ts --help` 打印使用说明并退出，不启动 TUI
+- `bun run smoke:planner` 在配置了 `OPENAI_*` 环境变量时打印真实的 planner 摘要；预计会产生一次真实的模型调用，本地使用可能需要约 1-2 分钟
 
-## SQLite Data
+## SQLite 数据
 
-By default, the app boots with in-memory SQLite for development.
+默认情况下，应用使用内存中的 SQLite 启动用于开发。
 
-To persist local state while using `bun run dev`, set `OPENPX_DATA_DIR` to a SQLite file path first:
+要在使用 `bun run dev` 时持久化本地状态，请先设置 `OPENPX_DATA_DIR` 为 SQLite 文件路径：
 
 ```bash
 OPENPX_DATA_DIR=./.openpx/agent.sqlite bun run dev
 ```
 
-That path is used for both the app stores and LangGraph checkpointing.
+该路径同时用于应用 stores 和 LangGraph checkpointing。
 
-## Planner Model Config
+## Planner 模型配置
 
-The planner worker reads local OpenAI-style variables from `.env`:
+planner worker 从 `.env` 读取本地 OpenAI 风格的变量：
 
 ```bash
 OPENAI_API_KEY=...
@@ -74,8 +85,8 @@ OPENAI_BASE_URL=...
 OPENAI_MODEL=kimi-k2.5
 ```
 
-Copy [`.env.example`](/Users/chenchao/Code/ai/openwenpx-new/.env.example) to `.env` and fill in provider-specific values. `.env` is gitignored and stays local.
+将 [`.env.example`](/Users/chenchao/Code/ai/openwenpx-new/.env.example) 复制到 `.env` 并填写 provider 特定的值。`.env` 被 gitignore 忽略，保留在本地。
 
-## Approvals
+## 审批
 
-Approvals are policy-gated. When a tool call is risky, the kernel creates a pending approval request instead of executing the change. The TUI hydrates the latest blocked thread on boot and supports `/approve <approval-id>` and `/reject <approval-id>` to continue or cancel the blocked action.
+审批受策略控制。当工具调用存在风险时，内核会创建待定审批请求而不是执行更改。TUI 在启动时水合最新的阻塞线程，支持使用 `/approve <approval-id>` 和 `/reject <approval-id>` 继续或取消阻塞的操作。

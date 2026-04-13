@@ -5,6 +5,8 @@ import { z } from "zod";
 
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 
+// Task 表示 run 内的当前具体步骤。它应该只描述“现在在做什么”，
+// 例如计划、执行、验证或等待人工恢复，而不是承载整条 thread 历史。
 export type Task = {
   taskId: ReturnType<typeof sharedTaskId>;
   threadId: ReturnType<typeof sharedThreadId>;

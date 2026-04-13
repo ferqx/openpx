@@ -9,6 +9,8 @@ import type { SessionCommandResult } from "../../kernel/session-kernel";
 
 type AppContext = Awaited<ReturnType<typeof createAppContext>>;
 
+// 每个 scope 的适配层，负责把 runtime protocol 连接到 durable kernel/stores。
+// 它持有 active thread 指针、snapshot 组装逻辑，以及实时事件分发。
 export class RuntimeScopedSession {
   private readonly eventBuffer: RuntimeEventEnvelope[] = [];
   private readonly maxBufferSize = 100;
@@ -62,6 +64,7 @@ export class RuntimeScopedSession {
   }
 
   private async ensureActiveThread(): Promise<Thread> {
+    // 为当前 scope 维持一个 active thread 指针，并在第一条命令到来时按需创建。
     if (this.activeThreadId) {
       const active = await this.context.stores.threadStore.get(this.activeThreadId);
       if (active && active.workspaceRoot === this.scope.workspaceRoot && active.projectId === this.scope.projectId) {
@@ -134,6 +137,7 @@ export class RuntimeScopedSession {
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
+    // 集中组装“当前到底什么是真的”这一份 read model，供 TUI 和其他协议客户端读取。
     const activeThread = await this.getExistingActiveThread();
     await this.syncLiveSeqWithEventLog();
     const threads = await this.context.stores.threadStore.listByScope(this.scope);
@@ -183,6 +187,7 @@ export class RuntimeScopedSession {
   }
 
   async *subscribeEvents(afterSeq = 0): AsyncIterable<RuntimeEventEnvelope> {
+    // 先回放 durable backlog，再继续消费内存中的实时队列。
     const activeThread = await this.getExistingActiveThread();
     await this.syncLiveSeqWithEventLog();
     const buffered = this.eventBuffer.filter((envelope) => envelope.seq > afterSeq);
