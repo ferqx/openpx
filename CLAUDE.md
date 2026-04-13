@@ -6,7 +6,8 @@
 
 1. `CONTROL.md`
 2. `AGENTS.md`
-3. `ROADMAP.md`
+3. `ARCHITECTURE.md`
+4. `ROADMAP.md`
 
 如果此文件与上述任何文件冲突，忽略此文件。
 
@@ -30,3 +31,4 @@
 - `bun run validation:run`
 
 有关运行时主轴、子系统分类、脚本状态和仓库控制规则，请阅读 `CONTROL.md`。
+有关系统结构导航和 `docs/space/` 的进入方式，请阅读 `ARCHITECTURE.md`。

@@ -265,7 +265,8 @@ UI 层只保留最小必要的本地交互状态。
 - `README.md`
 - `NOISE_CANDIDATES.md`
 
-不再维护 `docs/active` / `docs/work-packages` / `docs/historical` 作为长期文档层级。
+不再维护 `docs/active` / `docs/work-packages` / `docs/historical` 作为长期文档层级。  
+当前官方知识空间位于 `docs/space/`，并通过索引逐步进入。
 
 ---
 

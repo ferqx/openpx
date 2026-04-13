@@ -11,7 +11,11 @@
 3. 代码
 4. `CONTROL.md` 中的白名单文档
 
-`ROADMAP.md` 仍是路线图入口。长期仓库文档采用根级模型。
+`ROADMAP.md` 仍是路线图入口。当前仓库采用“根级控制文档 + `docs/space/` 官方知识空间”的模型。
+当前文档结构采用：
+
+- 根级控制文档：`AGENTS.md`、`CONTROL.md`、`ARCHITECTURE.md`
+- 官方知识空间：`docs/space/`
 
 ## 安装
 
@@ -43,7 +47,11 @@ bun run typecheck
 
 ## 控制恢复
 
-如果需要了解当前运行时主轴、支持脚本、子系统分类或哪些文档可以指导工作，请先阅读 `CONTROL.md`。
+如果需要了解当前运行时主轴、支持脚本、子系统分类或哪些文档可以指导工作，请先阅读：
+
+1. `AGENTS.md`
+2. `CONTROL.md`
+3. `ARCHITECTURE.md`
 
 ## 烟雾测试 / 验证
 
