@@ -1,21 +1,16 @@
 # openpx
 
-## 当前路线图
+## 快速入口
 
-当前仓库控制权威位于 `CONTROL.md`。
+当前仓库采用“根级控制文档 + `docs/space/` 官方知识空间”的模型。
 
-当信息来源不一致时，按以下顺序判断：
+默认先读：
 
-1. 运行行为
-2. 测试
-3. 代码
-4. `CONTROL.md` 中的白名单文档
+1. `AGENTS.md`
+2. `CONTROL.md`
+3. `ARCHITECTURE.md`
 
-`ROADMAP.md` 仍是路线图入口。当前仓库采用“根级控制文档 + `docs/space/` 官方知识空间”的模型。
-当前文档结构采用：
-
-- 根级控制文档：`AGENTS.md`、`CONTROL.md`、`ARCHITECTURE.md`
-- 官方知识空间：`docs/space/`
+需要更深信息时，再按索引进入 `docs/space/`。
 
 ## 安装
 
@@ -29,12 +24,6 @@ bun install
 bun run dev
 ```
 
-也可以直接启动：
-
-```bash
-bun run src/app/main.ts
-```
-
 ## 运行测试
 
 ```bash
@@ -44,14 +33,6 @@ bun test
 ```bash
 bun run typecheck
 ```
-
-## 控制恢复
-
-如果需要了解当前运行时主轴、支持脚本、子系统分类或哪些文档可以指导工作，请先阅读：
-
-1. `AGENTS.md`
-2. `CONTROL.md`
-3. `ARCHITECTURE.md`
 
 ## 烟雾测试 / 验证
 
@@ -93,7 +74,7 @@ OPENAI_BASE_URL=...
 OPENAI_MODEL=kimi-k2.5
 ```
 
-将 [`.env.example`](/Users/chenchao/Code/ai/openwenpx-new/.env.example) 复制到 `.env` 并填写 provider 特定的值。`.env` 被 gitignore 忽略，保留在本地。
+将 [`.env.example`](/Users/chenchao/Code/ai/openpx/.env.example) 复制到 `.env` 并填写 provider 特定的值。`.env` 被 gitignore 忽略，保留在本地。
 
 ## 审批
 

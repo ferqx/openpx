@@ -128,7 +128,7 @@ bun run typecheck
 - 优先级改变
 - 下轮不该继续优先动
 
-就必须更新 [NOISE_CANDIDATES.md](/Users/chenchao/Code/ai/openpx/NOISE_CANDIDATES.md)。
+就必须更新 [docs/space/execution/tech-debt-tracker.md](/Users/chenchao/Code/ai/openpx/docs/space/execution/tech-debt-tracker.md)，必要时再补对应的 active plan。
 
 ### 3. 回写稳定结论
 
