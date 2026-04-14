@@ -1,5 +1,6 @@
 import type { ValidationScenarioVerdictRecord, ValidationSuiteSummary } from "./validation-schema";
 
+/** 渲染单场景 engineering 视图 */
 export function renderValidationScenarioEngineeringView(record: ValidationScenarioVerdictRecord): string {
   const lines = [
     "Validation engineering view",
@@ -21,6 +22,7 @@ export function renderValidationScenarioEngineeringView(record: ValidationScenar
   return `${lines.join("\n")}\n`;
 }
 
+/** 渲染单场景 product gate 视图 */
 export function renderValidationScenarioProductGateView(record: ValidationScenarioVerdictRecord): string {
   const lines = [
     "Validation product gate",
@@ -34,6 +36,7 @@ export function renderValidationScenarioProductGateView(record: ValidationScenar
   return `${lines.join("\n")}\n`;
 }
 
+/** 渲染 suite engineering 视图 */
 export function renderValidationEngineeringView(summary: ValidationSuiteSummary): string {
   const lines = [
     "Validation engineering view",
@@ -58,6 +61,7 @@ export function renderValidationEngineeringView(summary: ValidationSuiteSummary)
   return `${lines.join("\n")}\n`;
 }
 
+/** 渲染 suite product gate 视图 */
 export function renderValidationProductGateView(summary: ValidationSuiteSummary): string {
   const lines = [
     "Validation product gate",

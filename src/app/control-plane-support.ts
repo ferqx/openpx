@@ -10,11 +10,13 @@ import type { ControlTask } from "../control/tasks/task-types";
 import type { ToolExecuteRequest } from "../control/tools/tool-types";
 import type { ResumeControl } from "../runtime/graph/root/resume-control";
 
+/** control-plane 常用存储组合：这里只依赖 task/thread 两个最小写入面 */
 type ControlPlaneStores = {
   taskStore: TaskStorePort;
   threadStore: ThreadStorePort;
 };
 
+/** 允许删除 checkpoint 的最小接口，用于兼容不同实现 */
 type ResettableCheckpointerLike = {
   deleteThread?: (threadId: string) => Promise<void>;
 };
@@ -47,6 +49,8 @@ export async function saveTaskStatus(
 
   const shouldCompact =
     status === "blocked" || status === "completed" || status === "cancelled" || status === "failed";
+  // 只有任务走到边界状态时才触发压缩，避免 running 态频繁重写 narrative /
+  // working set，造成 thread 视图抖动和无意义的持久化开销。
   const compactedView = shouldCompact ? compactThreadView(nextView, { trigger: "boundary" }) : nextView;
 
   await stores.threadStore.save({
@@ -66,6 +70,8 @@ export function ensureControlTask(task: {
   summary?: string;
   status: ControlTask["status"];
 }): ControlTask {
+  // 一些旧路径或投影结果未必带完整 ControlTask 字段；
+  // 这里把最小 task 形状补齐，确保 control-plane 后续逻辑稳定可用。
   return {
     taskId: task.taskId,
     threadId: task.threadId,
@@ -80,6 +86,8 @@ export function summarizeApprovedAction(summary: string, workspaceRoot: string, 
     return summary;
   }
 
+  // 审批摘要最终会直接回到 UI；优先把绝对路径转换成 workspace 相对路径，
+  // 避免把宿主机路径暴露到面向用户的结果摘要里。
   const relativePath = isAbsolute(requestPath)
     ? relative(workspaceRoot, requestPath).replace(/\\/g, "/")
     : requestPath;
@@ -96,6 +104,8 @@ export function resumeInputText(inputValue: string | ResumeControl): string {
     return inputValue;
   }
 
+  // structured resume 不总是带自然语言输入：
+  // approval approved 依赖 graph 从 checkpoint 恢复，reject 则需要把拒绝原因回送给 planner。
   if (inputValue.decision === "rejected") {
     return inputValue.reason ?? "";
   }
@@ -118,6 +128,7 @@ export function resolveApprovalToolRequest(
   }
 
   if (approval.toolRequest?.toolName) {
+    // 新格式审批直接持有结构化 tool request，可无损恢复执行。
     return {
       toolCallId: approval.toolRequest.toolCallId,
       threadId: approval.toolRequest.threadId,
@@ -136,6 +147,7 @@ export function resolveApprovalToolRequest(
     return undefined;
   }
 
+  // 兼容旧审批记录：当历史数据只剩 summary 时，尽量恢复出最小 delete_file 请求。
   const relativePath = legacyDeleteMatch[1]?.trim();
   if (!relativePath) {
     return undefined;
@@ -175,6 +187,8 @@ export function buildResponderPrompt(input: { text: string; threadView?: Thread 
   const retrievedMemories = input.threadView?.workingSetWindow?.retrievedMemories?.filter(Boolean) ?? [];
   const latestAnswer = input.threadView?.recoveryFacts?.latestDurableAnswer?.summary?.trim();
 
+  // responder prompt 只注入“压缩后仍值得保留”的事实层信息，
+  // 避免把整条 thread 原样塞回模型上下文。
   const narrativeSection = formatPromptSection("Recent task summaries", taskSummaries);
   if (narrativeSection) {
     sections.push(narrativeSection);
@@ -203,6 +217,8 @@ export function buildResponderPrompt(input: { text: string; threadView?: Thread 
 }
 
 export function isCancelledError(error: unknown): boolean {
+  // 与 kernel/session-background-runner 保持同一取消语义，
+  // 让 control-plane 可以把模型主动取消视为正常结束路径。
   return typeof error === "object"
     && error !== null
     && "kind" in error

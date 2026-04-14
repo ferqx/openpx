@@ -6,6 +6,7 @@ import type { Thread } from "../domain/thread";
 import type { ExecutionLedgerEntry } from "../persistence/ports/execution-ledger-port";
 import { evalComparableRunSchema, type EvalComparableRun } from "./eval-schema";
 
+/** comparable run 归一化输入：从 thread/run/task/approval/event/ledger 拼装 */
 type NormalizeComparableRunInput = {
   thread: Thread;
   runs: Run[];
@@ -15,6 +16,7 @@ type NormalizeComparableRunInput = {
   ledgerEntries: ExecutionLedgerEntry[];
 };
 
+/** 强制要求某个 ID 已被映射成稳定 alias */
 function requireAlias(map: Map<string, string>, id: string, kind: string): string {
   const alias = map.get(id);
   if (!alias) {
@@ -23,6 +25,7 @@ function requireAlias(map: Map<string, string>, id: string, kind: string): strin
   return alias;
 }
 
+/** 把绝对 workspace 路径替换成稳定占位符 */
 function normalizeWorkspacePath(text: string | undefined, workspaceRoot: string): string | undefined {
   if (!text) {
     return undefined;
@@ -32,10 +35,12 @@ function normalizeWorkspacePath(text: string | undefined, workspaceRoot: string)
   return text.replaceAll(normalizedRoot, "<workspace>");
 }
 
+/** 为一组运行时 ID 生成稳定 alias */
 function createAliasMap(values: readonly string[], prefix: string): Map<string, string> {
   return new Map(values.map((value, index) => [value, `${prefix}_${index + 1}`]));
 }
 
+/** 只保留允许进入 comparable 的 blocking kind */
 function getBlockingKind(input?: { kind: string } | undefined): "waiting_approval" | "human_recovery" | "environment_block" | undefined {
   if (!input) {
     return undefined;
@@ -46,6 +51,7 @@ function getBlockingKind(input?: { kind: string } | undefined): "waiting_approva
   return undefined;
 }
 
+/** 找出重复 alias，便于在 comparable 中暴露异常 */
 function getDuplicateAliases(values: readonly string[]): string[] {
   const counts = new Map<string, number>();
   values.forEach((value) => {
@@ -57,6 +63,7 @@ function getDuplicateAliases(values: readonly string[]): string[] {
     .sort();
 }
 
+/** 判断输入是否属于 capability reject 后的 replan 文本 */
 function isCapabilityReplanInput(value: string | undefined): boolean {
   if (!value) {
     return false;
@@ -69,6 +76,7 @@ function isCapabilityReplanInput(value: string | undefined): boolean {
     );
 }
 
+/** 归一化一次真实执行，生成可与 baseline 对比的稳定 comparable 结构 */
 export function normalizeComparableRun(input: NormalizeComparableRunInput): EvalComparableRun {
   const runAliasMap = createAliasMap(input.runs.map((run) => run.runId), "run");
   const taskAliasMap = createAliasMap(input.tasks.map((task) => task.taskId), "task");

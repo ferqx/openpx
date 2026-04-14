@@ -34,6 +34,7 @@ import {
   type ValidationTaskFamily,
 } from "./validation-schema";
 
+/** deterministic 验证执行器接口 */
 type DeterministicExecutor = (input: {
   spec: ValidationScenarioSpec;
   sandboxRoot: string;
@@ -41,6 +42,7 @@ type DeterministicExecutor = (input: {
   dataDir: string;
 }) => Promise<EvalScenarioResult>;
 
+/** real-eval 验证执行器接口 */
 type RealExecutor = (input: {
   spec: ValidationScenarioSpec;
   sandboxRoot: string;
@@ -52,6 +54,7 @@ type RealExecutor = (input: {
   evaluationStatus: RealTraceEvaluation["status"];
 }>;
 
+/** 运行 validation suite 所需选项 */
 type RunValidationSuiteOptions = {
   scenarios: ValidationScenarioSpec[];
   rootDir: string;
@@ -63,6 +66,7 @@ type RunValidationSuiteOptions = {
 
 const DEFAULT_FAMILY_THRESHOLD = 0.7;
 
+/** 把 passed/suspicious/failed 映射为数值分 */
 function scoreFromStatus(status: ValidationRunStatus): number {
   if (status === "passed") {
     return 1;
@@ -73,6 +77,7 @@ function scoreFromStatus(status: ValidationRunStatus): number {
   return 0.3;
 }
 
+/** 聚合多个维度状态 */
 function combineStatuses(statuses: ValidationRunStatus[]): ValidationRunStatus {
   if (statuses.includes("failed")) {
     return "failed";

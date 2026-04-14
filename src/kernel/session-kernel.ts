@@ -1,3 +1,19 @@
+/** 
+ * @module kernel/session-kernel
+ * 会话内核（session kernel）。
+ * 
+ * 这是 TUI 与控制面之间的稳定命令边界。它把 submit/approve/reject
+ * 这些命令投影成统一的 session 视图，协调命令分发、状态投影和事件推送。
+ * 
+ * 会话内核是产品主轴的核心枢纽：
+ * - 接收 TUI 的用户操作
+ * - 通过命令总线分发到控制面
+ * - 通过事件总线推送状态变更
+ * - 通过视图投影器生成 session 视图
+ * 
+ * 术语对照：kernel=内核边界，session=会话，projection=投影视图，
+ * submit=提交，approve=批准，reject=拒绝，interrupt=中断
+ */
 import type { Run } from "../domain/run";
 import type { Thread } from "../domain/thread";
 import { createEventBus, type KernelEvent } from "./event-bus";

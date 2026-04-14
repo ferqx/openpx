@@ -1,3 +1,13 @@
+/** 
+ * @module kernel/session-result-applicator
+ * 会话结果应用器（session result applicator）。
+ * 
+ * 负责将控制面返回的执行结果应用到协作线和运行状态上，
+ * 包括状态转换、版本递增和持久化保存。
+ * 
+ * 术语对照：session=会话，result=结果，applicator=应用器，
+ * thread=协作线，run=执行尝试
+ */
 import type { Task } from "../domain/task";
 import type { Thread } from "../domain/thread";
 import type { ThreadNarrativeService } from "../control/context/thread-narrative-service";

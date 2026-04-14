@@ -14,6 +14,7 @@ const validationDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(validationDir, "..", "..");
 export const defaultValidationScenarioSpecDir = path.join(validationDir, "scenario-specs");
 
+/** 载入后的 validation 场景定义 */
 export type ValidationScenarioDefinition = {
   sourcePath: string;
   enabled: boolean;
@@ -22,16 +23,19 @@ export type ValidationScenarioDefinition = {
   spec: ValidationScenarioSpec;
 };
 
+/** validation 场景注册表 */
 export type ValidationScenarioRegistry = {
   specDir: string;
   workspaceRoot: string;
   definitions: readonly ValidationScenarioDefinition[];
 };
 
+/** 解析本地仓库路径 */
 function resolveLocalRepoPath(workspaceRoot: string, localPath: string): string {
   return path.isAbsolute(localPath) ? localPath : path.resolve(workspaceRoot, localPath);
 }
 
+/** 把文件规格归一化为运行期 ValidationScenarioDefinition */
 function normalizeScenarioDefinition(input: {
   fileSpec: ValidationScenarioFileSpec;
   sourcePath: string;
@@ -70,6 +74,7 @@ function normalizeScenarioDefinition(input: {
   };
 }
 
+/** 从 scenario-specs 目录加载 validation 场景注册表 */
 export async function loadValidationScenarioRegistry(input?: {
   specDir?: string;
   workspaceRoot?: string;

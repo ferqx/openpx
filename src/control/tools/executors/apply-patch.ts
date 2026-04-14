@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { domainError } from "../../../shared/errors";
 import type { ToolExecutor } from "../tool-types";
 
+/** apply_patch 执行器：支持 create/modify/delete 三种文件动作 */
 export const applyPatchExecutor: ToolExecutor = async ({ args, path, action }) => {
   if (typeof path !== "string" || path.length === 0) {
     throw domainError("apply_patch requires a path");
@@ -25,6 +26,7 @@ export const applyPatchExecutor: ToolExecutor = async ({ args, path, action }) =
       throw domainError("create_file requires a new file path");
     }
 
+    // create/modify 都会确保父目录存在；真正的越界保护由 tool-registry 完成。
     await mkdir(dirname(path), { recursive: true });
     await Bun.write(path, content);
   }

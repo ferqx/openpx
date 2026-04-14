@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { theme } from "../theme";
 import type { SessionStage } from "../../runtime/runtime-session";
 
+/** StatusBar props */
 export interface StatusBarProps {
   modelName?: string;
   thinkingLevel?: string;
@@ -19,6 +20,7 @@ const THINKING_LABELS: Record<string, string> = {
   default: "默认",
 };
 
+/** 将 thinking level 映射为简短中文文案 */
 function getThinkingDisplay(level?: string): { label: string; color: string } {
   if (!level) return { label: "—", color: theme.colors.dim };
   const normalized = level.toLowerCase();
@@ -26,6 +28,7 @@ function getThinkingDisplay(level?: string): { label: string; color: string } {
   return { label, color: theme.colors.dim };
 }
 
+/** 截断过长路径，避免状态栏撑爆 */
 function truncatePath(path: string, maxLen = 50): string {
   if (path.length <= maxLen) return path;
   const parts = path.split("/");
@@ -36,6 +39,7 @@ function truncatePath(path: string, maxLen = 50): string {
   return "…/" + parts.slice(-2).join("/");
 }
 
+/** 把 SessionStage 渲染成状态栏标签 */
 function formatStage(stage?: SessionStage): { label: string; color: string } {
   switch (stage) {
     case "planning":

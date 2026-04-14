@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+/** MessageView：runtime 对外暴露的消息视图 */
 export const messageViewSchema = z.object({
   messageId: z.string().min(1),
   threadId: z.string().min(1),

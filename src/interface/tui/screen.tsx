@@ -17,6 +17,7 @@ import type { SessionStage } from "../runtime/runtime-session";
 import type { ResolvedSettingsConfig } from "./settings/config-resolver";
 import type { SettingsConfig, SettingsConfigScope } from "./settings/config-types";
 
+/** Screen 会话区消息模型 */
 type Message = {
   id: string;
   role: "user" | "assistant";
@@ -24,6 +25,7 @@ type Message = {
   timestamp: number;
 };
 
+/** Screen 会话区视图 */
 export type ScreenConversationView = {
   messages: Message[];
   tasks: TaskSummary[];
@@ -36,6 +38,7 @@ export type ScreenConversationView = {
   streamScrollOffset?: number;
 };
 
+/** Screen utility 区视图 */
 export type ScreenUtilityView = {
   activeUtilityPane?: UtilityPaneMode;
   utilitySession?: UtilityPaneSessionSnapshot;
@@ -43,6 +46,7 @@ export type ScreenUtilityView = {
   selectedSessionThreadId?: string;
 };
 
+/** Screen 顶部 chrome 视图 */
 export type ScreenChromeView = {
   workspaceRoot?: string;
   projectId?: string;
@@ -61,6 +65,7 @@ export type ScreenChromeView = {
   exitConfirmText?: string;
 };
 
+/** Screen composer 区视图 */
 export type ScreenComposerView = {
   composerMode?: "input" | "confirm" | "blocked";
   onSubmit?: (text: string) => Promise<void> | void;

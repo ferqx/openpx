@@ -16,6 +16,7 @@ import {
   summarizeApprovedAction,
 } from "./control-plane-support";
 
+/** 审批决议路径依赖：既包括审批存储，也包括 run/task 恢复与工具执行能力 */
 type ApprovalResolutionDeps = {
   workspaceRoot: string;
   approvals: ApprovalService;
@@ -30,6 +31,7 @@ type ApprovalResolutionDeps = {
   startRootTask: (threadId: string, input: string | ResumeControl) => Promise<SessionControlPlaneResult>;
 };
 
+/** checkpoint 已缺失时，用审批记录兜底构造最小 task 视图 */
 function buildFallbackTask(approval: ApprovalRequest): ControlTask {
   return {
     taskId: approval.taskId,
@@ -58,6 +60,8 @@ export async function resolveApprovedRequest(
   await deps.approvals.updateStatus(approvalRequestId, "approved");
   const checkpoint = await deps.getCheckpoint(approval.threadId);
 
+  // 没有 checkpoint 时，说明无法回到 graph 中点继续执行；
+  // 此时退化为“直接执行已批准工具，然后手动收尾 run/task 状态”。
   if (!checkpoint || !run) {
     const currentTask = (await deps.getTask(approval.taskId)) ?? buildFallbackTask(approval);
     const runningTask = await deps.saveTaskStatus(ensureControlTask(currentTask), "running");
@@ -113,6 +117,7 @@ export async function resolveApprovedRequest(
     };
   }
 
+  // 有 checkpoint 时，优先回到原 graph 恢复点，让 graph 自己继续处理后续状态。
   await deps.updateRunStatus(run, "waiting_approval", {
     activeTaskId: approval.taskId,
     blockingReason: undefined,
@@ -153,6 +158,8 @@ export async function resolveRejectedRequest(
       await deps.deleteCheckpoint(approval.threadId);
     }
 
+    // 拒绝审批后重新发起一轮 root task，让 planner/responders 能基于
+    // “什么能力被拒绝了”重新选择策略，而不是简单停在 cancelled。
     const capabilityMarker =
       approval.toolRequest?.toolName && approval.toolRequest?.action
         ? `${approval.toolRequest.toolName}.${approval.toolRequest.action}`

@@ -1,14 +1,18 @@
 import { z } from "zod";
 
+/** validation 权限模式 */
 export const validationPermissionModeSchema = z.enum(["guarded", "full_access"]);
 export type ValidationPermissionMode = z.infer<typeof validationPermissionModeSchema>;
 
+/** validation 输出视图类型 */
 export const validationViewSchema = z.enum(["engineering", "product_gate"]);
 export type ValidationView = z.infer<typeof validationViewSchema>;
 
+/** validation suite 标识 */
 export const validationScenarioSuiteIdSchema = z.enum(["engineering", "release_gate"]);
 export type ValidationScenarioSuiteId = z.infer<typeof validationScenarioSuiteIdSchema>;
 
+/** 网络模式 */
 export const validationNetworkModeSchema = z.enum(["off", "restricted", "on"]);
 export type ValidationNetworkMode = z.infer<typeof validationNetworkModeSchema>;
 

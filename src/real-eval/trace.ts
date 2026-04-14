@@ -13,6 +13,7 @@ import {
   type RealRunTrace,
 } from "./real-eval-schema";
 
+/** 构建 real trace 所需输入 */
 type BuildRealRunTraceInput = {
   scenarioId: RealEvalScenarioId;
   promptVariantId: string;
@@ -30,6 +31,7 @@ type BuildRealRunTraceInput = {
   recoveryMode?: RealRunTrace["recoveryMode"];
 };
 
+/** 从 app context 收集 trace 所需输入 */
 type CollectRealRunTraceInput = {
   ctx: EvalAppContext;
   scenarioId: RealEvalScenarioId;
@@ -46,6 +48,7 @@ type CollectRealRunTraceInput = {
   recoveryMode?: RealRunTrace["recoveryMode"];
 };
 
+/** 确认 trace 中 run/task 身份与 comparable alias 一致 */
 function resolveConsistentTraceIdentity(input: {
   comparable: RealRunTrace["comparable"];
   runId: string;
@@ -74,6 +77,7 @@ function resolveConsistentTraceIdentity(input: {
   };
 }
 
+/** 从一次执行构建完整 real run trace */
 export function buildRealRunTrace(input: BuildRealRunTraceInput): RealRunTrace {
   const milestones: RealRunTrace["milestones"] = [];
 

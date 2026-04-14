@@ -8,8 +8,10 @@ import {
 } from "./real-eval-schema";
 import type { EvalScenario } from "../eval/eval-schema";
 
+/** real-eval suite 固定标识 */
 export const REAL_EVAL_SUITE_ID = realEvalSuiteIdSchema.parse("real-eval-suite");
 
+/** 深冻结场景定义，避免测试或运行期误改注册表 */
 function freezeRealEvalScenario(scenario: RealEvalScenario): Readonly<RealEvalScenario> {
   const expectedSummaryIncludes = [...scenario.expectedOutcome.expectedSummaryIncludes];
   const promptVariants = scenario.promptVariants.map((variant) => Object.freeze({ ...variant }));

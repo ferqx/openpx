@@ -8,6 +8,7 @@ import type { ApprovalSummary } from "./components/approval-panel";
 import type { WorkerSummary } from "./components/worker-panel";
 import type { ConversationDisplayState } from "./app-state-support";
 
+/** 组装会话区视图：把 runtime truth 与本地 conversation 显示态拼成渲染模型 */
 export function buildConversationView(input: {
   conversationState: Pick<
     ConversationDisplayState,
@@ -31,6 +32,7 @@ export function buildConversationView(input: {
   };
 }
 
+/** 组装 utility pane 视图 */
 export function buildUtilityView(input: {
   activeUtilityPane: ScreenUtilityView["activeUtilityPane"];
   utilitySession?: UtilityPaneSessionSnapshot;
@@ -45,6 +47,7 @@ export function buildUtilityView(input: {
   };
 }
 
+/** 组装 chrome 视图：顶部状态、线程面板与阻塞提示都从这里喂给 Screen */
 export function buildChromeView(input: {
   session?: RuntimeSessionState;
   runtimeStatus: "connected" | "disconnected";
@@ -70,6 +73,7 @@ export function buildChromeView(input: {
   };
 }
 
+/** 组装 composer 视图：只暴露 Screen 需要的交互句柄 */
 export function buildComposerView(input: {
   composerMode: "input" | "confirm" | "blocked";
   submit: (text: string) => Promise<void> | void;

@@ -12,6 +12,7 @@ import type {
   RealRunTrace,
 } from "./real-eval-schema";
 
+/** 失败分类输入：场景、结果、trace 与可选证据 */
 type ClassificationInput = {
   scenario: Readonly<RealEvalScenario>;
   scenarioResult: RealEvalScenarioResult;
@@ -21,6 +22,7 @@ type ClassificationInput = {
   approvalPathEvidence?: RealEvalApprovalPathEvidence;
 };
 
+/** 创建一条 evolution candidate */
 function createCandidate(input: {
   scenarioId: RealEvalScenario["id"];
   promptVariantId?: string;
@@ -42,6 +44,7 @@ function createCandidate(input: {
   };
 }
 
+/** 根因层到回归保护类型的映射 */
 function mapRootCauseLayerToRegression(layer: RealEvalRootCauseLayer): RealEvalRegressionPromotion {
   switch (layer) {
     case "planner":
@@ -56,6 +59,7 @@ function mapRootCauseLayerToRegression(layer: RealEvalRootCauseLayer): RealEvalR
   }
 }
 
+/** 针对 sample_execution 失败推断进化候选 */
 function inferSampleFailureCandidate(input: {
   scenario: Readonly<RealEvalScenario>;
   scenarioResult: RealEvalScenarioResult;

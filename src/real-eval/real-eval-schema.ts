@@ -6,9 +6,11 @@ import {
 } from "../eval/eval-schema";
 import { z } from "zod";
 
+/** real-eval suite 固定标识 */
 export const realEvalSuiteIdSchema = z.literal("real-eval-suite");
 export type RealEvalSuiteId = z.infer<typeof realEvalSuiteIdSchema>;
 
+/** real-eval 场景 ID */
 export const realEvalScenarioIdSchema = z.enum([
   "approval-gated-bugfix-loop",
   "reject-and-replan-task-loop",
@@ -17,6 +19,7 @@ export const realEvalScenarioIdSchema = z.enum([
 ]);
 export type RealEvalScenarioId = z.infer<typeof realEvalScenarioIdSchema>;
 
+/** real-eval 场景家族 */
 export const realEvalScenarioFamilySchema = z.enum([
   "approval-gated-bugfix-loop",
   "reject-and-replan-task-loop",
@@ -25,6 +28,7 @@ export const realEvalScenarioFamilySchema = z.enum([
 ]);
 export type RealEvalScenarioFamily = z.infer<typeof realEvalScenarioFamilySchema>;
 
+/** real-eval 能力家族 */
 export const realEvalCapabilityFamilySchema = z.enum([
   "approval_gated_delete",
   "reject_replan_delete",
@@ -33,6 +37,7 @@ export const realEvalCapabilityFamilySchema = z.enum([
 ]);
 export type RealEvalCapabilityFamily = z.infer<typeof realEvalCapabilityFamilySchema>;
 
+/** 恢复模式 */
 export const realEvalRecoveryModeSchema = z.enum([
   "none",
   "human_recovery",
@@ -41,6 +46,7 @@ export const realEvalRecoveryModeSchema = z.enum([
 ]);
 export type RealEvalRecoveryMode = z.infer<typeof realEvalRecoveryModeSchema>;
 
+/** 规范化后的 canonical intent */
 export const realEvalCanonicalIntentSchema = z.object({
   capabilityFamily: realEvalCapabilityFamilySchema,
   toolName: z.string().min(1),
@@ -48,12 +54,14 @@ export const realEvalCanonicalIntentSchema = z.object({
 }).strict();
 export type RealEvalCanonicalIntent = z.infer<typeof realEvalCanonicalIntentSchema>;
 
+/** prompt 变体定义 */
 export const realEvalPromptVariantSchema = z.object({
   id: z.string().min(1),
   text: z.string().min(1),
 }).strict();
 export type RealEvalPromptVariant = z.infer<typeof realEvalPromptVariantSchema>;
 
+/** 控制契约 */
 export const realEvalControlContractSchema = z.object({
   requiresApproval: z.boolean(),
   requiresReplan: z.boolean(),
@@ -61,6 +69,7 @@ export const realEvalControlContractSchema = z.object({
 }).strict();
 export type RealEvalControlContract = z.infer<typeof realEvalControlContractSchema>;
 
+/** real-eval 场景定义 */
 export const realEvalScenarioSchema = z.object({
   id: realEvalScenarioIdSchema,
   version: z.number().int().positive(),

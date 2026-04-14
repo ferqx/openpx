@@ -2,6 +2,7 @@ import type { ProjectedSessionResult } from "../../kernel/session-view-projector
 import type { TuiKernelEvent, TuiSessionResult } from "./hooks/use-kernel";
 import type { RuntimeSessionState } from "../runtime/runtime-session";
 
+/** TUI 内部消息模型：把 runtime session truth 转成界面可渲染的对话条目 */
 export type TuiMessage = {
   id: string;
   role: "user" | "assistant";
@@ -11,8 +12,10 @@ export type TuiMessage = {
   timestamp: number;
 };
 
+/** 会话更新来源：用于区分 hydrate、命令返回和事件流更新 */
 export type SessionUpdateSource = "hydrate" | "command" | "event";
 
+/** 从 recoveryFacts 恢复 durable answer 视图 */
 function deriveAnswersFromRecoveryFacts(
   threadId: string,
   recoveryFacts: ProjectedSessionResult["recoveryFacts"],
@@ -31,6 +34,7 @@ function deriveAnswersFromRecoveryFacts(
   ];
 }
 
+/** 从 recoveryFacts 恢复消息历史 */
 function deriveMessagesFromRecoveryFacts(
   threadId: string,
   recoveryFacts: ProjectedSessionResult["recoveryFacts"],
@@ -43,6 +47,7 @@ function deriveMessagesFromRecoveryFacts(
   }));
 }
 
+/** 把 kernel/runtime 的状态枚举折叠成 TUI 关心的 completed/waiting_approval/blocked */
 function toRuntimeSessionStatus(
   status: ProjectedSessionResult["status"] | RuntimeSessionState["status"] | RuntimeSessionState["threads"][number]["status"] | undefined,
 ): RuntimeSessionState["status"] {
@@ -57,6 +62,7 @@ function toRuntimeSessionStatus(
   return "completed";
 }
 
+/** 把 thread.view_updated 合并进当前 TUI session truth */
 export function mergeThreadViewIntoSession(
   current: RuntimeSessionState | undefined,
   update: Extract<TuiKernelEvent, { type: "thread.view_updated" }>["payload"],
@@ -73,6 +79,7 @@ export function mergeThreadViewIntoSession(
     : update.status === "blocked" || update.status === "waiting_approval"
       ? taskBlockingReason
       : undefined;
+  // 线程列表始终以协议返回值为准，避免沿用过期的本地 UI 缓存。
   const threads = update.threads
     ? update.threads.map((thread, index) => {
         const existing = current?.threads.find((candidate) => candidate.threadId === thread.threadId);
@@ -112,6 +119,7 @@ export function mergeThreadViewIntoSession(
   };
 }
 
+/** 从会话 truth 派生界面消息；优先 transcript，其次 answer/summary/narrative */
 export function deriveMessagesFromSession(result: RuntimeSessionState | TuiSessionResult): TuiMessage[] {
   const transcript = (result.messages ?? [])
     .filter((message) => message.content.trim().length > 0)
@@ -164,6 +172,7 @@ export function deriveMessagesFromSession(result: RuntimeSessionState | TuiSessi
   return [];
 }
 
+/** 组装最终显示消息：在 durable transcript 基础上叠加本地 pending / streaming 覆盖层 */
 export function buildDisplayMessages(input: {
   session: RuntimeSessionState | undefined;
   pendingUserMessage?: TuiMessage;
@@ -187,6 +196,7 @@ export function buildDisplayMessages(input: {
   return messages;
 }
 
+/** 找到当前 active thread 在线程列表中的索引，供面板高亮使用 */
 export function findActiveThreadIndex(result: Pick<RuntimeSessionState, "threadId" | "threads">): number {
   const activeIndex = result.threads.findIndex((thread) => thread.threadId === result.threadId);
   return activeIndex >= 0 ? activeIndex : 0;

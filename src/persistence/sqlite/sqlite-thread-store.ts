@@ -9,6 +9,7 @@ import type { ThreadStorePort } from "../ports/thread-store-port";
 import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** threads 表行结构：把 thread 主字段与压缩状态 JSON 列一起取回 */
 type ThreadRow = {
   thread_id: string;
   workspace_root: string;
@@ -24,6 +25,7 @@ type ThreadRow = {
   updated_at: string | null;
 };
 
+/** SQLite 协作线存储：负责 thread 主记录以及 narrative/recovery/working-set JSON 持久化 */
 export class SqliteThreadStore implements ThreadStorePort {
   private readonly db: Database;
   private readonly owned: boolean;
@@ -36,6 +38,8 @@ export class SqliteThreadStore implements ThreadStorePort {
   }
 
   async save(thread: Thread): Promise<void> {
+    // thread 是控制面的恢复锚点，写入时把 narrative/recovery/working set
+    // 一并 upsert，确保 hydrate 时能从单行记录恢复出压缩视图。
     this.db.run(
       `INSERT INTO threads (
          thread_id,
@@ -140,6 +144,7 @@ export class SqliteThreadStore implements ThreadStorePort {
       params.push(scope.workspaceRoot, scope.projectId);
     }
 
+    // 用 updated_at 优先排序，保证“最近活跃 thread”而不是“最新插入 thread”排在前面。
     query += " ORDER BY COALESCE(updated_at, '') DESC, rowid DESC LIMIT 1 ";
 
     const row = this.db.query<ThreadRow, string[]>(query).get(...params);
@@ -205,6 +210,7 @@ export class SqliteThreadStore implements ThreadStorePort {
   }
 }
 
+/** JSON 列解析兜底：历史脏数据或迁移中间态不应让整个 hydrate 直接失败 */
 function parseJsonColumn<T>(value: string | null): T | undefined {
   if (value === null) {
     return undefined;

@@ -1,7 +1,9 @@
 import type { RuntimeSessionState } from "../runtime/runtime-session";
 
+/** 会话列表项类型别名 */
 type SessionThreadSummary = RuntimeSessionState["threads"][number];
 
+/** 输入键状态：抽取出导航逻辑真正关心的键 */
 export type InputKeyState = {
   downArrow: boolean;
   upArrow: boolean;
@@ -13,11 +15,13 @@ export type InputKeyState = {
   ctrl: boolean;
 };
 
+/** sessions pane 导航结果：选择、切换或空操作 */
 export type SessionsPaneAction =
   | { kind: "select"; index: number }
   | { kind: "switch"; threadId: string }
   | { kind: "noop" };
 
+/** 根据键盘输入解析 sessions pane 导航行为 */
 export function resolveSessionsPaneAction(input: {
   keyValue: string;
   key: Pick<InputKeyState, "downArrow" | "upArrow" | "home" | "end" | "return">;
@@ -65,6 +69,7 @@ export function resolveSessionsPaneAction(input: {
   return { kind: "noop" };
 }
 
+/** 计算 interaction stream 的翻页滚动增量 */
 export function resolveStreamScrollDelta(key: Pick<InputKeyState, "pageUp" | "pageDown">): number {
   if (key.pageUp) {
     return 3;
@@ -77,6 +82,7 @@ export function resolveStreamScrollDelta(key: Pick<InputKeyState, "pageUp" | "pa
   return 0;
 }
 
+/** Ctrl+T 是否表示切换线程面板 */
 export function isThreadPanelToggle(input: { keyValue: string; key: Pick<InputKeyState, "ctrl"> }): boolean {
   return input.key.ctrl && input.keyValue === "t";
 }

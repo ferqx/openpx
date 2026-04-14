@@ -1,3 +1,4 @@
+/** 普通提交命令：直接走 submit_input */
 export type SubmitInputCommand = {
   type: "submit_input";
   payload: {
@@ -5,6 +6,7 @@ export type SubmitInputCommand = {
   };
 };
 
+/** 规划提交命令：在 TUI 层与普通提交显式区分 */
 export type PlanInputCommand = {
   type: "plan_input";
   payload: {
@@ -12,6 +14,7 @@ export type PlanInputCommand = {
   };
 };
 
+/** 审批命令：对应 approve / reject 两条路径 */
 export type ApprovalCommand =
   | {
       type: "approve_request";
@@ -26,6 +29,7 @@ export type ApprovalCommand =
       };
     };
 
+/** 协作线命令：新建、切换、继续或列出线程 */
 export type ThreadCommand =
   | {
       type: "thread_new";
@@ -46,6 +50,7 @@ export type ThreadCommand =
       type: "thread_list";
     };
 
+/** TUI 解析后的输入结果：普通提交、规划提交或本地命令 */
 export type TuiParsedInput =
   | {
       kind: "submit";
@@ -60,6 +65,7 @@ export type TuiParsedInput =
       name: "new" | "history" | "sessions" | "clear" | "settings" | "help";
     };
 
+/** slash 命令定义：驱动提示菜单与立即执行行为 */
 export type SlashCommandDefinition = {
   command: "/new" | "/plan" | "/history" | "/sessions" | "/clear" | "/settings" | "/help";
   description: string;
@@ -77,6 +83,7 @@ const SLASH_COMMANDS: SlashCommandDefinition[] = [
   { command: "/help", description: "Show shell help", acceptsArgs: false, executesImmediately: true },
 ];
 
+/** 仅当输入是“纯 slash 查询”时返回可补全 query */
 export function getSlashCommandQuery(text: string): string | null {
   if (!text.startsWith("/")) {
     return null;
@@ -89,6 +96,7 @@ export function getSlashCommandQuery(text: string): string | null {
   return text.slice(1).toLowerCase();
 }
 
+/** 根据 query 过滤 slash 命令定义 */
 export function getSlashCommandDefinitions(query: string): SlashCommandDefinition[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
@@ -98,10 +106,12 @@ export function getSlashCommandDefinitions(query: string): SlashCommandDefinitio
   return SLASH_COMMANDS.filter((definition) => definition.command.slice(1).startsWith(normalized));
 }
 
+/** 生成 slash 建议列表 */
 export function getSlashCommandSuggestions(query: string): string[] {
   return getSlashCommandDefinitions(query).map((definition) => definition.command);
 }
 
+/** 解析 composer 输入；未命中命令时一律回退为普通 submit */
 export function parseCommand(text: string): TuiParsedInput {
   const trimmed = text.trim();
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+/** runtime 命令协议：客户端发送给 runtime 的稳定命令面 */
 export const runtimeCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("new_thread") }),
   z.object({ kind: z.literal("switch_thread"), threadId: z.string().min(1) }),

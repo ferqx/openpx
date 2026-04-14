@@ -4,6 +4,7 @@ import type { TaskStorePort } from "../ports/task-store-port";
 import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** tasks 表行结构：blockingReason 以 JSON 列持久化 */
 type TaskRow = {
   task_id: string;
   thread_id: string;
@@ -13,6 +14,7 @@ type TaskRow = {
   blocking_reason_json: string | null;
 };
 
+/** SQLite task 存储：保存 task 主字段与阻塞原因 */
 export class SqliteTaskStore implements TaskStorePort {
   private readonly db: Database;
   private readonly owned: boolean;
@@ -25,6 +27,7 @@ export class SqliteTaskStore implements TaskStorePort {
   }
 
   async save(task: Task): Promise<void> {
+    // task 是 run/view 投影的关键索引，保存时直接 upsert 全量字段。
     this.db.run(
       `INSERT INTO tasks (task_id, thread_id, run_id, summary, status, blocking_reason_json)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -62,6 +65,7 @@ export class SqliteTaskStore implements TaskStorePort {
       )
       .all(threadId);
 
+    // task 列表保留创建顺序，方便上层把最后一个视为当前 task。
     return rows.map(mapTaskRow);
   }
 
@@ -72,6 +76,7 @@ export class SqliteTaskStore implements TaskStorePort {
   }
 }
 
+/** 把 sqlite 行恢复成领域 Task */
 function mapTaskRow(row: TaskRow): Task {
   return {
     taskId: row.task_id,

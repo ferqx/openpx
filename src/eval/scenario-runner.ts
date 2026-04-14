@@ -12,6 +12,7 @@ import {
 } from "./eval-schema";
 import { SqliteEvalStore } from "../persistence/sqlite/sqlite-eval-store";
 
+/** 运行单个场景所需选项 */
 type RunScenarioOptions = {
   scenario: EvalScenario;
   rootDir: string;
@@ -20,6 +21,7 @@ type RunScenarioOptions = {
   evalStore?: SqliteEvalStore;
 };
 
+/** 运行一组场景所需选项 */
 type RunScenarioSuiteOptions = {
   suiteId: string;
   scenarios: EvalScenario[];
@@ -27,6 +29,7 @@ type RunScenarioSuiteOptions = {
   dataDir: string;
 };
 
+/** 根据 outcome/trajectory 结果推导场景总状态 */
 function deriveScenarioStatus(results: Pick<EvalScenarioResult, "outcomeResults" | "trajectoryResults">): EvalScenarioResult["status"] {
   const allResults = [...results.outcomeResults, ...results.trajectoryResults];
   if (allResults.some((result) => result.status === "failed")) {
@@ -38,6 +41,7 @@ function deriveScenarioStatus(results: Pick<EvalScenarioResult, "outcomeResults"
   return "passed";
 }
 
+/** 在场景执行后收集 thread/run/task/approval/event/ledger，构造最终结果 */
 async function collectScenarioResult(input: {
   scenario: EvalScenario;
   suiteRunId?: string;

@@ -7,11 +7,13 @@ import {
   type ValidationScenarioVerdictRecord,
 } from "./validation-schema";
 
+/** 为 validation 场景失败生成 review 摘要 */
 function buildSummary(record: ValidationScenarioVerdictRecord): string {
   const repair = record.verdict.repairRecommendations[0];
   return repair?.repairPath ?? record.evidence.verdictExplanation;
 }
 
+/** 把 validation verdict 转成 eval review item */
 function toReviewItem(input: {
   reviewItemId: string;
   scenarioVerdict: ValidationScenarioVerdictRecord;
@@ -41,6 +43,7 @@ function toReviewItem(input: {
   };
 }
 
+/** 为单个 validation verdict 生成需持久化的 review records */
 export function createValidationReviewRecords(input: {
   validationSuiteRunId?: string;
   blockingFamilies?: readonly string[];

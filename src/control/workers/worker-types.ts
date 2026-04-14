@@ -8,6 +8,7 @@ import {
 
 export { createWorker, transitionWorker, type WorkerRecord, type WorkerRole, type WorkerStatus };
 
+/** 创建 worker 时的最小输入 */
 export type SpawnWorkerInput = {
   role: WorkerRole;
   taskId: string;
@@ -16,6 +17,7 @@ export type SpawnWorkerInput = {
   resumeToken?: string;
 };
 
+/** 从领域 Worker 派生可持久化记录，允许在恢复或测试场景回填状态字段 */
 export function createWorkerRecord(input: {
   workerId: string;
   taskId: string;
@@ -37,6 +39,7 @@ export function createWorkerRecord(input: {
   });
 
   if (!input.status || input.status === "created") {
+    // created 态直接返回基础记录，不走状态迁移。
     return {
       ...created,
       startedAt: input.startedAt,

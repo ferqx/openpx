@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { resolveSettingsConfig, type ResolvedSettingsConfig } from "./config-resolver";
 import type { PartialSettingsConfig } from "./config-types";
 
+/** 设置存储接口：读合并配置，写 global/project 配置 */
 export type SettingsConfigStore = {
   readResolved: () => Promise<
     ResolvedSettingsConfig & {
@@ -16,6 +17,7 @@ export type SettingsConfigStore = {
   writeProject: (config: PartialSettingsConfig) => Promise<void>;
 };
 
+/** 读取单个配置文件；不存在或 JSON 非法时回退为空配置 */
 async function readConfigFile(path: string): Promise<PartialSettingsConfig> {
   try {
     const raw = await readFile(path, "utf8");
@@ -34,11 +36,13 @@ async function readConfigFile(path: string): Promise<PartialSettingsConfig> {
   }
 }
 
+/** 写入配置文件 */
 async function writeConfigFile(path: string, config: PartialSettingsConfig): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
+/** 创建设置存储：global 配置落在 home，project 配置落在 workspace */
 export function createSettingsConfigStore(input: {
   homeDir: string;
   workspaceRoot: string;

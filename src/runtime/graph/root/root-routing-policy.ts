@@ -6,12 +6,14 @@ import type {
 import type { ArtifactRecord } from "../../artifacts/artifact-index";
 import type { WorkPackage } from "../../planning/work-package";
 
+/** 路由决策：告诉 root graph 下一步走哪条主路径 */
 export type RoutingDecision = {
   route: "planner" | "approval" | "executor" | "verifier" | "finish";
   mode: RootMode;
   currentWorkPackageId?: string;
 };
 
+/** 收集当前 work package 已产出的 artifact */
 function collectCurrentWorkPackageArtifacts(state: {
   currentWorkPackageId?: string;
   artifacts?: ArtifactRecord[];
@@ -27,6 +29,7 @@ function collectCurrentWorkPackageArtifacts(state: {
   );
 }
 
+/** 根据 pending approval / work package / artifact / verification 状态推导下一步路由 */
 export function routeNext(state: {
   workPackages?: WorkPackage[];
   currentWorkPackageId?: string;
@@ -45,6 +48,7 @@ export function routeNext(state: {
 
   const workPackages = state.workPackages ?? [];
   if (workPackages.length === 0) {
+    // 没有工作包时必须先去 planner，不能直接执行。
     return {
       route: "planner",
       mode: "plan",
@@ -67,6 +71,7 @@ export function routeNext(state: {
     latestArtifacts: state.latestArtifacts,
   });
   if (currentArtifacts.length === 0) {
+    // 当前包还没有任何 artifact，说明 executor 还没真正跑过。
     return {
       route: "executor",
       mode: "execute",
@@ -75,6 +80,7 @@ export function routeNext(state: {
   }
 
   if (!state.verificationReport) {
+    // 已有 artifact 但还没验证，则进入 verifier。
     return {
       route: "verifier",
       mode: "verify",

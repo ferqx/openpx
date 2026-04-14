@@ -4,6 +4,7 @@ import { createWorkerRecord, transitionWorker } from "./worker-types";
 import { prefixedUuid } from "../../shared/id-generators";
 import type { WorkerStorePort } from "../../persistence/ports/worker-store-port";
 
+/** worker manager 对外能力：spawn / inspect / resume / cancel / join */
 export type WorkerManager = {
   spawn(input: SpawnWorkerInput): Promise<WorkerRecord>;
   inspect(workerId: string): Promise<WorkerRecord | undefined>;
@@ -12,12 +13,14 @@ export type WorkerManager = {
   join(workerId: string): Promise<WorkerRecord>;
 };
 
+/** 创建 worker manager：负责 runtime 生命周期与持久化记录对齐 */
 export function createWorkerManager(deps: {
   runtimeFactory: WorkerRuntimeFactory;
   workerStore: WorkerStorePort;
 }): WorkerManager {
   const runtimes = new Map<string, WorkerRuntime>();
 
+  /** 持久化 worker 并返回同一对象，便于链式调用 */
   async function persist(worker: WorkerRecord): Promise<WorkerRecord> {
     await deps.workerStore.save(worker);
     return worker;
@@ -31,6 +34,7 @@ export function createWorkerManager(deps: {
     return worker;
   }
 
+  /** 把 runtime 状态投影回领域 WorkerRecord */
   function applyRuntimeState(worker: WorkerRecord, state: WorkerRuntimeState): WorkerRecord {
     if (worker.status === state.status) {
       return {
@@ -48,6 +52,7 @@ export function createWorkerManager(deps: {
     });
   }
 
+  /** runtime 不在内存中时的兜底生命周期推进，用于重启后恢复或测试场景 */
   async function fallbackLifecycleUpdate(
     worker: WorkerRecord,
     action: "inspect" | "resume" | "cancel" | "join",
@@ -112,9 +117,11 @@ export function createWorkerManager(deps: {
       });
       runtimes.set(workerId, runtime);
 
+      // 先把 worker 置为 starting，再由 runtime.start 回报更具体状态。
       worker = await persist(transitionWorker(worker, "starting"));
       const startState = await runtime.start();
       if (!startState) {
+        // 某些 runtime 不显式回传 startState，这里兜底为 running。
         return await persist(
           transitionWorker(worker, "running", {
             startedAt: new Date().toISOString(),
@@ -155,6 +162,7 @@ export function createWorkerManager(deps: {
       }
       const next = await persist(applyRuntimeState(worker, await runtime.cancel()));
       if (["completed", "failed", "cancelled"].includes(next.status)) {
+        // 终态 worker 不再需要保留活动 runtime 句柄。
         runtimes.delete(workerId);
       }
       return next;

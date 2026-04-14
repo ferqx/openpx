@@ -3,8 +3,10 @@ import { Box, Text } from "ink";
 import { theme } from "../theme";
 import type { RuntimeSessionState } from "../../runtime/runtime-session";
 
+/** ThreadPanel 使用的线程摘要类型 */
 export type ThreadSummary = RuntimeSessionState["threads"][number];
 
+/** 根据线程/运行状态选择面板图标 */
 function getStatusIndicator(status: string) {
   switch (status) {
     case "active":
@@ -21,6 +23,7 @@ function getStatusIndicator(status: string) {
   }
 }
 
+/** ThreadPanel：展示当前 scope 下线程列表及其摘要 */
 export const ThreadPanel = React.memo(function ThreadPanel(input: { threads: ThreadSummary[]; activeThreadId?: string }) {
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.colors.dim} paddingX={1} marginBottom={1}>

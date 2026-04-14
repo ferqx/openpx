@@ -7,6 +7,7 @@ import type {
   RealEvalScenarioResult,
 } from "./real-eval-schema";
 
+/** promotion guardrail 构造输入 */
 type PromotionGuardrailInput = {
   guardrailId: string;
   capabilityFamily: RealEvalCapabilityFamily;
@@ -16,6 +17,7 @@ type PromotionGuardrailInput = {
   description: string;
 };
 
+/** 预定义的 promotion guardrails：定义每个能力家族必须覆盖的回归保护 */
 const PROMOTION_GUARDRAILS: readonly RealEvalPromotionGuardrail[] = [
   {
     guardrailId: "approval.planner.quoted_path_patch_placeholder",

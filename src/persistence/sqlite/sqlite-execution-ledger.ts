@@ -3,6 +3,7 @@ import type { ExecutionLedgerEntry, ExecutionLedgerPort, ExecutionStatus } from 
 import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** execution_ledger 表行结构 */
 type LedgerRow = {
   execution_id: string;
   thread_id: string;
@@ -18,6 +19,7 @@ type LedgerRow = {
   updated_at: string;
 };
 
+/** SQLite 执行账本：记录 effectful tool 的执行轨迹与 crash recovery 线索 */
 export class SqliteExecutionLedger implements ExecutionLedgerPort {
   private readonly db: Database;
   private readonly owned: boolean;

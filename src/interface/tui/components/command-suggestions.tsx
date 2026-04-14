@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import type { SlashCommandDefinition } from "../commands";
 import { theme } from "../theme";
 
+/** CommandSuggestions：渲染 composer 下方的 slash 命令建议列表 */
 export function CommandSuggestions(input: {
   suggestions: SlashCommandDefinition[];
   selectedIndex: number;

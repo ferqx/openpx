@@ -7,6 +7,7 @@ import { protocolVersionSchema } from "./protocol-version";
 import { taskBlockingReasonSchema, taskViewSchema } from "./task-view";
 import { workerViewSchema } from "./worker-view";
 
+/** runtime 事件类型白名单：客户端只应看到这里定义过的稳定事件 */
 export const runtimeEventTypes = [
   "thread.started",
   "thread.interrupted",
@@ -38,6 +39,7 @@ export const runtimeEventTypes = [
   "stream.done",
 ] as const;
 
+/** 判断事件名是否属于稳定 runtime 事件集合 */
 export function isRuntimeEventType(value: string): value is (typeof runtimeEventTypes)[number] {
   return (runtimeEventTypes as readonly string[]).includes(value);
 }

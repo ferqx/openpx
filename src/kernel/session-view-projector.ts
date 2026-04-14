@@ -1,3 +1,13 @@
+/** 
+ * @module kernel/session-view-projector
+ * 会话视图投影器（session view projector）。
+ * 
+ * 将底层的持久化状态整理成 TUI 可直接消费的投影视图，
+ * 包括协作线摘要、步骤列表、审批列表和执行状态。
+ * 
+ * 术语对照：projection=投影视图，session=会话，
+ * thread=协作线，run=执行尝试，task=具体步骤
+ */
 import type { Run } from "../domain/run";
 import type { Thread } from "../domain/thread";
 import type { ApprovalRequest } from "../domain/approval";
@@ -8,6 +18,7 @@ import type { AnswerView } from "../runtime/service/protocol/answer-view";
 import type { MessageView } from "../runtime/service/protocol/message-view";
 import type { WorkerView } from "../runtime/service/protocol/worker-view";
 
+/** 协作线摘要——用于 TUI 线程面板显示 */
 export type SessionThreadSummary = {
   threadId: string;
   status: string;
@@ -18,6 +29,7 @@ export type SessionThreadSummary = {
   blockingReasonKind?: "waiting_approval" | "human_recovery";
 };
 
+/** 投影后的会话结果——TUI 消费的完整状态视图 */
 export type ProjectedSessionResult = DerivedThreadView & {
   status: "idle" | "active" | "completed" | "waiting_approval" | "blocked" | "failed" | "interrupted";
   threadId: string;
@@ -33,6 +45,7 @@ export type ProjectedSessionResult = DerivedThreadView & {
   threads?: SessionThreadSummary[];
 };
 
+/** 从协作线恢复事实构建稳定的会话产物（答案、消息、工作单元） */
 export function buildStableSessionArtifacts(input: {
   thread: {
     threadId: string;
@@ -81,6 +94,7 @@ export function buildStableSessionArtifacts(input: {
   };
 }
 
+/** 根据最新运行状态推导会话投影的执行状态 */
 export function deriveProjectedExecutionStatus(
   latestRun: Run | undefined,
   fallbackStatus: ProjectedSessionResult["status"] | Thread["status"],
@@ -101,6 +115,7 @@ export function deriveProjectedExecutionStatus(
   }
 }
 
+/** 组装完整的投影会话结果 */
 export async function projectSessionResult(input: {
   thread: {
     threadId: string;

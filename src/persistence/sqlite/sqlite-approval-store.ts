@@ -3,6 +3,7 @@ import type { ApprovalRequest, ApprovalToolRequest } from "../../domain/approval
 import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** approvals 表行结构：toolRequest 以 JSON 列持久化 */
 type ApprovalRow = {
   approval_request_id: string;
   thread_id: string;
@@ -15,6 +16,7 @@ type ApprovalRow = {
   status: ApprovalRequest["status"];
 };
 
+/** SQLite 审批存储：保存审批请求及其结构化工具请求 */
 export class SqliteApprovalStore {
   private readonly db: Database;
   private readonly owned: boolean;
@@ -27,6 +29,7 @@ export class SqliteApprovalStore {
   }
 
   async save(request: ApprovalRequest): Promise<void> {
+    // 审批既要保留 summary/risk，也要保留原始 toolRequest，便于后续 resume 执行。
     this.db.run(
       `INSERT INTO approvals (approval_request_id, thread_id, run_id, task_id, tool_call_id, request_json, summary, risk, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -98,6 +101,7 @@ export class SqliteApprovalStore {
   }
 }
 
+/** 把 sqlite 行恢复成领域 ApprovalRequest */
 function mapApprovalRow(row: ApprovalRow): ApprovalRequest {
   return {
     approvalRequestId: row.approval_request_id,

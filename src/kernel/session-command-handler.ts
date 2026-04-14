@@ -1,14 +1,26 @@
+/** 
+ * @module kernel/session-command-handler
+ * 会话命令处理器（session command handler）。
+ * 
+ * 负责解析和分发 TUI 发来的用户操作命令（提交输入、审批、拒绝等），
+ * 确定目标协作线和运行状态，并协调控制面推进执行。
+ * 
+ * 术语对照：session=会话，command=命令，thread=协作线，
+ * approval=审批，submit=提交
+ */
 import type { Run } from "../domain/run";
 import type { ApprovalRequest } from "../domain/approval";
 import type { Task } from "../domain/task";
 import { transitionThread, type Thread } from "../domain/thread";
 import type { DerivedThreadView } from "../control/context/thread-compaction-types";
 
+/** 协作线活动上下文——包含当前步骤和审批列表 */
 type ThreadActivityContext = {
   tasks: Task[];
   approvals: ApprovalRequest[];
 };
 
+/** 解析后的提交命令上下文 */
 export type ResolvedSubmitCommandContext = ThreadActivityContext & {
   thread: Thread;
   latestRun?: Run | undefined;
@@ -16,12 +28,14 @@ export type ResolvedSubmitCommandContext = ThreadActivityContext & {
   blocked: boolean;
 };
 
+/** 解析后的审批命令上下文 */
 export type ResolvedApprovalCommandContext = ThreadActivityContext & {
   approval: ApprovalRequest;
   thread: Thread;
   latestRun?: Run | undefined;
 };
 
+/** 解析提交命令的目标协作线——确定是复用现有协作线还是创建新的 */
 export async function resolveSubmitTargetThread(input: {
   latestThread: Thread | undefined;
   latestRun?: Run | undefined;
@@ -30,8 +44,9 @@ export async function resolveSubmitTargetThread(input: {
   saveThread: (thread: Thread) => Promise<void>;
   ensureRevision: (threadId: string, expectedRevision: number | undefined) => Promise<void>;
 }): Promise<{ thread: Thread; startedNewThread: boolean }> {
-  const { latestThread, latestRun } = input;
+  const { latestThread, latestRun } = input;  // 取最新协作线和执行尝试
 
+  // 如果没有协作线，或上次执行失败，或协作线已归档，则创建新的协作线
   if (!latestThread || latestRun?.status === "failed" || latestThread.status === "archived") {
     return {
       thread: await input.startThread(),
@@ -84,6 +99,7 @@ export function shouldShortCircuitBlockedSubmit(input: {
   });
 }
 
+/** 解析审批命令的目标协作线——确保审批请求存在并返回上下文 */
 export async function resolveApprovalTargetThread(input: {
   approval: ApprovalRequest | undefined;
   getThread: (threadId: string) => Promise<Thread | undefined>;

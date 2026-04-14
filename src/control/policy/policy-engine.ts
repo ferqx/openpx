@@ -1,6 +1,7 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { classifyRisk, type PatchAction, type RiskClassification, type ToolEffect } from "./risk-model";
 
+/** policy engine 输入：把工具请求抽象为统一副作用模型 */
 export type PolicyRequest = {
   toolName: string;
   effect: ToolEffect;
@@ -12,6 +13,7 @@ export type PolicyRequest = {
   cwd?: string;
 };
 
+/** policy engine 输出：允许、需审批或直接拒绝 */
 export type PolicyDecision =
   | {
       kind: "allow";
@@ -29,15 +31,18 @@ export type PolicyDecision =
       risk: RiskClassification;
     };
 
+/** 创建策略引擎：基于 workspace 边界和风险等级裁决工具请求 */
 export function createPolicyEngine(input: { workspaceRoot: string }) {
   const workspaceRoot = resolve(input.workspaceRoot);
 
+  /** 路径是否仍在 workspace 内，防止 ../ 或同前缀目录逃逸 */
   function isWithinWorkspace(path: string): boolean {
     const resolvedPath = resolve(path);
     const workspaceRelativePath = relative(workspaceRoot, resolvedPath);
     return workspaceRelativePath === "" || (!workspaceRelativePath.startsWith("..") && !isAbsolute(workspaceRelativePath));
   }
 
+  /** 识别只读终端命令：命中时可以直接放行 */
   function isReadOnlyExec(request: PolicyRequest): boolean {
     const command = request.command;
     if (!command) return false;
@@ -148,6 +153,7 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
         };
       }
 
+      // 未知 effect 默认拒绝，避免新工具类型在未建模时被意外放行。
       return {
         kind: "deny",
         reason: "unsupported tool request",

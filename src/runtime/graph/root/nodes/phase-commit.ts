@@ -2,6 +2,7 @@ import type { RootMode, RootRoute, VerificationReport } from "../context";
 import type { ArtifactRecord } from "../../../artifacts/artifact-index";
 import type { WorkPackage } from "../../../planning/work-package";
 
+/** phase-commit：提交当前包的产物，清空瞬时验证状态，并决定是否进入下一包 */
 export function phaseCommitNode(state: {
   currentWorkPackageId?: string;
   verificationReport?: VerificationReport;
@@ -27,6 +28,8 @@ export function phaseCommitNode(state: {
 
   return {
     artifacts: nextArtifacts,
+    // 进入下一包前清空 latestArtifacts / verification / executionDetails，
+    // 避免上一包的临时状态污染后续执行。
     currentWorkPackageId: hasRemainingWork ? remainingWorkPackages[0]?.id : undefined,
     executionDetails: undefined,
     finalAnswer: hasRemainingWork ? undefined : state.verificationReport?.summary,

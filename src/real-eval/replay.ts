@@ -8,17 +8,20 @@ import {
 import { findRealEvalScenario, findRealEvalOfflineScenario } from "./scenarios";
 import { realRunTraceSchema, realSampleSummarySchema, type RealRunTrace, type RealSampleSummary, type RealEvalScenario } from "./real-eval-schema";
 
+/** 已落盘的 real sample：摘要 + trace */
 export type StoredRealSample = {
   summary: RealSampleSummary;
   trace: RealRunTrace;
 };
 
+/** 离线回放后的 real sample 评估结果 */
 export type OfflineRealSampleEvaluation = StoredRealSample & {
   scenario: Readonly<RealEvalScenario>;
   outcomeResults: EvalCheckResult[];
   trajectoryResults: EvalRuleResult[];
 };
 
+/** 从 artifacts 目录加载已落盘的 real sample */
 export async function loadStoredRealSample(artifactsDir: string): Promise<StoredRealSample> {
   const summaryPath = path.join(artifactsDir, "result.json");
   const localTracePath = path.join(artifactsDir, "trace.json");
@@ -32,6 +35,7 @@ export async function loadStoredRealSample(artifactsDir: string): Promise<Stored
   return { summary, trace };
 }
 
+/** 重放一条 trace，按离线场景重新计算 outcome/trajectory */
 export function replayRealSampleEvaluation(trace: RealRunTrace): {
   scenario: Readonly<RealEvalScenario>;
   outcomeResults: EvalCheckResult[];
@@ -49,6 +53,7 @@ export function replayRealSampleEvaluation(trace: RealRunTrace): {
   };
 }
 
+/** 加载并重放一个已落盘 sample */
 export async function replayStoredRealSampleEvaluation(artifactsDir: string): Promise<OfflineRealSampleEvaluation> {
   const stored = await loadStoredRealSample(artifactsDir);
   const replayed = replayRealSampleEvaluation(stored.trace);
@@ -60,6 +65,7 @@ export async function replayStoredRealSampleEvaluation(artifactsDir: string): Pr
   };
 }
 
+/** 提取 trace 的快速检查信息 */
 export function inspectRealSampleTrace(trace: RealRunTrace): {
   scenarioId: RealRunTrace["scenarioId"];
   promptVariantId: string;

@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 
+/** AnswerPane：展示最终摘要、改动统计与验证结果 */
 export function AnswerPane(input: {
   summary: string;
   changes: Array<{ path: string; additions: number; deletions: number }>;

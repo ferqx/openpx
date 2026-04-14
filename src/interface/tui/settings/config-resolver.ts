@@ -7,6 +7,7 @@ import {
   type SettingsConfigSource,
 } from "./config-types";
 
+/** 解析后的设置配置：包含 global/project/effective 与来源 */
 export type ResolvedSettingsConfig = {
   global: SettingsConfig;
   project: PartialSettingsConfig;
@@ -14,6 +15,7 @@ export type ResolvedSettingsConfig = {
   sources: Record<SettingsConfigKey, SettingsConfigSource>;
 };
 
+/** 解析 global + project 配置，得到最终 effective 配置与来源映射 */
 export function resolveSettingsConfig(input: {
   global?: PartialSettingsConfig;
   project?: PartialSettingsConfig;

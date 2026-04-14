@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { approvalStatusSchema } from "../../../shared/schemas";
 
+/** ApprovalView：客户端可见的审批卡片视图 */
 export const approvalViewSchema = z.object({
   approvalRequestId: z.string().min(1),
   threadId: z.string().min(1),

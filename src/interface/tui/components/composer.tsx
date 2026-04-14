@@ -7,10 +7,12 @@ import { getSlashCommandDefinitions, getSlashCommandQuery } from "../commands";
 import { CommandSuggestions } from "./command-suggestions";
 import { theme } from "../theme";
 
+/** 约束 cursorOffset 始终落在当前文本范围内 */
 function clampCursorOffset(value: string, cursorOffset: number): number {
   return Math.max(0, Math.min(cursorOffset, value.length));
 }
 
+/** 在光标位置插入文本 */
 function insertTextAtCursor(value: string, cursorOffset: number, inserted: string) {
   const nextValue = value.slice(0, cursorOffset) + inserted + value.slice(cursorOffset);
   return {
@@ -19,6 +21,7 @@ function insertTextAtCursor(value: string, cursorOffset: number, inserted: strin
   };
 }
 
+/** 删除光标前一个字符 */
 function deleteBackwardAtCursor(value: string, cursorOffset: number) {
   if (cursorOffset <= 0) {
     return { value, cursorOffset };
@@ -30,6 +33,7 @@ function deleteBackwardAtCursor(value: string, cursorOffset: number) {
   };
 }
 
+/** 删除光标后的一个字符 */
 function deleteForwardAtCursor(value: string, cursorOffset: number) {
   if (cursorOffset >= value.length) {
     return { value, cursorOffset };

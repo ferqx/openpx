@@ -26,11 +26,13 @@ import {
 } from "./real-eval-schema";
 import { findRealEvalPromptVariant, REAL_EVAL_SUITE_ID, getRealEvalSuiteScenarios } from "./scenarios";
 
+/** real-eval CLI 的 IO 接口 */
 type RealEvalCommandIo = {
   stdout: { write(chunk: string): void };
   stderr: { write(chunk: string): void };
 };
 
+/** 运行 real-eval suite 的选项 */
 type RunRealEvalSuiteOptions = {
   suiteId?: RealEvalSuiteId;
   scenarios?: readonly Readonly<RealEvalScenario>[];
@@ -45,10 +47,12 @@ type RunRealEvalSuiteOptions = {
   persistReviewItems?: typeof persistRealReviewQueueItems;
 };
 
+/** execute 命令时可注入的依赖 */
 type ExecuteRealEvalSuiteCommandDependencies = {
   runSuite?: typeof runRealEvalSuite;
 };
 
+/** 单场景执行结果 */
 type RealEvalScenarioExecution = {
   summary: RealEvalScenarioResult;
   trace?: RealSampleRun["trace"];
@@ -56,10 +60,12 @@ type RealEvalScenarioExecution = {
   evolutionCandidates: RealEvalEvolutionCandidate[];
 };
 
+/** 默认运行根目录 */
 function getDefaultRunRoot(): string {
   return path.join(os.tmpdir(), `openpx-real-eval-${Date.now()}`);
 }
 
+/** 解析 real-eval 数据目录 */
 function resolveRealEvalDataDir(explicitDataDir?: string): string {
   if (explicitDataDir) {
     return explicitDataDir;
@@ -73,6 +79,7 @@ function resolveRealEvalDataDir(explicitDataDir?: string): string {
   return path.join(process.cwd(), ".openpx", "real-eval", "real-eval.sqlite");
 }
 
+/** 解析要执行的 real-eval 场景集合 */
 function resolveScenarios(input: {
   suiteId: RealEvalSuiteId;
   scenarios?: readonly Readonly<RealEvalScenario>[];

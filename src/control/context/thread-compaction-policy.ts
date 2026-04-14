@@ -1,5 +1,6 @@
 import type { DerivedThreadView, WorkingSetWindow, RecoveryFacts, NarrativeState } from "./thread-compaction-types";
 
+/** 压缩请求：soft/boundary/hard 三种触发模式 */
 export type CompactionRequest = {
   trigger: "soft" | "boundary" | "hard";
   tokenPressure?: number;
@@ -8,10 +9,12 @@ export type CompactionRequest = {
 const CURRENT_SCHEMA_VERSION = 1;
 const MAX_TRANSCRIPT_MESSAGES = 40;
 
+/** 去重字符串数组 */
 function dedupe(arr: string[]): string[] {
   return [...new Set(arr)];
 }
 
+/** 收缩工作集窗口，仅保留最近若干条消息/结果 */
 function shrinkWorkingSet(
   window: WorkingSetWindow | undefined,
   options: { keepRecent: number }
@@ -30,6 +33,7 @@ function shrinkWorkingSet(
   };
 }
 
+/** 深拷贝 recovery facts，避免压缩过程中直接修改原对象 */
 function cloneRecoveryFacts(input?: RecoveryFacts): RecoveryFacts {
   if (!input) {
     throw new Error("Cannot compact empty recovery facts");
@@ -55,6 +59,7 @@ function cloneRecoveryFacts(input?: RecoveryFacts): RecoveryFacts {
   return cloned;
 }
 
+/** 深拷贝 narrative state；缺失时返回空状态 */
 function cloneNarrativeState(input?: NarrativeState): NarrativeState {
   if (!input) {
     return {
@@ -74,6 +79,7 @@ function cloneNarrativeState(input?: NarrativeState): NarrativeState {
   };
 }
 
+/** 压缩 thread view：在保留恢复锚点的同时裁剪 working set 与 narrative 噪声 */
 export function compactThreadView(view: DerivedThreadView, input: CompactionRequest): DerivedThreadView {
   const now = new Date().toISOString();
   const nextView: DerivedThreadView = {

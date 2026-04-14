@@ -15,6 +15,7 @@ import type { EvalReviewQueueRecord, EvalStorePort } from "../ports/eval-store-p
 import { resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** eval_suite_runs 表行结构 */
 type EvalSuiteRunRow = {
   suite_run_id: string;
   suite_id: string;
@@ -23,6 +24,7 @@ type EvalSuiteRunRow = {
   completed_at: string | null;
 };
 
+/** eval_scenario_results 表行结构 */
 type EvalScenarioResultRow = {
   scenario_run_id: string;
   suite_run_id: string | null;
@@ -40,6 +42,7 @@ type EvalScenarioResultRow = {
   completed_at: string;
 };
 
+/** eval_review_queue 表行结构 */
 type EvalReviewQueueRow = {
   review_item_id: string;
   scenario_run_id: string;
@@ -58,6 +61,7 @@ type EvalReviewQueueRow = {
   closed_at: string | null;
 };
 
+/** SQLite eval 存储：保存 suite run、scenario result 和 review queue */
 export class SqliteEvalStore implements EvalStorePort {
   private readonly db: Database;
   private readonly owned: boolean;

@@ -2,6 +2,7 @@ import type { EvalCheckResult, EvalObjectRefs, EvalResultStatus, EvalRuleResult 
 import { findRealEvalScenario } from "./scenarios";
 import type { RealEvalFailureClass, RealEvalRootCauseLayer, RealRunTrace } from "./real-eval-schema";
 
+/** real-eval review 候选：从 trace evaluation 中提炼出的待分诊问题 */
 export type RealReviewCandidate = {
   scenarioId: string;
   runId: string;
@@ -17,6 +18,7 @@ export type RealReviewCandidate = {
   objectRefs: EvalObjectRefs;
 };
 
+/** 一次 real trace 的评估结果 */
 export type RealTraceEvaluation = {
   scenarioId: string;
   outcomeResults: EvalCheckResult[];
@@ -25,6 +27,7 @@ export type RealTraceEvaluation = {
   status: EvalResultStatus;
 };
 
+/** 规则元数据：把 rule id 映射到 failure class、严重级别和修复方向 */
 type RealRuleDescriptor = {
   id: string;
   sourceType: "outcome_check" | "trajectory_rule";

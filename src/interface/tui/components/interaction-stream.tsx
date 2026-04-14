@@ -8,6 +8,7 @@ import { WorkerPanel } from './worker-panel';
 import { theme } from '../theme';
 import { Markdown } from './markdown';
 
+/** InteractionStream 内部消息模型 */
 type Message = {
   id: string;
   role: 'user' | 'assistant';
@@ -17,6 +18,7 @@ type Message = {
   timestamp: number;
 };
 
+/** InteractionStream 渲染所需 props */
 export interface InteractionStreamProps {
   messages: Message[];
   tasks: TaskSummary[];
@@ -29,11 +31,13 @@ export interface InteractionStreamProps {
   scrollOffset?: number;
 }
 
+/** 格式化 thinking 耗时 */
 function formatDuration(ms?: number): string {
   if (!ms) return '';
   return ` (${(ms / 1000).toFixed(1)}s)`;
 }
 
+/** 估算文本换行后的可见行数 */
 function estimateWrappedLines(text: string, width: number): number {
   const safeWidth = Math.max(8, width);
   const normalizedLines = text.length > 0 ? text.split('\n') : [''];

@@ -1,5 +1,6 @@
 import { createApprovalRequest, type ApprovalRequest, type ApprovalToolRequest } from "../../domain/approval";
 
+/** 创建待审批请求所需的最小信息 */
 export type CreateApprovalInput = {
   toolCallId: string;
   threadId: string;
@@ -10,6 +11,7 @@ export type CreateApprovalInput = {
   risk: string;
 };
 
+/** 创建内存版审批服务：持久化包装由 app/bootstrap 在外层补上 */
 export function createApprovalService(input?: { idGenerator?: () => string }) {
   const requests = new Map<string, ApprovalRequest>();
   const idGenerator =
@@ -18,7 +20,7 @@ export function createApprovalService(input?: { idGenerator?: () => string }) {
 
   return {
     async createPending(request: CreateApprovalInput): Promise<ApprovalRequest> {
-      // Check if a pending request already exists for this tool call
+      // 同一个 toolCallId 只保留一条 pending 审批，避免重复审批卡片。
       const existing = [...requests.values()].find(
         (r) => r.toolCallId === request.toolCallId && r.status === "pending",
       );
@@ -65,4 +67,5 @@ export function createApprovalService(input?: { idGenerator?: () => string }) {
   };
 }
 
+/** 审批服务接口类型：供 control-plane 和 tool-registry 共享 */
 export type ApprovalService = ReturnType<typeof createApprovalService>;

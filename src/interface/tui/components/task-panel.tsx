@@ -2,8 +2,10 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { RuntimeSessionState } from "../../runtime/runtime-session";
 
+/** TaskPanel 使用的任务摘要类型 */
 export type TaskSummary = RuntimeSessionState["tasks"][number];
 
+/** TaskPanel：列出当前任务及其状态 */
 export function TaskPanel(input: { tasks: TaskSummary[] }) {
   const getStatusIndicator = (status: string) => {
     switch (status) {

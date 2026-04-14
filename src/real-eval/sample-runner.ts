@@ -16,8 +16,10 @@ import { collectRealRunTrace } from "./trace";
 import type { RealEvalScenario } from "./real-eval-schema";
 import { findRealEvalPromptVariant } from "./scenarios";
 
+/** sample 运行状态 */
 type RealSampleStatus = RealSampleSummary["status"];
 
+/** 运行单个 real sample 的选项 */
 export type RunRealSampleOptions = {
   scenario: Readonly<RealEvalScenario>;
   promptVariantId?: string;
@@ -27,10 +29,12 @@ export type RunRealSampleOptions = {
   timeoutMs?: number;
 };
 
+/** 单次 real sample 执行的返回值 */
 export type RealSampleRun = RealSampleSummary & {
   trace: RealRunTrace;
 };
 
+/** 场景运行结果的最小形状 */
 type ScenarioRunResult = {
   runId: string;
   taskId: string;
@@ -38,10 +42,12 @@ type ScenarioRunResult = {
   summaryText?: string;
 };
 
+/** 场景工作区准备结果 */
 type ScenarioWorkspacePreparation = {
   artifactContext?: RealRunArtifactContext;
 };
 
+/** planner 观察结果 */
 type PlannerCapture = {
   summary?: string;
   normalizedObjective?: string;
@@ -52,11 +58,13 @@ type PlannerCapture = {
   approvalRequiredActions: string[];
 };
 
+/** sample 执行证据：planner + approval path */
 type SampleExecutionEvidence = {
   plannerEvidence: RealEvalPlannerEvidence;
   approvalPathEvidence: RealEvalApprovalPathEvidence;
 };
 
+/** 在 bounded_after_resume 模式下稳定化 trace 的终态视图 */
 function stabilizeRecoveryTrace(
   trace: RealRunTrace,
   recoveryMode?: RealRunTrace["recoveryMode"],

@@ -4,6 +4,7 @@ import type { EvalReviewQueueRecord, EvalStorePort } from "../persistence/ports/
 import type { RealTraceEvaluation } from "./evaluation";
 import type { RealEvalEvolutionCandidate, RealRunTrace } from "./real-eval-schema";
 
+/** 持久化到 review queue 前的 real-eval review 条目 */
 export type PersistedRealReviewQueueItem = {
   reviewItemId: string;
   scenarioRunId: string;
@@ -24,6 +25,7 @@ export type PersistedRealReviewQueueItem = {
   createdAt: string;
 };
 
+/** review queue 持久化输入 */
 type RealReviewPersistInput = {
   store: EvalStorePort;
   scenarioRunId: string;
@@ -32,6 +34,7 @@ type RealReviewPersistInput = {
   evolutionCandidates?: RealEvalEvolutionCandidate[];
 };
 
+/** 把 evaluation review item 转成持久化形状 */
 function toPersistedItem(input: {
   reviewItemId: string;
   scenarioRunId: string;
@@ -60,6 +63,7 @@ function toPersistedItem(input: {
   };
 }
 
+/** 为一次 real-eval 运行生成 review queue 条目 */
 export function createRealReviewQueueItems(input: {
   scenarioRunId: string;
   trace: RealRunTrace;
@@ -76,6 +80,7 @@ export function createRealReviewQueueItems(input: {
     }));
 }
 
+/** 转成基础 ReviewQueueItem */
 function toBaseReviewItem(item: PersistedRealReviewQueueItem): ReviewQueueItem {
   return {
     reviewItemId: item.reviewItemId,

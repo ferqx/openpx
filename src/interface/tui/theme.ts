@@ -1,3 +1,4 @@
+/** TUI 主题：集中定义颜色、符号和间距 */
 export const theme = {
   colors: {
     primary: "blue",

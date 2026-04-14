@@ -6,12 +6,14 @@ import type {
   WorkPackageReplanHint,
 } from "./work-package";
 
+/** planner 归一化输入：原始用户文本、planner 摘要及可选结构化输出 */
 type NormalizePlannerInput = {
   inputText: string;
   summary: string;
   plannerResult?: PlannerResult;
 };
 
+/** planner 归一化输出：稳定摘要与修正后的 PlannerResult */
 type NormalizePlannerOutput = {
   summary: string;
   plannerResult: PlannerResult;
@@ -19,19 +21,23 @@ type NormalizePlannerOutput = {
 
 const REPLAN_HINT_TOKEN = "avoid_same_capability_marker";
 
+/** 统一空白字符，方便做启发式匹配 */
 function normalizeWhitespace(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
+/** 清理路径候选，去掉引号和尾部标点 */
 function cleanPathCandidate(value: string): string {
   return value.trim().replace(/^['"`]+|['"`]+$/g, "").replace(/[.,;:!?]+$/g, "");
 }
 
+/** 从自由文本中提取文件路径引用 */
 function extractPathReference(value: string): string | undefined {
   const match = value.match(/['"`]?([A-Za-z0-9_./-]+\.[A-Za-z0-9_-]+)['"`]?/);
   return match?.[1] ? cleanPathCandidate(match[1]) : undefined;
 }
 
+/** 专门提取 delete/remove 语义中的目标文件路径 */
 function extractDeletePath(value: string): string | undefined {
   const patterns = [
     /(?:delete|remove)\s+(?:the\s+file\s+)?['"`]?([A-Za-z0-9_./-]+\.[A-Za-z0-9_-]+)['"`]?/i,

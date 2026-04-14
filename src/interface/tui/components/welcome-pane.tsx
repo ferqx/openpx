@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { theme } from '../theme';
 
+/** WelcomePane：fresh launch 时显示的极简欢迎壳层 */
 export function WelcomePane(input: {
   workspaceRoot?: string;
   projectId?: string;

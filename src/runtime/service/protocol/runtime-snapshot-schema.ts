@@ -8,6 +8,7 @@ import { taskBlockingReasonSchema, taskViewSchema } from "./task-view";
 import { threadViewSchema } from "./thread-view";
 import { workerViewSchema } from "./worker-view";
 
+/** runtime snapshot 协议：客户端 hydration 时读取的完整稳定视图 */
 export const runtimeSnapshotSchema = z.object({
   protocolVersion: protocolVersionSchema,
   workspaceRoot: z.string(),

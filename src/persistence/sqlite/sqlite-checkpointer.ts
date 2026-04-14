@@ -15,6 +15,7 @@ import type { Database } from "bun:sqlite";
 import { createSqlite } from "./sqlite-client";
 import type { CheckpointPort } from "../ports/checkpoint-port";
 
+/** checkpoints 表行结构 */
 type CheckpointRow = {
   thread_id: string;
   checkpoint_ns: string;
@@ -25,6 +26,7 @@ type CheckpointRow = {
   metadata: Uint8Array | null;
 };
 
+/** writes 表行结构：保存 LangGraph pending writes */
 type WriteRow = {
   task_id: string;
   idx: number;
@@ -33,6 +35,7 @@ type WriteRow = {
   value: Uint8Array | null;
 };
 
+/** Bun + SQLite 的 LangGraph checkpointer 实现 */
 class BunSqliteSaver extends BaseCheckpointSaver {
   private readonly db: Database;
   private isSetup = false;
@@ -42,6 +45,7 @@ class BunSqliteSaver extends BaseCheckpointSaver {
     this.db = createSqlite(path);
   }
 
+  /** 首次访问时初始化 checkpoints / writes 表 */
   private setup() {
     if (this.isSetup) {
       return;
@@ -75,6 +79,7 @@ class BunSqliteSaver extends BaseCheckpointSaver {
     this.isSetup = true;
   }
 
+  /** 读取某个 checkpoint 的 pending writes */
   private async loadPendingWrites(threadId: string, checkpointNs: string, checkpointId: string) {
     const rows = this.db
       .query<WriteRow, [string, string, string]>(

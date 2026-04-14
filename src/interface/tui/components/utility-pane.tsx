@@ -4,11 +4,13 @@ import type { RuntimeSessionState } from "../../runtime/runtime-session";
 import type { UtilityPaneMode } from "../view-state";
 import { theme } from "../theme";
 
+/** utility pane 读取的最小 session 快照 */
 export type UtilityPaneSessionSnapshot = Pick<
   RuntimeSessionState,
   "threadId" | "threads" | "messages" | "answers" | "narrativeSummary" | "workspaceRoot"
 >;
 
+/** 生成 history 面板文本：优先 transcript，其次 answer，最后 narrative 摘要 */
 function buildHistoryContent(session?: UtilityPaneSessionSnapshot): string {
   if (!session) {
     return "No current thread history yet.";
@@ -33,6 +35,7 @@ function buildHistoryContent(session?: UtilityPaneSessionSnapshot): string {
   return session.narrativeSummary ?? "No current thread history yet.";
 }
 
+/** 生成 settings 面板文本 */
 function buildSettingsContent(input: {
   modelName?: string;
   thinkingLevel?: string;
@@ -45,6 +48,7 @@ function buildSettingsContent(input: {
   ].join("\n");
 }
 
+/** 生成 help 面板文本 */
 function buildHelpContent(): string {
   return [
     "/new",
@@ -57,6 +61,7 @@ function buildHelpContent(): string {
   ].join("\n");
 }
 
+/** UtilityPane：history/sessions/settings/help 的统一渲染入口 */
 export const UtilityPane = React.memo(function UtilityPane(input: {
   mode: Exclude<UtilityPaneMode, "none">;
   session?: UtilityPaneSessionSnapshot;
@@ -89,6 +94,7 @@ export const UtilityPane = React.memo(function UtilityPane(input: {
       </Box>
       {input.mode === "sessions" ? (
         <Box flexDirection="column">
+          {/* sessions 面板直接展示 runtime thread truth，不再引入本地派生状态。 */}
           {(input.session?.threads ?? []).map((thread) => {
             const selected = thread.threadId === input.selectedThreadId;
             const active = thread.threadId === input.session?.threadId;

@@ -2,17 +2,20 @@ import type { UtilityPaneSessionSnapshot } from "./components/utility-pane";
 import type { RuntimeSessionState } from "../runtime/runtime-session";
 import type { TuiMessage } from "./session-sync";
 
+/** 思考态：记录 reasoning 文本及耗时起点 */
 export type ThinkingState = {
   content: string;
   startedAt: number;
   duration?: number;
 };
 
+/** 性能指标：等待模型与生成回复耗时 */
 export type PerformanceState = {
   waitMs: number;
   genMs: number;
 };
 
+/** 会话显示态：只属于 TUI 的瞬时显示层，不是 runtime durable truth */
 export type ConversationDisplayState = {
   modelStatus: "idle" | "thinking" | "responding";
   pendingUserMessage?: TuiMessage;
@@ -26,6 +29,7 @@ export type ConversationDisplayState = {
   streamScrollOffset: number;
 };
 
+/** 创建会话显示态初始值 */
 export function createInitialConversationDisplayState(): ConversationDisplayState {
   return {
     modelStatus: "idle",
@@ -36,6 +40,7 @@ export function createInitialConversationDisplayState(): ConversationDisplayStat
   };
 }
 
+/** 把审批输入文本解析成 approve / reject 决策 */
 export function parseApprovalDecision(text: string): "approve" | "reject" | undefined {
   const normalized = text.trim().toLowerCase();
   if (["y", "yes", "ok", "可以"].includes(normalized)) {
@@ -49,6 +54,7 @@ export function parseApprovalDecision(text: string): "approve" | "reject" | unde
   return undefined;
 }
 
+/** 从完整 session 派生 utility pane 所需的只读快照 */
 export function buildUtilitySessionSnapshot(
   session: RuntimeSessionState | undefined,
 ): UtilityPaneSessionSnapshot | undefined {
@@ -66,6 +72,7 @@ export function buildUtilitySessionSnapshot(
   };
 }
 
+/** 比较 utility pane 消息是否相同，避免无意义重渲染 */
 function areUtilityMessagesEqual(
   previous: UtilityPaneSessionSnapshot["messages"],
   next: UtilityPaneSessionSnapshot["messages"],
@@ -92,6 +99,7 @@ function areUtilityMessagesEqual(
   });
 }
 
+/** 比较 utility pane answers 是否相同 */
 function areUtilityAnswersEqual(
   previous: UtilityPaneSessionSnapshot["answers"],
   next: UtilityPaneSessionSnapshot["answers"],
@@ -114,6 +122,7 @@ function areUtilityAnswersEqual(
   });
 }
 
+/** 比较 utility pane 线程列表是否相同 */
 function areUtilityThreadsEqual(
   previous: UtilityPaneSessionSnapshot["threads"],
   next: UtilityPaneSessionSnapshot["threads"],
@@ -142,6 +151,7 @@ function areUtilityThreadsEqual(
   });
 }
 
+/** 判断 utility pane 快照是否等价 */
 export function isSameUtilitySessionSnapshot(
   previous: UtilityPaneSessionSnapshot | undefined,
   next: UtilityPaneSessionSnapshot | undefined,

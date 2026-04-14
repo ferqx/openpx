@@ -9,6 +9,7 @@ import type {
   SettingsConfigSource,
 } from "../settings/config-types";
 
+/** settings pane 的 tab 类型 */
 type SettingsTab = "status" | "config" | "usage";
 
 const TAB_ORDER: SettingsTab[] = ["status", "config", "usage"];
@@ -25,20 +26,24 @@ const SETTING_LABELS: Record<SettingsConfigKey, string> = {
   terminalProgressBar: "Terminal progress bar",
 };
 
+/** 格式化配置来源文案 */
 function formatSource(source: SettingsConfigSource): string {
   return source === "project" ? "project" : source === "global" ? "global" : "default";
 }
 
+/** 循环切换 tab */
 function cycleTab(tab: SettingsTab): SettingsTab {
   const index = TAB_ORDER.indexOf(tab);
   return TAB_ORDER[(index + 1) % TAB_ORDER.length] ?? "config";
 }
 
+/** 渲染 tab 标签 */
 function renderTabLabel(tab: SettingsTab, activeTab: SettingsTab): string {
   const label = tab === "status" ? "Status" : tab === "config" ? "Config" : "Usage";
   return activeTab === tab ? `[${label}]` : label;
 }
 
+/** SettingsPane：状态、配置和帮助三合一的本地设置面板 */
 export function SettingsPane(input: {
   modelName?: string;
   thinkingLevel?: string;
