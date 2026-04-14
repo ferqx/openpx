@@ -3,11 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ModelGateway } from "../../src/infra/model-gateway";
-import { realRunTraceSchema, type RealRunTrace } from "../../src/real-eval/real-eval-schema";
-import { evaluateRealTrace } from "../../src/real-eval/evaluation";
-import { loadStoredRealSample } from "../../src/real-eval/replay";
-import { REAL_EVAL_SUITE_ID, realEvalScenarios } from "../../src/real-eval/scenarios";
-import { executeRealEvalSuiteCommand, runRealEvalSuite } from "../../src/real-eval/suite-runner";
+import { realRunTraceSchema, type RealRunTrace } from "../../src/harness/eval/real/real-eval-schema";
+import { evaluateRealTrace } from "../../src/harness/eval/real/evaluation";
+import { loadStoredRealSample } from "../../src/harness/eval/real/replay";
+import { REAL_EVAL_SUITE_ID, realEvalScenarios } from "../../src/harness/eval/real/scenarios";
+import { executeRealEvalSuiteCommand, runRealEvalSuite } from "../../src/harness/eval/real/suite-runner";
 import { SqliteEvalStore } from "../../src/persistence/sqlite/sqlite-eval-store";
 
 function createDeterministicModelGateway(): ModelGateway {

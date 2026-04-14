@@ -1,7 +1,7 @@
 import { describe, expect, test, afterEach } from "bun:test";
-import { createRuntimeService } from "../../src/runtime/service/runtime-service";
-import { createHttpServer } from "../../src/runtime/service/runtime-http-server";
-import type { RuntimeSnapshot } from "../../src/runtime/service/runtime-types";
+import { createHarnessSessionRegistry } from "../../src/harness/server/harness-session-registry";
+import { createHttpServer } from "../../src/harness/server/http/runtime-http-server";
+import type { RuntimeSnapshot } from "../../src/harness/protocol/schemas/api-schema";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -19,7 +19,7 @@ describe("Runtime HTTP Server", () => {
 
   test("GET /snapshot returns the current state", async () => {
     await fs.mkdir(testDir, { recursive: true });
-    const runtime = await createRuntimeService({ dataDir: ":memory:", workspaceRoot: testDir });
+    const runtime = await createHarnessSessionRegistry({ dataDir: ":memory:", workspaceRoot: testDir });
     const server = createHttpServer(runtime);
 
     try {
@@ -36,7 +36,7 @@ describe("Runtime HTTP Server", () => {
 
   test("POST /commands accepts and routes commands", async () => {
     await fs.mkdir(testDir, { recursive: true });
-    const runtime = await createRuntimeService({ dataDir: ":memory:", workspaceRoot: testDir });
+    const runtime = await createHarnessSessionRegistry({ dataDir: ":memory:", workspaceRoot: testDir });
     const server = createHttpServer(runtime);
 
     try {
@@ -53,7 +53,7 @@ describe("Runtime HTTP Server", () => {
 
   test("POST /commands accepts interrupt commands", async () => {
     await fs.mkdir(testDir, { recursive: true });
-    const runtime = await createRuntimeService({ dataDir: ":memory:", workspaceRoot: testDir });
+    const runtime = await createHarnessSessionRegistry({ dataDir: ":memory:", workspaceRoot: testDir });
     const server = createHttpServer(runtime);
 
     try {

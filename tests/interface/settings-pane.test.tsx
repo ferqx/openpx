@@ -1,8 +1,8 @@
 import React from "react";
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { SettingsPane } from "../../src/interface/tui/components/settings-pane";
-import type { ResolvedSettingsConfig } from "../../src/interface/tui/settings/config-resolver";
+import { SettingsPane } from "../../src/surfaces/tui/components/settings-pane";
+import type { ResolvedSettingsConfig } from "../../src/surfaces/tui/settings/config-resolver";
 
 const resolvedConfig: ResolvedSettingsConfig = {
   global: {

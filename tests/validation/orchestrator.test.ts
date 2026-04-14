@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { evalComparableRunSchema, type EvalScenarioResult } from "../../src/eval/eval-schema";
-import { realRunTraceSchema, type RealRunTrace } from "../../src/real-eval/real-eval-schema";
+import { realRunTraceSchema, type RealRunTrace } from "../../src/harness/eval/real/real-eval-schema";
 import { runValidationSuite } from "../../src/validation/orchestrator";
 import type {
   ValidationScenarioSpec,

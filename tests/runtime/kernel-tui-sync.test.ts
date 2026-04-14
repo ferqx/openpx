@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createAppContext } from "../../src/app/bootstrap";
 import { createTask } from "../../src/domain/task";
 import { createThread } from "../../src/domain/thread";
-import { RuntimeScopedSession } from "../../src/runtime/service/runtime-scoped-session";
+import { HarnessSession } from "../../src/harness/core/session/harness-session";
 
 /**
  * INTEGRATION SMOKE TEST: TUI -> KERNEL RESPONSIVENESS
@@ -14,7 +14,7 @@ describe("Kernel-TUI Response Loop", () => {
     const dataDir = ":memory:";
     const context = await createAppContext({ workspaceRoot, dataDir });
     
-    const session = new RuntimeScopedSession(
+    const session = new HarnessSession(
       { workspaceRoot, projectId: "test-p" },
       context
     );
@@ -38,7 +38,7 @@ describe("Kernel-TUI Response Loop", () => {
     const dataDir = ":memory:";
     const context = await createAppContext({ workspaceRoot, dataDir, projectId: "test-workers" });
 
-    const session = new RuntimeScopedSession(
+    const session = new HarnessSession(
       { workspaceRoot, projectId: "test-workers" },
       context,
     );

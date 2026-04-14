@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { computeScreenLayout } from "../../src/interface/tui/screen-layout";
+import { computeScreenLayout } from "../../src/surfaces/tui/screen-layout";
 
 describe("screen layout", () => {
   test("computes adaptive welcome layout without overlays", () => {

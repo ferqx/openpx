@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { realRunTraceSchema, type RealRunTrace } from "../../src/real-eval/real-eval-schema";
-import { evaluateRealTrace } from "../../src/real-eval/evaluation";
+import { realRunTraceSchema, type RealRunTrace } from "../../src/harness/eval/real/real-eval-schema";
+import { evaluateRealTrace } from "../../src/harness/eval/real/evaluation";
 
 function createBaseTrace(overrides?: Partial<RealRunTrace>): RealRunTrace {
   const baseComparable = {

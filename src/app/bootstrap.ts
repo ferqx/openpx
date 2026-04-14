@@ -5,7 +5,7 @@ import { createPolicyEngine } from "../control/policy/policy-engine";
 import { createTaskManager } from "../control/tasks/task-manager";
 import type { ControlTask } from "../control/tasks/task-types";
 import { createToolRegistry } from "../control/tools/tool-registry";
-import { createSessionKernel, type SessionControlPlaneResult } from "../kernel/session-kernel";
+import { createSessionKernel, type SessionControlPlaneResult } from "../harness/core/session/session-kernel";
 import { createSqliteCheckpointer } from "../persistence/sqlite/sqlite-checkpointer";
 import { createSqlite } from "../persistence/sqlite/sqlite-client";
 import { migrateSqlite } from "../persistence/sqlite/sqlite-migrator";

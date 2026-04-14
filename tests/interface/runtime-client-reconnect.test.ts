@@ -1,6 +1,6 @@
 import { describe, expect, test, afterEach } from "bun:test";
 import { ensureRuntime } from "../../src/runtime/service/runtime-daemon";
-import { RuntimeClient } from "../../src/interface/runtime/runtime-client";
+import { RuntimeClient } from "../../src/surfaces/tui/runtime/runtime-client";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";

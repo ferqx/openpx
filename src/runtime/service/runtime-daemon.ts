@@ -1,7 +1,7 @@
 import { dirname, join, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
-import { createRuntimeService } from "./runtime-service";
-import { createHttpServer, dispatchRuntimeRequest } from "./runtime-http-server";
+import { createHarnessSessionRegistry } from "../../harness/server/harness-session-registry";
+import { createHttpServer, dispatchRuntimeRequest } from "../../harness/server/http/runtime-http-server";
 
 export type RuntimeDaemonOptions = {
   dataDir: string;
@@ -68,7 +68,7 @@ export async function ensureRuntime(options: RuntimeDaemonOptions) {
   }
 
   const dbPath = resolveDbPath(options.dataDir);
-  const runtime = await createRuntimeService({
+  const runtime = await createHarnessSessionRegistry({
     ...options,
     dataDir: dbPath,
   });

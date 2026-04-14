@@ -1,7 +1,7 @@
 import { describe, expect, test, mock } from "bun:test";
 import type { ThreadNarrativeService } from "../../src/control/context/thread-narrative-service";
 import { createRun, transitionRun } from "../../src/domain/run";
-import { createSessionKernel } from "../../src/kernel/session-kernel";
+import { createSessionKernel } from "../../src/harness/core/session/session-kernel";
 import { createThread } from "../../src/domain/thread";
 import { createTask } from "../../src/domain/task";
 

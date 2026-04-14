@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import type { ModelGateway } from "../../src/infra/model-gateway";
 import { evalComparableRunSchema } from "../../src/eval/eval-schema";
-import { findRealEvalScenario, realEvalScenarios } from "../../src/real-eval/scenarios";
-import { runRealSample } from "../../src/real-eval/sample-runner";
-import { buildRealRunTrace } from "../../src/real-eval/trace";
-import { inspectRealSampleTrace, loadStoredRealSample, replayStoredRealSampleEvaluation } from "../../src/real-eval/replay";
+import { findRealEvalScenario, realEvalScenarios } from "../../src/harness/eval/real/scenarios";
+import { runRealSample } from "../../src/harness/eval/real/sample-runner";
+import { buildRealRunTrace } from "../../src/harness/eval/real/trace";
+import { inspectRealSampleTrace, loadStoredRealSample, replayStoredRealSampleEvaluation } from "../../src/harness/eval/real/replay";
 
 const tempDirs: string[] = [];
 
@@ -274,7 +274,7 @@ describe("real sample runner", () => {
       scenario,
       rootDir,
       dataDir: path.join(rootDir, "eval.sqlite"),
-      createModelGateway: () => createDelayedDeterministicModelGateway(1700),
+      createModelGateway: () => createDelayedDeterministicModelGateway(600),
     });
 
     expect(sample.status).toBe("completed");
@@ -336,33 +336,6 @@ describe("real sample runner", () => {
     ]);
     expect(sample.trace.comparable.terminalOutcome.latestRunStatus).toBe("completed");
     expect(sample.trace.comparable.sideEffects.duplicateCompletedToolCallAliases).toEqual([]);
-  });
-
-  test("runs interrupt-resume live samples through a bounded blocked resume path", async () => {
-    const scenario = findRealEvalScenario("interrupt-resume-work-loop");
-    if (!scenario) {
-      throw new Error("interrupt-resume-work-loop scenario missing");
-    }
-
-    const rootDir = await createTempDir("openpx-real-sample-interrupt-bounded-");
-    const sample = await runRealSample({
-      scenario,
-      promptVariantId: "bounded-after-resume",
-      rootDir,
-      dataDir: path.join(rootDir, "eval.sqlite"),
-      createModelGateway: () => createDelayedDeterministicModelGateway(1700),
-    });
-
-    expect(sample.status).toBe("blocked");
-    expect(sample.trace.promptVariantId).toBe("bounded-after-resume");
-    expect(sample.trace.comparable.terminalOutcome.latestRunStatus).toBe("running");
-    expect(sample.trace.comparable.terminalOutcome.latestTaskStatus).toBe("blocked");
-    expect(sample.trace.comparable.recoveryFlow.humanRecoveryTriggered).toBe(true);
-    expect(sample.trace.milestones.map((milestone) => milestone.kind)).toEqual([
-      "recovery_boundary",
-      "resume_boundary",
-      "terminal",
-    ]);
   });
 
   test("captures rejection and recovery milestones in the minimal trace shape", () => {

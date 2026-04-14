@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createAppContext } from "../../src/app/bootstrap";
-import { RuntimeScopedSession } from "../../src/runtime/service/runtime-scoped-session";
+import { HarnessSession } from "../../src/harness/core/session/harness-session";
 
 describe("Kernel Loop Fidelity (Fixing Spam and Blocking)", () => {
   test("simple input does not trigger manual recovery block", async () => {
@@ -8,7 +8,7 @@ describe("Kernel Loop Fidelity (Fixing Spam and Blocking)", () => {
     const dataDir = ":memory:";
     const context = await createAppContext({ workspaceRoot, dataDir });
     
-    const session = new RuntimeScopedSession(
+    const session = new HarnessSession(
       { workspaceRoot, projectId: "test-p" },
       context
     );
@@ -35,7 +35,7 @@ describe("Kernel Loop Fidelity (Fixing Spam and Blocking)", () => {
     const dataDir = ":memory:";
     const context = await createAppContext({ workspaceRoot, dataDir });
     
-    const session = new RuntimeScopedSession(
+    const session = new HarnessSession(
       { workspaceRoot, projectId: "test-p" },
       context
     );

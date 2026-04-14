@@ -1,5 +1,5 @@
 import type { createAppContext } from "../app/bootstrap";
-import type { SessionControlPlaneResult } from "../kernel/session-kernel";
+import type { SessionControlPlaneResult } from "../harness/core/session/session-kernel";
 import type { ModelGateway } from "../infra/model-gateway";
 import { approvalStatusSchema, runStatusSchema, runTriggerSchema, taskStatusSchema, threadStatusSchema } from "../shared/schemas";
 import { z } from "zod";

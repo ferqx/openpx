@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import {
   createSettingsConfigStore,
   resolveSettingsConfig,
-} from "../../src/interface/tui/settings/config-store";
+} from "../../src/surfaces/tui/settings/config-store";
 
 const tempDirs: string[] = [];
 

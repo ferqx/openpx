@@ -15,19 +15,19 @@
 
 这些文件仍然可运行，但理解成本偏高，后续应继续做小步结构减法。
 
-#### `src/kernel/session-kernel.ts`
+#### `src/harness/core/session/session-kernel.ts`
 
 - 当前状态：稳定命令边界已经形成，但摘要、投影和辅助逻辑仍然偏集中
 - 为什么暂不处理：刚完成 `bootstrap.ts` 和 `app.tsx` 的一轮收口，应该先让主路径稳定
 - 下一轮切入点：优先抽摘要/投影辅助逻辑，不动 `handleCommand` 的公共中心
 
-#### `src/runtime/service/runtime-command-handler.ts`
+#### `src/harness/core/session/runtime-command-handler.ts`
 
 - 当前状态：协议命令路由与 worker 命令协调还混在一起
-- 为什么暂不处理：它和 kernel、runtime-scoped-session 联动较强，应该晚于 `session-kernel`
+- 为什么暂不处理：它和 `HarnessSession`、`session-kernel` 联动较强，应该晚于 `session-kernel`
 - 下一轮切入点：区分产品主路径命令与 worker 特定命令
 
-#### `src/runtime/service/runtime-scoped-session.ts`
+#### `src/harness/core/session/harness-session.ts`
 
 - 当前状态：active thread 查找、快照组装、事件重放、订阅生命周期都压在一起
 - 为什么暂不处理：它是运行时读取模型中心，过早拆分容易打散当前稳定视图合约
@@ -38,7 +38,7 @@
 这些表面当前仍然必要，但会扩大可见命令面或入口面。
 
 #### `src/eval/run-suite.ts`
-#### `src/real-eval/run-suite.ts`
+#### `src/harness/eval/real/run-suite.ts`
 #### `src/validation/run-suite.ts`
 
 - 当前状态：都是单薄 CLI 壳层
@@ -74,14 +74,14 @@
 
 如果继续做结构减法，下一轮默认顺序是：
 
-1. `src/kernel/session-kernel.ts`
-2. `src/runtime/service/runtime-command-handler.ts`
-3. `src/runtime/service/runtime-scoped-session.ts`
+1. `src/harness/core/session/session-kernel.ts`
+2. `src/harness/core/session/runtime-command-handler.ts`
+3. `src/harness/core/session/harness-session.ts`
 
 短期内不应重新把优先级拉回：
 
 - `src/app/bootstrap.ts`
-- `src/interface/tui/app.tsx`
+- `src/surfaces/tui/app.tsx`
 
 因为这两块已经完成一轮有效收口，应先让新边界稳定。
 

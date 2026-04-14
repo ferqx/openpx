@@ -15,7 +15,7 @@ import { createThreadStateProjector } from "../control/context/thread-state-proj
 import type { DerivedThreadView } from "../control/context/thread-compaction-types";
 import { createControlTask } from "../control/tasks/task-types";
 import { prefixedUuid } from "../shared/id-generators";
-import type { SessionControlPlaneResult } from "./session-kernel";
+import type { SessionControlPlaneResult } from "../harness/core/session/session-kernel";
 
 function toControlTask(task: Task) {
   return createControlTask({

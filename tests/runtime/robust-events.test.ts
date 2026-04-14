@@ -1,6 +1,6 @@
 import { describe, expect, test, afterEach } from "bun:test";
 import { createAppContext } from "../../src/app/bootstrap";
-import { RuntimeScopedSession } from "../../src/runtime/service/runtime-scoped-session";
+import { HarnessSession } from "../../src/harness/core/session/harness-session";
 import { createThread } from "../../src/domain/thread";
 import { createTask } from "../../src/domain/task";
 import fs from "node:fs/promises";
@@ -24,7 +24,7 @@ describe("Robust Event Stream", () => {
     const workspaceRoot = testDir;
 
     const runtime = await createAppContext({ dataDir, workspaceRoot, projectId: "robust-events-project" });
-    const session = new RuntimeScopedSession({ workspaceRoot, projectId: "robust-events-project" }, runtime);
+    const session = new HarnessSession({ workspaceRoot, projectId: "robust-events-project" }, runtime);
 
     await session.handleCommand({ kind: "add_task", content: "test task" });
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -46,7 +46,7 @@ describe("Robust Event Stream", () => {
     const dataDir = path.join(testDir, "stream.db");
     const workspaceRoot = testDir;
     const context = await createAppContext({ dataDir, workspaceRoot, projectId: "stream-project" });
-    const session = new RuntimeScopedSession({ workspaceRoot, projectId: "stream-project" }, context);
+    const session = new HarnessSession({ workspaceRoot, projectId: "stream-project" }, context);
 
     const thread = createThread("thread-stream-1", workspaceRoot, "stream-project");
     await context.stores.threadStore.save({ ...thread, status: "active" });

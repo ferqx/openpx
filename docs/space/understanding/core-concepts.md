@@ -53,8 +53,8 @@
 
 - 中文含义：内核边界
 - 主要落点：
-  - `src/kernel/session-kernel.ts`
-  - `src/interface/runtime/remote-kernel.ts`
+  - `src/harness/core/session/session-kernel.ts`
+  - `src/surfaces/tui/runtime/remote-kernel.ts`
 - 它回答的问题：
   “TUI 可以通过什么稳定接口驱动系统？”
 - 主要职责：
@@ -64,8 +64,8 @@
 
 - 中文含义：协议层
 - 主要落点：
-  - `src/runtime/service/protocol/`
-  - `src/interface/runtime/`
+  - `src/harness/protocol/`
+  - `src/surfaces/tui/runtime/`
 - 它回答的问题：
   “runtime 与外部 client/TUI 之间如何交换命令、事件和视图？”
 

@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, test } from "bun:test";
-import { StatusBar } from "../../src/interface/tui/components/status-bar";
-import { theme } from "../../src/interface/tui/theme";
+import { StatusBar } from "../../src/surfaces/tui/components/status-bar";
+import { theme } from "../../src/surfaces/tui/theme";
 
 type ReactNodeLike = React.ReactNode;
 type TextPropsLike = { children?: ReactNodeLike; color?: string; bold?: boolean };

@@ -4,7 +4,7 @@ import {
   buildComposerView,
   buildConversationView,
   buildUtilityView,
-} from "../../src/interface/tui/app-screen-view";
+} from "../../src/surfaces/tui/app-screen-view";
 
 describe("app screen view builders", () => {
   test("builds conversation and utility slices from app state", () => {

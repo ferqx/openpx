@@ -32,6 +32,13 @@
 
 入口： [understanding/index.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/index.md)
 
+当前与 harness-first 代码落位最直接相关的理解文档包括：
+
+- [harness-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-code-map.md)
+- [harness-protocol-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-protocol-code-map.md)
+- [harness-feedback-loop.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-feedback-loop.md)
+- [harness-surface-boundary.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-surface-boundary.md)
+
 ### `execution/`
 
 执行型空间。  

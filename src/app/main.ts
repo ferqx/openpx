@@ -1,14 +1,13 @@
 import React from "react";
 import { render, type Instance } from "ink";
-import { App } from "../interface/tui/app";
+import { App } from "../surfaces/tui";
 import { ensureRuntime } from "../runtime/service/runtime-daemon";
-import { RuntimeClient } from "../interface/runtime/runtime-client";
-import { createRemoteKernel } from "../interface/runtime/remote-kernel";
+import { RuntimeClient, createRemoteKernel } from "../surfaces/tui/runtime";
 import { resolve, join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 
-// 产品主入口：启动或复用共享 runtime daemon，然后通过 remote-kernel
-// 桥接把 Ink TUI 挂到 runtime 上。
+// 产品主入口：启动或复用共享 runtime daemon，然后挂载默认 TUI surface。
+// surface 通过 remote-kernel adapter 消费 harness protocol，而不是成为系统本体。
 type MainInput = {
   workspaceRoot?: string;
   projectId?: string;

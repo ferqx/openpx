@@ -3,7 +3,7 @@ import type { Run } from "../domain/run";
 import type { ApprovalService } from "../control/policy/approval-service";
 import type { ControlTask } from "../control/tasks/task-types";
 import type { ToolExecuteRequest, ToolExecutionOutcome } from "../control/tools/tool-types";
-import type { SessionControlPlaneResult } from "../kernel/session-kernel";
+import type { SessionControlPlaneResult } from "../harness/core/session/session-kernel";
 import type { ResumeControl } from "../runtime/graph/root/resume-control";
 import {
   buildRejectedApprovalReason,

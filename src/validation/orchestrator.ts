@@ -5,11 +5,11 @@ import { findEvalScenario } from "../eval/scenarios";
 import { runScenario } from "../eval/scenario-runner";
 import type { EvalScenarioResult } from "../eval/eval-schema";
 import { SqliteEvalStore } from "../persistence/sqlite/sqlite-eval-store";
-import { findRealEvalScenario } from "../real-eval/scenarios";
-import { runRealSample } from "../real-eval/sample-runner";
-import { evaluateRealTrace } from "../real-eval/evaluation";
-import type { RealTraceEvaluation } from "../real-eval/evaluation";
-import type { RealRunTrace, RealEvalScenarioResult } from "../real-eval/real-eval-schema";
+import { findRealEvalScenario } from "../harness/eval/real/scenarios";
+import { runRealSample } from "../harness/eval/real/sample-runner";
+import { evaluateRealTrace } from "../harness/eval/real/evaluation";
+import type { RealTraceEvaluation } from "../harness/eval/real/evaluation";
+import type { RealRunTrace, RealEvalScenarioResult } from "../harness/eval/real/real-eval-schema";
 import {
   renderValidationEngineeringView,
   renderValidationProductGateView,

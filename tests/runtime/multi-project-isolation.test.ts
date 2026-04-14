@@ -30,7 +30,7 @@ describe("Multi-Project Isolation", () => {
     expect(info1.port).toBe(info2.port);
     expect(info1.pid).toBe(info2.pid);
 
-    const { RuntimeClient } = await import("../../src/interface/runtime/runtime-client");
+    const { RuntimeClient } = await import("../../src/surfaces/tui/runtime/runtime-client");
     const client1 = new RuntimeClient(`http://localhost:${info1.port}`, { workspaceRoot: w1, projectId: "p1" });
     const client2 = new RuntimeClient(`http://localhost:${info2.port}`, { workspaceRoot: w2, projectId: "p2" });
 

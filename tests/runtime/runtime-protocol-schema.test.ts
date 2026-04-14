@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { answerViewSchema } from "../../src/runtime/service/protocol/answer-view";
-import { approvalViewSchema } from "../../src/runtime/service/protocol/approval-view";
-import { protocolVersionSchema } from "../../src/runtime/service/protocol/protocol-version";
-import { runtimeEventSchema } from "../../src/runtime/service/protocol/runtime-event-schema";
-import { runViewSchema } from "../../src/runtime/service/protocol/run-view";
-import { runtimeSnapshotSchema } from "../../src/runtime/service/protocol/runtime-snapshot-schema";
-import { taskViewSchema } from "../../src/runtime/service/protocol/task-view";
-import { threadViewSchema } from "../../src/runtime/service/protocol/thread-view";
-import { workerViewSchema } from "../../src/runtime/service/protocol/worker-view";
+import { answerViewSchema } from "../../src/harness/protocol/views/answer-view";
+import { approvalViewSchema } from "../../src/harness/protocol/views/approval-view";
+import { protocolVersionSchema } from "../../src/harness/protocol/schemas/protocol-version";
+import { runtimeEventSchema } from "../../src/harness/protocol/events/runtime-event-schema";
+import { runViewSchema } from "../../src/harness/protocol/views/run-view";
+import { runtimeSnapshotSchema } from "../../src/harness/protocol/views/runtime-snapshot-schema";
+import { taskViewSchema } from "../../src/harness/protocol/views/task-view";
+import { threadViewSchema } from "../../src/harness/protocol/views/thread-view";
+import { workerViewSchema } from "../../src/harness/protocol/views/worker-view";
 
 function hasZAny(value: unknown): boolean {
   if (value instanceof z.ZodAny) {

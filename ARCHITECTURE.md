@@ -2,6 +2,10 @@
 
 本文档是 OpenPX 的架构导航页。
 
+OpenPX 当前采用 harness-first（以 harness 为先）架构。
+系统本体是共享 harness（共享执行基座，负责运行时内核、thread 生命周期、事件流、审批与恢复边界），
+TUI 只是默认 surface（交互表面），而不是产品主轴本身。
+
 它负责回答三个问题：
 
 1. 系统主轴是什么
@@ -23,22 +27,26 @@
 
 ## 系统主轴
 
-当前从代码和测试可确认的产品主轴是：
+当前从代码和测试可确认的系统主轴是：
 
-`package.json -> src/app/main.ts -> src/runtime/service/runtime-daemon.ts -> src/runtime/service/runtime-service.ts -> src/interface/runtime/runtime-client.ts -> src/interface/runtime/remote-kernel.ts -> src/interface/tui/app.tsx`
+`package.json -> src/app/main.ts -> src/runtime/service/runtime-daemon.ts -> src/harness/server/harness-session-registry.ts -> harness core / protocol / app server -> surfaces`
 
 这条主轴的含义是：
 
 - `main.ts`
-  产品 CLI/TUI 入口
+  产品入口，负责选择并附加默认 surface
 - `runtime-daemon.ts`
-  负责复用或启动共享运行时（runtime，运行时）
-- `runtime-service.ts`
-  负责运行时服务装配与 scope（作用域）级别的执行基座
-- `runtime-client.ts` / `remote-kernel.ts`
-  把运行时状态与命令桥接到 TUI
-- `app.tsx`
-  负责顶层状态连接、输入分发和屏幕组合
+  负责复用或启动共享运行时
+- `harness-session-registry.ts`
+  负责装配 scope（作用域）级 harness session 与执行基座
+- `harness core`
+  负责 thread、run、approval、recovery、projection（投影视图）和 event stream（事件流）
+- `protocol / app server`
+  负责把 harness 暴露为稳定客户端协议
+- `surfaces`
+  负责 TUI、CLI、Web、IDE 等不同交互表面
+
+当前默认 surface 是 TUI，但 TUI 不是系统真相源，也不是架构主轴终点。
 
 ## 主要模块边界
 
@@ -47,11 +55,23 @@
 - `src/app/`
   应用入口与装配根
 - `src/runtime/`
-  运行时、graph（图执行）、协议与会话服务
-- `src/interface/`
-  TUI、runtime client 与远程内核适配
-- `src/kernel/`
-  稳定命令边界与会话投影
+  当前仅保留 daemon 与少量装配支撑；不再作为核心运行时主语
+- `src/harness/`
+  harness core、protocol、app server 与 eval loop 的正式代码落位
+- `src/surfaces/`
+  当前默认 surface（主要是 TUI）及其 adapter、视图与交互壳
+
+### 目标边界（harness-first）
+
+- `harness core`
+  thread / run / approval / recovery / projection / event stream 的真相层
+- `protocol / app server`
+  面向 surface 的稳定契约层
+- `surfaces`
+  TUI、CLI、Web、IDE 等客户端表面
+
+目录层面的 `harness/` / `surfaces/` 收束已成为默认代码边界；
+遗留的 `runtime/` 主要承担 daemon 与少量内部支撑，不再定义系统主轴。
 
 ### 运行时内部支撑
 
@@ -68,8 +88,8 @@
 
 - `src/eval/`
   确定性内部评估工具
-- `src/real-eval/`
-  实时或追踪支持的评估工具
+- `src/harness/eval/`
+  harness feedback loop（反馈闭环），负责 real-eval、review、replay 与 promotion
 - `src/validation/`
   正式验证封装
 
@@ -127,6 +147,13 @@
 4. [docs/space/understanding/core-concepts.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/core-concepts.md)
 5. [docs/space/understanding/state-flows.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/state-flows.md)
 
+### 想理解 harness-first 代码落位
+
+1. [docs/space/understanding/harness-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-code-map.md)
+2. [docs/space/understanding/harness-protocol-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-protocol-code-map.md)
+3. [docs/space/understanding/harness-feedback-loop.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-feedback-loop.md)
+4. [docs/space/understanding/harness-surface-boundary.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-surface-boundary.md)
+
 ### 想开始安全改代码
 
 1. [docs/space/index.md](/Users/chenchao/Code/ai/openpx/docs/space/index.md)
@@ -144,3 +171,4 @@
 - 执行计划正文
 - 大量 generated 内容的托管
 - 重新建立平行控制权威
+- 把 TUI 误写为系统本体

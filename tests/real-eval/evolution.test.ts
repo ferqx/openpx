@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { classifyRealEvalExecution } from "../../src/real-eval/evolution";
-import { realEvalScenarioResultSchema, realRunTraceSchema, type RealRunTrace } from "../../src/real-eval/real-eval-schema";
-import { evaluateRealTrace } from "../../src/real-eval/evaluation";
-import { findRealEvalScenario } from "../../src/real-eval/scenarios";
+import { classifyRealEvalExecution } from "../../src/harness/eval/real/evolution";
+import { realEvalScenarioResultSchema, realRunTraceSchema, type RealRunTrace } from "../../src/harness/eval/real/real-eval-schema";
+import { evaluateRealTrace } from "../../src/harness/eval/real/evaluation";
+import { findRealEvalScenario } from "../../src/harness/eval/real/scenarios";
 
 function createApprovalTrace(overrides?: Partial<RealRunTrace>): RealRunTrace {
   return realRunTraceSchema.parse({

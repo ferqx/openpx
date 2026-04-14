@@ -1,5 +1,5 @@
 import { describe, expect, test, afterEach, mock } from "bun:test";
-import { createRuntimeService } from "../../src/runtime/service/runtime-service";
+import { createHarnessSessionRegistry } from "../../src/harness/server/harness-session-registry";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -20,7 +20,7 @@ describe("Background Tasks", () => {
     const dataDir = path.join(testDir, "test.db");
     const workspaceRoot = testDir;
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot });
     
     const startTime = Date.now();
     await runtime.handleCommand({ 

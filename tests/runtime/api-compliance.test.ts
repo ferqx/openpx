@@ -1,12 +1,16 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test";
-import { RuntimeRouter } from "../../src/runtime/service/runtime-router";
-import { PROTOCOL_VERSION, PROTOCOL_VERSION_HEADER, schemas } from "../../src/runtime/service/runtime-types";
-import type { RuntimeCommand } from "../../src/runtime/service/runtime-types";
-import type { RuntimeService } from "../../src/runtime/service/runtime-service";
+import { HarnessHttpRouter } from "../../src/harness/server/http/runtime-router";
+import { schemas } from "../../src/harness/protocol/schemas/api-schema";
+import {
+  CURRENT_PROTOCOL_VERSION as PROTOCOL_VERSION,
+  PROTOCOL_VERSION_HEADER,
+} from "../../src/harness/protocol/schemas/protocol-version";
+import type { RuntimeCommand } from "../../src/harness/protocol/schemas/api-schema";
+import type { HarnessSessionRegistry } from "../../src/harness/server/harness-session-registry";
 
 describe("Stable Control API Compliance", () => {
-  let runtime: RuntimeService;
-  let router: RuntimeRouter;
+  let runtime: HarnessSessionRegistry;
+  let router: HarnessHttpRouter;
 
   beforeEach(() => {
     runtime = {
@@ -42,8 +46,8 @@ describe("Stable Control API Compliance", () => {
         }
         return gen();
       }),
-    } as unknown as RuntimeService;
-    router = new RuntimeRouter(runtime);
+    } as unknown as HarnessSessionRegistry;
+    router = new HarnessHttpRouter(runtime);
   });
 
   test("GET /v1/health matches healthResponseSchema", async () => {

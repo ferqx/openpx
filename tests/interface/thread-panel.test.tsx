@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { ThreadPanel } from "../../src/interface/tui/components/thread-panel";
+import { ThreadPanel } from "../../src/surfaces/tui/components/thread-panel";
 
 describe("ThreadPanel", () => {
   test("renders active and blocked threads with their durable summaries", () => {

@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { Screen } from "../../src/interface/tui/screen";
+import { Screen } from "../../src/surfaces/tui/screen";
 
 describe("Screen", () => {
   test("renders the redesigned welcome state without legacy shell chrome", () => {

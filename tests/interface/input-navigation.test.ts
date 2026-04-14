@@ -4,7 +4,7 @@ import {
   resolveSessionsPaneAction,
   resolveStreamScrollDelta,
   type InputKeyState,
-} from "../../src/interface/tui/input-navigation";
+} from "../../src/surfaces/tui/input-navigation";
 
 const baseKeyState: InputKeyState = {
   downArrow: false,
