@@ -1,4 +1,3 @@
-import type { CompiledStateGraph } from "@langchain/langgraph";
 import type { StreamEvent as LangGraphStreamEvent } from "@langchain/core/tracers/log_stream";
 import type { StreamEvent } from "../../domain/stream-events";
 import { ulid } from "ulid";
@@ -6,8 +5,17 @@ import { ulid } from "ulid";
 const TEXT_CHUNK_TIME_MS = 100;
 const TEXT_CHUNK_SIZE = 200;
 
+/** 当前适配器真正依赖的最小图接口：只要求能暴露 LangGraph streamEvents */
+type StreamEventSourceGraph = {
+  streamEvents(
+    graphInput: Record<string, unknown>,
+    config: Record<string, unknown>,
+  ): AsyncIterable<LangGraphStreamEvent>;
+};
+
+/** 流式事件适配器输入：把 LangGraph 事件流翻译成 OpenPX StreamEvent */
 export interface StreamEventAdapterInput {
-  graph: any;
+  graph: StreamEventSourceGraph;
   graphInput: Record<string, unknown>;
   config: Record<string, unknown>;
   threadId: string;
@@ -15,6 +23,7 @@ export interface StreamEventAdapterInput {
   turnId: string;
 }
 
+/** 适配 LangGraph streamEvents：统一转成 thinking/text/tool/done 事件 */
 export async function* streamEventsAdapter(input: StreamEventAdapterInput): AsyncGenerator<StreamEvent, StreamEvent, void> {
   const { graph, graphInput, config, threadId, taskId, turnId } = input;
   let seq = 0;
@@ -24,6 +33,7 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
   let accumulatedText = "";
   let modelName = "unknown";
 
+  /** 创建通用事件头 */
   function makeBase(): Omit<StreamEvent, "type" | "payload"> {
     return {
       eventId: ulid(),
@@ -35,11 +45,13 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
     };
   }
 
+  /** 是否应当把已积累文本切成一个 chunk 发出 */
   function shouldEmitText(): boolean {
     const elapsed = Date.now() - lastEmitTime;
     return elapsed >= TEXT_CHUNK_TIME_MS || textBuffer.length >= TEXT_CHUNK_SIZE;
   }
 
+  /** 发出当前缓冲文本，并推进 chunk 索引 */
   function emitBufferedText(): StreamEvent | null {
     if (!textBuffer) return null;
     const content = textBuffer;
@@ -52,10 +64,16 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
     };
   }
 
+  function appendChunkContent(event: StreamEvent | null): void {
+    if (event?.type === "stream.text_chunk") {
+      accumulatedText += event.payload.content;
+    }
+  }
+
   const stream = graph.streamEvents(graphInput, {
     ...config,
     version: "v2",
-  } as any);
+  });
 
   for await (const event of stream as AsyncIterable<LangGraphStreamEvent>) {
     const { event: eventType, data, name } = event;
@@ -86,7 +104,10 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
           }
           if (shouldEmitText()) {
             const textEvent = emitBufferedText();
-            if (textEvent) yield textEvent;
+            if (textEvent) {
+              appendChunkContent(textEvent);
+              yield textEvent;
+            }
           }
         }
         break;
@@ -94,7 +115,10 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
 
       case "on_chat_model_end": {
         const textEvent = emitBufferedText();
-        if (textEvent) yield textEvent;
+        if (textEvent) {
+          appendChunkContent(textEvent);
+          yield textEvent;
+        }
         break;
       }
 
@@ -135,8 +159,10 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
   }
 
   const finalTextEvent = emitBufferedText();
-  if (finalTextEvent) yield finalTextEvent;
-  accumulatedText += textBuffer;
+  if (finalTextEvent) {
+    appendChunkContent(finalTextEvent);
+    yield finalTextEvent;
+  }
 
   const doneEvent: StreamEvent = {
     ...makeBase(),

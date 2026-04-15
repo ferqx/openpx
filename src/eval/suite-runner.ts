@@ -15,6 +15,7 @@ import { runScenarioSuite } from "./scenario-runner";
 import { CORE_EVAL_SUITE_ID, findEvalScenario, getEvalSuiteScenarios } from "./scenarios";
 import { SqliteEvalStore } from "../persistence/sqlite/sqlite-eval-store";
 
+/** 运行 eval suite 的选项 */
 type RunEvalSuiteOptions = {
   suiteId?: string;
   scenarios?: EvalScenario[];
@@ -25,11 +26,13 @@ type RunEvalSuiteOptions = {
   updateBaseline?: boolean;
 };
 
+/** eval CLI 的 IO 接口 */
 type EvalCommandIo = {
   stdout: { write(chunk: string): void };
   stderr: { write(chunk: string): void };
 };
 
+/** eval 命令 JSON 输出负载 */
 type EvalSuiteCommandPayload = {
   summary: EvalSuiteExecutionSummary;
   suiteRun: {
@@ -43,6 +46,7 @@ type EvalSuiteCommandPayload = {
   reviewItems: Awaited<ReturnType<SqliteEvalStore["listReviewItems"]>>;
 };
 
+/** 根据场景状态和 baseline 对比结果推导 suite 总状态与退出码 */
 function deriveOverallStatus(input: {
   scenarioStatuses: Array<"passed" | "failed" | "suspicious">;
   baselineStatuses: Array<"matched" | "missing" | "regressed" | "updated">;
@@ -61,10 +65,12 @@ function deriveOverallStatus(input: {
   return { status: "passed", exitCode: 0 };
 }
 
+/** 默认运行根目录：落在临时目录下 */
 function getDefaultRunRoot(): string {
   return path.join(os.tmpdir(), `openpx-eval-${Date.now()}`);
 }
 
+/** 解析要运行的场景集合 */
 function resolveScenarios(input: { suiteId: string; scenarios?: EvalScenario[]; scenarioId?: string }): EvalScenario[] {
   const scenarios = input.scenarios ?? getEvalSuiteScenarios(input.suiteId);
   if (!input.scenarioId) {

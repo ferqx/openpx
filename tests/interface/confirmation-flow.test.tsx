@@ -1,9 +1,9 @@
 import React from "react";
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { App } from "../../src/interface/tui/app";
-import type { TuiKernel } from "../../src/interface/tui/hooks/use-kernel";
-import type { ApprovalCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../../src/interface/tui/commands";
+import { App } from "../../src/surfaces/tui/app";
+import type { TuiKernel } from "../../src/surfaces/tui/hooks/use-kernel";
+import type { ApprovalCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../../src/surfaces/tui/commands";
 
 describe("Confirmation Flow", () => {
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));

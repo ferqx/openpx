@@ -1,6 +1,7 @@
 import { domainError } from "../../../shared/errors";
 import type { ToolExecutor } from "../tool-types";
 
+/** exec 执行器：运行本地命令并返回 stdout/stderr/exitCode */
 export const execExecutor: ToolExecutor = async ({ args, command, commandArgs, cwd, timeoutMs }) => {
   const resolvedCommand = command ?? (typeof args.command === "string" ? args.command : undefined);
   const resolvedArgs = commandArgs ?? (Array.isArray(args.args) ? args.args.filter((value): value is string => typeof value === "string") : []);
@@ -16,6 +17,7 @@ export const execExecutor: ToolExecutor = async ({ args, command, commandArgs, c
   });
 
   if (typeof timeoutMs === "number" && timeoutMs > 0) {
+    // 超时后直接 kill 进程；调用方通过 ok/exitCode/stderr 感知失败。
     const timer = setTimeout(() => proc.kill(), timeoutMs);
     try {
       const [stdout, stderr, exitCode] = await Promise.all([

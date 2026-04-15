@@ -1,10 +1,12 @@
 import { z } from "zod";
 
+/** 单个变更文件的验证摘要 */
 export const verificationChangedFileSchema = z.object({
   path: z.string().min(1),
   summary: z.string().min(1),
 });
 
+/** VerificationPacket：verifier 输入包，汇总验收标准、变更文件和构建证据 */
 export const verificationPacketSchema = z.object({
   acceptanceCriteria: z.array(z.string().min(1)),
   changedFiles: z.array(verificationChangedFileSchema),

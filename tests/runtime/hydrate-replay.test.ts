@@ -1,7 +1,7 @@
 import { describe, expect, test, afterEach } from "bun:test";
-import { createRuntimeService } from "../../src/runtime/service/runtime-service";
-import { createHttpServer } from "../../src/runtime/service/runtime-http-server";
-import { RuntimeClient } from "../../src/interface/runtime/runtime-client";
+import { createHarnessSessionRegistry } from "../../src/harness/server/harness-session-registry";
+import { createHttpServer } from "../../src/harness/server/http/runtime-http-server";
+import { RuntimeClient } from "../../src/surfaces/tui/runtime/runtime-client";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -22,7 +22,7 @@ describe("Hydrate and Replay", () => {
     const dataDir = path.join(testDir, "test.db");
     const workspaceRoot = testDir;
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot });
     const server = createHttpServer(runtime);
 
     try {
@@ -58,7 +58,7 @@ describe("Hydrate and Replay", () => {
     const dataDir = path.join(testDir, "test.db");
     const workspaceRoot = testDir;
 
-    const runtime1 = await createRuntimeService({ dataDir, workspaceRoot });
+    const runtime1 = await createHarnessSessionRegistry({ dataDir, workspaceRoot });
     const server1 = createHttpServer(runtime1);
 
     let lastSeq = 0;
@@ -73,7 +73,7 @@ describe("Hydrate and Replay", () => {
       server1.stop();
     }
 
-    const runtime2 = await createRuntimeService({ dataDir, workspaceRoot });
+    const runtime2 = await createHarnessSessionRegistry({ dataDir, workspaceRoot });
     const server2 = createHttpServer(runtime2);
 
     try {

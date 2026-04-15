@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getSlashCommandSuggestions, parseCommand } from "../../src/interface/tui/commands";
+import { getSlashCommandSuggestions, parseCommand } from "../../src/surfaces/tui/commands";
 
 describe("TUI commands", () => {
   test("parses the v1 slash command surface", () => {

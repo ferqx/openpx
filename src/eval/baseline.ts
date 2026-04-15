@@ -15,6 +15,7 @@ import {
   type EvalSuiteExecutionSummary,
 } from "./eval-schema";
 
+/** baseline 加载选项：按 suite 或单场景读取基线 */
 type LoadEvalBaselineOptions = {
   baselineRootDir: string;
   suiteId: string;
@@ -22,10 +23,12 @@ type LoadEvalBaselineOptions = {
   scenarioVersion?: number;
 };
 
+/** baseline 加载结果：可能是一条场景基线，也可能是一整套 suite 基线 */
 type LoadEvalBaselineResult =
   | { kind: "scenario"; baseline: EvalScenarioBaseline }
   | { kind: "suite"; baselines: EvalScenarioBaseline[] };
 
+/** 计算单场景基线文件路径 */
 function getScenarioBaselinePath(input: {
   baselineRootDir: string;
   suiteId: string;
@@ -40,6 +43,7 @@ function getScenarioBaselinePath(input: {
   );
 }
 
+/** 交换 record 的 key/value，用于把运行时 ID 映射回稳定 alias */
 function invertRecord(input: Record<string, string>): Record<string, string> {
   const inverted: Record<string, string> = {};
   for (const [key, value] of Object.entries(input)) {
@@ -48,10 +52,12 @@ function invertRecord(input: Record<string, string>): Record<string, string> {
   return inverted;
 }
 
+/** 稳定排序字符串数组 */
 function stableSort(values: string[]): string[] {
   return [...values].sort((left, right) => left.localeCompare(right));
 }
 
+/** 清洗 comparable：抹平运行时 ID，保留稳定 alias */
 function sanitizeComparable(comparable: EvalComparableRun): EvalComparableRun {
   return evalComparableRunSchema.parse({
     ...comparable,
@@ -65,6 +71,7 @@ function sanitizeComparable(comparable: EvalComparableRun): EvalComparableRun {
   });
 }
 
+/** 清洗规则结果中的对象引用，统一映射到稳定 alias */
 function sanitizeResults(results: EvalResult[], comparable: EvalComparableRun): EvalResult[] {
   const runAliases = invertRecord(comparable.runtimeRefs.runs);
   const taskAliases = invertRecord(comparable.runtimeRefs.tasks);

@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 
+/** 统一执行 sqlite schema 迁移与列补齐 */
 export function migrateSqlite(db: Database): void {
   db.run("PRAGMA journal_mode = WAL");
   db.run("PRAGMA foreign_keys = ON");
@@ -210,6 +211,7 @@ export function migrateSqlite(db: Database): void {
   db.run("CREATE INDEX IF NOT EXISTS idx_eval_review_queue_triage_status ON eval_review_queue (triage_status)");
 }
 
+/** 确保指定表存在某列；缺失时执行 ALTER TABLE 补齐 */
 function ensureColumn(db: Database, tableName: string, columnName: string, columnDefinition: string): void {
   const columns = db
     .query<{ name: string }, []>(`PRAGMA table_info(${tableName})`)
@@ -221,6 +223,7 @@ function ensureColumn(db: Database, tableName: string, columnName: string, colum
   }
 }
 
+/** 把旧的 status 列数据迁移到新的 triage_status 列 */
 function migrateLegacyEvalReviewQueueStatus(db: Database): void {
   const columns = db
     .query<{ name: string }, []>("PRAGMA table_info(eval_review_queue)")

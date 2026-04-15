@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildDisplayMessages, deriveMessagesFromSession, mergeThreadViewIntoSession } from "../../src/interface/tui/session-sync";
+import { buildDisplayMessages, deriveMessagesFromSession, mergeThreadViewIntoSession } from "../../src/surfaces/tui/session-sync";
 
 describe("session-sync", () => {
   test("derives assistant display from summary when transcript arrays are absent", () => {

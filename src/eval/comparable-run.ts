@@ -1,3 +1,4 @@
+import { isAbsolute, relative } from "node:path";
 import type { ApprovalRequest } from "../domain/approval";
 import type { Event } from "../domain/event";
 import type { Run } from "../domain/run";
@@ -6,6 +7,7 @@ import type { Thread } from "../domain/thread";
 import type { ExecutionLedgerEntry } from "../persistence/ports/execution-ledger-port";
 import { evalComparableRunSchema, type EvalComparableRun } from "./eval-schema";
 
+/** comparable run 归一化输入：从 thread/run/task/approval/event/ledger 拼装 */
 type NormalizeComparableRunInput = {
   thread: Thread;
   runs: Run[];
@@ -15,6 +17,7 @@ type NormalizeComparableRunInput = {
   ledgerEntries: ExecutionLedgerEntry[];
 };
 
+/** 强制要求某个 ID 已被映射成稳定 alias */
 function requireAlias(map: Map<string, string>, id: string, kind: string): string {
   const alias = map.get(id);
   if (!alias) {
@@ -23,19 +26,55 @@ function requireAlias(map: Map<string, string>, id: string, kind: string): strin
   return alias;
 }
 
+/** 把绝对 workspace 路径替换成稳定占位符 */
 function normalizeWorkspacePath(text: string | undefined, workspaceRoot: string): string | undefined {
   if (!text) {
     return undefined;
   }
 
   const normalizedRoot = workspaceRoot.replace(/\\/g, "/");
-  return text.replaceAll(normalizedRoot, "<workspace>");
+  const normalizedText = text.replace(/\\/g, "/");
+  return normalizedText.replaceAll(normalizedRoot, "<workspace>");
 }
 
+/** 优先把绝对路径折叠成 workspace 相对路径，再做剩余的稳定化处理。 */
+function normalizeWorkspaceRelativePath(pathValue: string | undefined, workspaceRoot: string): string | undefined {
+  if (!pathValue) {
+    return undefined;
+  }
+
+  const normalizedValue = pathValue.replace(/\\/g, "/");
+  if (!isAbsolute(pathValue)) {
+    return normalizedValue;
+  }
+
+  const relativePath = relative(workspaceRoot, pathValue).replace(/\\/g, "/");
+  if (relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath)) {
+    return relativePath;
+  }
+
+  return normalizeWorkspacePath(pathValue, workspaceRoot);
+}
+
+/** 审批摘要中的 delete_file 路径需要稳定成 workspace 相对路径。 */
+function normalizeApprovalSummary(summary: string, workspaceRoot: string): string {
+  const legacyDeleteMatch = summary.match(/^(apply_patch delete_file)\s+(.+)$/);
+  if (!legacyDeleteMatch) {
+    return normalizeWorkspacePath(summary, workspaceRoot) ?? summary;
+  }
+
+  const prefix = legacyDeleteMatch[1] ?? "apply_patch delete_file";
+  const rawPath = legacyDeleteMatch[2]?.trim();
+  const normalizedPath = normalizeWorkspaceRelativePath(rawPath, workspaceRoot);
+  return normalizedPath ? `${prefix} ${normalizedPath}` : prefix;
+}
+
+/** 为一组运行时 ID 生成稳定 alias */
 function createAliasMap(values: readonly string[], prefix: string): Map<string, string> {
   return new Map(values.map((value, index) => [value, `${prefix}_${index + 1}`]));
 }
 
+/** 只保留允许进入 comparable 的 blocking kind */
 function getBlockingKind(input?: { kind: string } | undefined): "waiting_approval" | "human_recovery" | "environment_block" | undefined {
   if (!input) {
     return undefined;
@@ -46,6 +85,7 @@ function getBlockingKind(input?: { kind: string } | undefined): "waiting_approva
   return undefined;
 }
 
+/** 找出重复 alias，便于在 comparable 中暴露异常 */
 function getDuplicateAliases(values: readonly string[]): string[] {
   const counts = new Map<string, number>();
   values.forEach((value) => {
@@ -57,6 +97,7 @@ function getDuplicateAliases(values: readonly string[]): string[] {
     .sort();
 }
 
+/** 判断输入是否属于 capability reject 后的 replan 文本 */
 function isCapabilityReplanInput(value: string | undefined): boolean {
   if (!value) {
     return false;
@@ -69,6 +110,7 @@ function isCapabilityReplanInput(value: string | undefined): boolean {
     );
 }
 
+/** 归一化一次真实执行，生成可与 baseline 对比的稳定 comparable 结构 */
 export function normalizeComparableRun(input: NormalizeComparableRunInput): EvalComparableRun {
   const runAliasMap = createAliasMap(input.runs.map((run) => run.runId), "run");
   const taskAliasMap = createAliasMap(input.tasks.map((task) => task.taskId), "task");
@@ -148,7 +190,7 @@ export function normalizeComparableRun(input: NormalizeComparableRunInput): Eval
         runAlias: requireAlias(runAliasMap, approval.runId, "run"),
         taskAlias: requireAlias(taskAliasMap, approval.taskId, "task"),
         status: approval.status,
-        summary: normalizeWorkspacePath(approval.summary, input.thread.workspaceRoot),
+        summary: normalizeApprovalSummary(approval.summary, input.thread.workspaceRoot),
         toolName: approval.toolRequest.toolName,
         action: approval.toolRequest.action,
       })),

@@ -1,8 +1,9 @@
 import type { Database } from "bun:sqlite";
 import type { ExecutionLedgerEntry, ExecutionLedgerPort, ExecutionStatus } from "../ports/execution-ledger-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** execution_ledger 表行结构 */
 type LedgerRow = {
   execution_id: string;
   thread_id: string;
@@ -18,6 +19,7 @@ type LedgerRow = {
   updated_at: string;
 };
 
+/** SQLite 执行账本：记录 effectful tool 的执行轨迹与 crash recovery 线索 */
 export class SqliteExecutionLedger implements ExecutionLedgerPort {
   private readonly db: Database;
   private readonly owned: boolean;
@@ -82,7 +84,7 @@ export class SqliteExecutionLedger implements ExecutionLedgerPort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

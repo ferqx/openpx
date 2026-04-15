@@ -1,0 +1,41 @@
+{
+  "id": "openpx-deterministic",
+  "summary": "OpenPX deterministic approval validation",
+  "taskPrompt": "Run the deterministic approval validation path and verify the approval flow stays stable.",
+  "repoSource": {
+    "repoId": "openpx",
+    "snapshot": "workspace",
+    "localPath": "."
+  },
+  "sandboxPolicy": {
+    "permissionMode": "guarded",
+    "availablePermissionModes": ["guarded", "full_access"],
+    "networkMode": "off",
+    "writableRoots": ["workspace"],
+    "allowedCommandClasses": ["read", "test"],
+    "escalationCommandClasses": ["destructive_shell"],
+    "destructiveActionPolicy": "ask"
+  },
+  "taskFamily": {
+    "primary": "approval_control",
+    "secondary": ["code_change"]
+  },
+  "scoringProfile": {
+    "outcomeWeight": 0.4,
+    "trajectoryWeight": 0.3,
+    "controlWeight": 0.3
+  },
+  "backend": {
+    "kind": "deterministic_eval",
+    "suiteId": "core-eval-suite",
+    "scenarioId": "approval-required-then-approved"
+  },
+  "acceptanceChecks": [
+    {
+      "id": "package-json-exists",
+      "kind": "file_exists",
+      "path": "package.json"
+    }
+  ],
+  "suites": ["engineering", "release_gate"]
+}

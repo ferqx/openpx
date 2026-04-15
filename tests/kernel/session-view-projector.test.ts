@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createThread } from "../../src/domain/thread";
 import { createRun, transitionRun } from "../../src/domain/run";
-import { buildStableSessionArtifacts, deriveProjectedExecutionStatus, projectSessionResult } from "../../src/kernel/session-view-projector";
+import { buildStableSessionArtifacts, deriveProjectedExecutionStatus, projectSessionResult } from "../../src/harness/core/projection/session-view-projector";
 
 describe("projectSessionResult", () => {
   test("builds a stable session view from thread and summary data", async () => {

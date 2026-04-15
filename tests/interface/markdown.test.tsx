@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { Markdown } from "../../src/interface/tui/components/markdown";
+import { Markdown } from "../../src/surfaces/tui/components/markdown";
 
 describe("Markdown", () => {
   test("renders common markdown syntax without leaving underscore markers behind", () => {

@@ -2,6 +2,7 @@ import { interrupt } from "@langchain/langgraph";
 import type { PendingApprovalState, RootMode, RootRoute } from "../context";
 import type { ResumeControl } from "../resume-control";
 
+/** approval-gate：若尚未收到结构化审批决议，则主动 interrupt 等待人类输入 */
 export function approvalGateNode(state: {
   input?: string;
   mode: RootMode;
@@ -32,6 +33,7 @@ export function approvalGateNode(state: {
 
   if (resolution && typeof resolution !== "string" && resolution.kind === "approval_resolution") {
     if (resolution.decision === "approved") {
+      // 批准后直接回 executor，继续当前 work package。
       return {
         approved: true,
         currentWorkPackageId: state.currentWorkPackageId,
@@ -42,6 +44,7 @@ export function approvalGateNode(state: {
       };
     }
 
+    // 拒绝后回 planner，并把原因带回去让 planner 重新选路径。
     return {
       approved: false,
       input: resolution.reason ?? state.input,
@@ -53,6 +56,7 @@ export function approvalGateNode(state: {
   }
 
   return {
+    // interrupt 返回的 resumeValue 交给上层持久化，等待下一轮恢复。
     resumeValue: resolution as string | ResumeControl,
   };
 }

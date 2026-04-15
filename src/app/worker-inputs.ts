@@ -4,6 +4,7 @@ import type { WorkPackage } from "../runtime/planning/work-package";
 import type { ToolExecuteRequest } from "../control/tools/tool-types";
 import { isAbsolute, relative } from "node:path";
 
+/** worker 输入构建选项：围绕当前 work package、artifact 与 planner 输出裁剪上下文 */
 type WorkerInputOptions = {
   input: string;
   currentWorkPackage?: WorkPackage;
@@ -11,12 +12,14 @@ type WorkerInputOptions = {
   plannerResult?: PlannerResult;
 };
 
+/** 执行产物构建选项：用于把执行结果折叠成 artifact 记录 */
 type ExecutionArtifactOptions = {
   summary: string;
   currentWorkPackage?: WorkPackage;
   changedPath?: string;
 };
 
+/** 构造 executor 输入：优先让执行 worker 聚焦当前 work package objective */
 export function buildExecutionInput(options: WorkerInputOptions): string {
   const rawInput = options.input.trim();
   const objective = options.currentWorkPackage?.objective.trim();
@@ -26,12 +29,15 @@ export function buildExecutionInput(options: WorkerInputOptions): string {
 
   const feedbackIndex = rawInput.indexOf("Verification failed:");
   if (feedbackIndex >= 0) {
+    // verifier 失败后的重试需要保留失败反馈，
+    // 否则 executor 无法知道本轮修复目标。
     return `${objective}\n\n${rawInput.slice(feedbackIndex)}`.trim();
   }
 
   return objective;
 }
 
+/** 构造 verifier 提示词：把目标、产物、范围和验收标准压成稳定结构 */
 export function buildVerifierPrompt(options: WorkerInputOptions): string {
   const rawInput = options.input.trim();
   const objective = options.currentWorkPackage?.objective.trim();
@@ -62,6 +68,7 @@ export function buildVerifierPrompt(options: WorkerInputOptions): string {
   return sections.join("\n\n");
 }
 
+/** 根据当前 work package 生成最小 artifact 记录 */
 export function buildExecutionArtifacts(options: ExecutionArtifactOptions): ArtifactRecord[] {
   const currentWorkPackage = options.currentWorkPackage;
   if (!currentWorkPackage) {
@@ -77,6 +84,7 @@ export function buildExecutionArtifacts(options: ExecutionArtifactOptions): Arti
     ? kindCandidate
     : "summary";
 
+  // 优先沿用 planner 期望的 artifact 引用名，方便后续 verifier / phase-commit 对齐。
   return [
     {
       ref: expectedRef,
@@ -87,6 +95,7 @@ export function buildExecutionArtifacts(options: ExecutionArtifactOptions): Arti
   ];
 }
 
+/** 为“审批通过后直接执行的工具调用”构造 patch artifact */
 export function buildApprovedExecutionArtifacts(input: {
   workspaceRoot: string;
   toolRequest: ToolExecuteRequest;
@@ -106,6 +115,7 @@ export function buildApprovedExecutionArtifacts(input: {
     ? `patch:${relativePath}`
     : currentWorkPackage.expectedArtifacts[0] ?? `summary:${currentWorkPackage.id}`;
 
+  // 审批执行路径通常对应真实文件改动，因此这里默认归类为 patch。
   return [
     {
       ref,

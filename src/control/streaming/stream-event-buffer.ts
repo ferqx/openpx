@@ -4,6 +4,7 @@ const MAX_EVENTS_PER_TURN = 500;
 const MAX_TURNS = 50;
 const CLEANUP_DELAY_MS = 5 * 60 * 1000;
 
+/** 简单环形缓冲：保留最近 N 条流式事件 */
 class RingBuffer<T> {
   private items: T[] = [];
   private maxSize: number;
@@ -28,6 +29,7 @@ class RingBuffer<T> {
   }
 }
 
+/** 每个 turn 的流式事件缓存条目 */
 type TurnEntry = {
   buffer: RingBuffer<StreamEvent>;
   lastActiveAt: number;
@@ -35,6 +37,7 @@ type TurnEntry = {
   doneAt?: number;
 };
 
+/** 流式事件缓冲：支持按 turn 恢复，也支持跨 turn 续流 */
 export class StreamEventBuffer {
   private turns = new Map<string, TurnEntry>();
   private globalSeq = 0;
@@ -56,6 +59,7 @@ export class StreamEventBuffer {
     entry.lastActiveAt = Date.now();
 
     if (event.type === "stream.done") {
+      // done 后保留短暂恢复窗口，随后异步清理。
       entry.isDone = true;
       entry.doneAt = Date.now();
       this.scheduleCleanup(event.turnId);
@@ -80,6 +84,7 @@ export class StreamEventBuffer {
     this.turns.delete(turnId);
   }
 
+  /** turn 数量过多时，优先淘汰最早完成的 turn */
   private evictIfNeeded(): void {
     if (this.turns.size < MAX_TURNS) return;
 
@@ -95,6 +100,7 @@ export class StreamEventBuffer {
     }
   }
 
+  /** 延迟清理已完成 turn，给客户端留出重连恢复窗口 */
   private scheduleCleanup(turnId: string): void {
     setTimeout(() => {
       const entry = this.turns.get(turnId);

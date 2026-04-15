@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { SqliteEvalStore } from "../../src/persistence/sqlite/sqlite-eval-store";
-import { createRealReviewQueueItems, listPersistedRealReviewItems, persistRealReviewQueueItems } from "../../src/real-eval/review-queue";
-import { evaluateRealTrace } from "../../src/real-eval/evaluation";
-import { realRunTraceSchema } from "../../src/real-eval/real-eval-schema";
+import { createRealReviewQueueItems, listPersistedRealReviewItems, persistRealReviewQueueItems } from "../../src/harness/eval/real/review-queue";
+import { evaluateRealTrace } from "../../src/harness/eval/real/evaluation";
+import { realRunTraceSchema } from "../../src/harness/eval/real/real-eval-schema";
 import type { EvalStorePort, EvalReviewQueueRecord } from "../../src/persistence/ports/eval-store-port";
 
 const reviewTrace = realRunTraceSchema.parse({

@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { Composer } from "../../src/interface/tui/components/composer";
+import { Composer } from "../../src/surfaces/tui/components/composer";
 
 describe("Composer", () => {
   test("renders as a flat input bar instead of a bordered card", async () => {

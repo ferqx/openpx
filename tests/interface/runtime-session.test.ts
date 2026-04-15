@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deriveRuntimeSession, formatThreadListSummary } from "../../src/interface/runtime/runtime-session";
+import { deriveRuntimeSession, formatThreadListSummary } from "../../src/surfaces/tui/runtime/runtime-session";
 
 describe("Runtime session contract", () => {
   test("derives a stable blocked session view from snapshot data", () => {

@@ -4,6 +4,7 @@ import type { WorkPackage } from "../../../planning/work-package";
 import type { ArtifactRecord } from "../../../artifacts/artifact-index";
 import { routeNext } from "../root-routing-policy";
 
+/** route 节点：把 verifier 反馈、审批推荐和 work package 路由统一折成 mode/route */
 export function routeNode(state: { 
   input: string; 
   workPackages?: WorkPackage[];
@@ -26,6 +27,7 @@ export function routeNode(state: {
   const input = state.input.toLowerCase().trim();
 
   if (state.verifierPassed === false) {
+    // verifier 失败时，把反馈拼回输入，强制回 executor 修复。
     return {
       mode: "execute",
       route: "executor",
@@ -61,6 +63,7 @@ export function routeNode(state: {
   const recommendationEngine = createRecommendationEngine();
   const recommendation = recommendationEngine.evaluate(state.input);
   if (recommendation.recommendTeam) {
+    // recommendation engine 命中高风险团队协作建议时，先走审批确认。
     return {
       mode: "waiting_approval",
       route: "approval",

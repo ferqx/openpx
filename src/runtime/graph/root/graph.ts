@@ -12,6 +12,7 @@ import type { ResumeControl } from "./resume-control";
 import type { WorkPackage } from "../../planning/work-package";
 import type { ArtifactRecord } from "../../artifacts/artifact-index";
 
+/** 解析当前 work package；未显式指定时回退到第一个待办包 */
 function resolveCurrentWorkPackage(state: {
   workPackages?: WorkPackage[];
   currentWorkPackageId?: string;
@@ -21,6 +22,7 @@ function resolveCurrentWorkPackage(state: {
   return workPackages.find((item) => item.id === currentWorkPackageId);
 }
 
+/** 只收集当前 work package 的 artifact，避免前一包的结果污染当前验证 */
 function resolveArtifactsForCurrentWorkPackage(state: {
   currentWorkPackageId?: string;
   artifacts?: ArtifactRecord[];
@@ -36,6 +38,7 @@ function resolveArtifactsForCurrentWorkPackage(state: {
   );
 }
 
+/** 创建根图：把 intake -> route -> planner/executor/verifier/approval/commit 串成主循环 */
 export async function createRootGraph(context: RootGraphContext) {
   const plannerGraph = await createPlannerWorkerGraph(context.planner);
   const verifierGraph = await createVerifierWorkerGraph(context.verifier);
@@ -47,6 +50,8 @@ export async function createRootGraph(context: RootGraphContext) {
       
       let input = state.input;
       let nextResumeValue: string | ResumeControl | undefined;
+      // 纯字符串 resumeValue 主要来自 interrupt 后的人类文本输入；
+      // 若只是 yes/approve 之类确认词，不覆盖原始 input。
       if (typeof state.resumeValue === "string") {
         const resumeText = state.resumeValue.toLowerCase();
         const isConfirmation = /\b(yes|ok|approve|confirm|start|proceed)\b/.test(resumeText);
@@ -56,6 +61,7 @@ export async function createRootGraph(context: RootGraphContext) {
       } else if (state.resumeValue) {
         nextResumeValue = state.resumeValue;
         const resumeControl = state.resumeValue as ResumeControl;
+        // 对拒绝审批路径，把 rejection reason 作为新一轮 planner 输入。
         if (resumeControl.kind === "approval_resolution" && resumeControl.decision === "rejected" && resumeControl.reason) {
           input = resumeControl.reason;
         }
@@ -66,6 +72,7 @@ export async function createRootGraph(context: RootGraphContext) {
       return {
         input: normalizedInput.goal,
         resumeValue: nextResumeValue,
+        // 如有持久化 thread view，则把压缩后的恢复状态重新注入根图。
         ...(view ? {
           recoveryFacts: view.recoveryFacts,
           narrativeState: view.narrativeState,
@@ -83,6 +90,7 @@ export async function createRootGraph(context: RootGraphContext) {
       if (!context.responder) {
         return { summary: state.input, mode: "done" };
       }
+      // responder 是可选分支；缺失时直接把输入作为最终摘要返回。
       const result = await context.responder({
         input: state.input,
         threadId: config.configurable?.thread_id as string | undefined,
@@ -109,6 +117,7 @@ export async function createRootGraph(context: RootGraphContext) {
     })
     .addNode("verifier", async (state, config) => {
       const currentWorkPackage = resolveCurrentWorkPackage(state);
+      // verifier 只看当前包的 artifact，避免跨包验证串味。
       const result = await verifierGraph.invoke(
         {
           input: state.input,
@@ -152,6 +161,7 @@ export async function createRootGraph(context: RootGraphContext) {
     .addEdge(START, "intake")
     .addEdge("intake", "router")
     .addConditionalEdges("router", (state) => {
+      // router 只做模式分流，不在这里修改业务数据。
       switch (state.mode) {
         case "plan":
           return "planner";
@@ -168,6 +178,7 @@ export async function createRootGraph(context: RootGraphContext) {
       }
     })
     .addConditionalEdges("planner", (state) => {
+      // planner 只要产出了 work packages，就回到 router 让后续继续推进。
       if ((state.workPackages?.length ?? 0) > 0) {
         return "router";
       }
@@ -185,12 +196,14 @@ export async function createRootGraph(context: RootGraphContext) {
       }
     })
     .addConditionalEdges("verifier", (state) => {
+      // verifier 失败时回 router，由 routeNode 负责把失败反馈改写进下一轮执行输入。
       if (state.verifierPassed === false) {
         return "router";
       }
       return "phase-commit";
     })
     .addConditionalEdges("phase-commit", (state) => {
+      // 还有剩余包就继续 execute；全部提交完成则结束本轮。
       if (state.mode === "execute") {
         return "executor";
       }

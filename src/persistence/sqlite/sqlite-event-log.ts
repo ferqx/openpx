@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
 import type { Event } from "../../domain/event";
 import type { EventLogPort } from "../ports/event-log-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** events 表行结构：sequence 由 sqlite 自增生成，payload 走 JSON 列 */
 type EventRow = {
   sequence: number;
   event_id: string;
@@ -14,6 +15,7 @@ type EventRow = {
   created_at: string | null;
 };
 
+/** SQLite 事件日志：保存 durable event，供 hydrate/replay/runtime event stream 使用 */
 export class SqliteEventLog implements EventLogPort {
   private readonly db: Database;
   private readonly owned: boolean;
@@ -26,6 +28,7 @@ export class SqliteEventLog implements EventLogPort {
   }
 
   async append(event: Event): Promise<void> {
+    // sequence 不由调用方提供，而由数据库按插入顺序生成，确保回放有序。
     this.db.run(
       `INSERT INTO events (event_id, thread_id, task_id, type, payload_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -68,11 +71,12 @@ export class SqliteEventLog implements EventLogPort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }
 
+/** 把 sqlite 行恢复成带 sequence 的 durable Event */
 function mapEventRow(row: EventRow): Event {
   return {
     sequence: row.sequence,

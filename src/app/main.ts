@@ -1,12 +1,13 @@
 import React from "react";
 import { render, type Instance } from "ink";
-import { App } from "../interface/tui/app";
+import { App } from "../surfaces/tui";
 import { ensureRuntime } from "../runtime/service/runtime-daemon";
-import { RuntimeClient } from "../interface/runtime/runtime-client";
-import { createRemoteKernel } from "../interface/runtime/remote-kernel";
+import { RuntimeClient, createRemoteKernel } from "../surfaces/tui/runtime";
 import { resolve, join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 
+// 产品主入口：启动或复用共享 runtime daemon，然后挂载默认 TUI surface。
+// surface 通过 remote-kernel adapter 消费 harness protocol，而不是成为系统本体。
 type MainInput = {
   workspaceRoot?: string;
   projectId?: string;
@@ -54,12 +55,14 @@ export async function main(input?: MainInput) {
   const projectId = input?.projectId ?? resolveProjectId(workspaceRoot);
   const dataDir = input?.dataDir ?? process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ".openpx";
 
+  // 第一步：确保当前 workspace/project 只有一个 runtime 进程在提供服务。
   const runtimeInfo = await ensureRuntime({
     workspaceRoot,
     projectId,
     dataDir,
   });
 
+  // 第二步：通过协议层把 TUI 连接到 runtime 状态，而不是在 UI 进程里再造一套状态。
   const scopedClient = new RuntimeClient(`http://localhost:${runtimeInfo.port}`, {
     workspaceRoot,
     projectId,

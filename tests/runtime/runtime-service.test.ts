@@ -1,5 +1,5 @@
 import { describe, expect, test, afterEach } from "bun:test";
-import { createRuntimeService } from "../../src/runtime/service/runtime-service";
+import { createHarnessSessionRegistry } from "../../src/harness/server/harness-session-registry";
 import { createAppContext } from "../../src/app/bootstrap";
 import { createRun, transitionRun } from "../../src/domain/run";
 import { createThread } from "../../src/domain/thread";
@@ -9,7 +9,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 
-describe("RuntimeService", () => {
+describe("HarnessSessionRegistry", () => {
   const testDir = path.join(os.tmpdir(), `runtime-service-test-${Date.now()}`);
 
   afterEach(async () => {
@@ -22,7 +22,7 @@ describe("RuntimeService", () => {
 
   test("hydrates an empty scoped snapshot without creating a thread", async () => {
     await fs.mkdir(testDir, { recursive: true });
-    const runtime = await createRuntimeService({ dataDir: ":memory:", workspaceRoot: testDir });
+    const runtime = await createHarnessSessionRegistry({ dataDir: ":memory:", workspaceRoot: testDir });
     const snapshot = await runtime.getSnapshot();
 
     expect(snapshot.protocolVersion).toBeString();
@@ -45,7 +45,7 @@ describe("RuntimeService", () => {
     await fs.mkdir(workspaceA, { recursive: true });
     await fs.mkdir(workspaceB, { recursive: true });
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot: workspaceA, projectId: "project-a" });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot: workspaceA, projectId: "project-a" });
 
     await runtime.handleCommand(
       { kind: "new_thread" },
@@ -82,7 +82,7 @@ describe("RuntimeService", () => {
 
   test("creates, switches, and continues threads within a scoped project", async () => {
     await fs.mkdir(testDir, { recursive: true });
-    const runtime = await createRuntimeService({ dataDir: ":memory:", workspaceRoot: testDir, projectId: "project-a" });
+    const runtime = await createHarnessSessionRegistry({ dataDir: ":memory:", workspaceRoot: testDir, projectId: "project-a" });
 
     const initial = await runtime.getSnapshot({
       workspaceRoot: testDir,
@@ -184,7 +184,7 @@ describe("RuntimeService", () => {
       }),
     );
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot: testDir, projectId });
     const snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
 
     expect(snapshot.blockingReason).toEqual({
@@ -213,7 +213,7 @@ describe("RuntimeService", () => {
     };
     await app.stores.threadStore.save(thread);
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot: testDir, projectId });
 
     const result = await runtime.handleCommand(
       { kind: "interrupt", threadId: thread.threadId },
@@ -251,7 +251,7 @@ describe("RuntimeService", () => {
       ),
     );
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot: testDir, projectId });
 
     const result = await runtime.handleCommand(
       { kind: "interrupt", threadId: thread.threadId },
@@ -310,7 +310,7 @@ describe("RuntimeService", () => {
       ),
     );
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot: testDir, projectId });
     const snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
     const waitingView = snapshot.threads.find((thread) => thread.threadId === waitingThread.threadId);
     const completedView = snapshot.threads.find((thread) => thread.threadId === completedThread.threadId);
@@ -323,7 +323,7 @@ describe("RuntimeService", () => {
 
   test("does not create a thread when continue or interrupt is called on an empty scope", async () => {
     await fs.mkdir(testDir, { recursive: true });
-    const runtime = await createRuntimeService({ dataDir: ":memory:", workspaceRoot: testDir, projectId: "empty-project" });
+    const runtime = await createHarnessSessionRegistry({ dataDir: ":memory:", workspaceRoot: testDir, projectId: "empty-project" });
 
     await runtime.handleCommand(
       { kind: "continue" },
@@ -349,7 +349,7 @@ describe("RuntimeService", () => {
     await app.stores.threadStore.save({ ...thread, status: "active" });
     await app.stores.taskStore.save(createTask("task-worker-control-1", thread.threadId, "run-1", "Hydrate worker truth"));
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot: testDir, projectId });
 
     await runtime.handleCommand(
       {

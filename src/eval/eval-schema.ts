@@ -1,18 +1,22 @@
 import type { createAppContext } from "../app/bootstrap";
-import type { SessionControlPlaneResult } from "../kernel/session-kernel";
+import type { SessionControlPlaneResult } from "../harness/core/session/session-kernel";
 import type { ModelGateway } from "../infra/model-gateway";
 import { approvalStatusSchema, runStatusSchema, runTriggerSchema, taskStatusSchema, threadStatusSchema } from "../shared/schemas";
 import { z } from "zod";
 
+/** eval 结果状态：passed/failed/suspicious */
 export const evalResultStatusSchema = z.enum(["passed", "failed", "suspicious"]);
 export type EvalResultStatus = z.infer<typeof evalResultStatusSchema>;
 
+/** review 严重级别 */
 export const evalReviewSeveritySchema = z.enum(["low", "medium", "high"]);
 export type EvalReviewSeverity = z.infer<typeof evalReviewSeveritySchema>;
 
+/** review 分诊状态 */
 export const evalReviewTriageStatusSchema = z.enum(["open", "triaged", "closed"]);
 export type EvalReviewTriageStatus = z.infer<typeof evalReviewTriageStatusSchema>;
 
+/** review 关闭类型 */
 export const evalReviewResolutionTypeSchema = z.enum(["scenario", "rule", "doc", "accepted_noise"]);
 export type EvalReviewResolutionType = z.infer<typeof evalReviewResolutionTypeSchema>;
 

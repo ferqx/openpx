@@ -1,6 +1,7 @@
 import { prefixedUuid } from "../shared/id-generators";
 import type { EvalCheckResult, EvalComparableRun, EvalObjectRefs, EvalRuleResult, EvalScenario, ReviewQueueItem } from "./eval-schema";
 
+/** 从 comparable 提取统一 object refs */
 function buildObjectRefs(comparable: EvalComparableRun): EvalObjectRefs {
   return {
     threadId: comparable.runtimeRefs.threadId,
@@ -10,6 +11,7 @@ function buildObjectRefs(comparable: EvalComparableRun): EvalObjectRefs {
   };
 }
 
+/** 创建单条 outcome/trajectory 检查结果 */
 function createResult(
   id: string,
   passed: boolean,
@@ -24,6 +26,7 @@ function createResult(
   };
 }
 
+/** 评估场景 outcome：看终态 run/task/summary/approval/tool-call 是否符合预期 */
 export function evaluateOutcome(scenario: EvalScenario, comparable: EvalComparableRun): EvalCheckResult[] {
   const results: EvalCheckResult[] = [];
   const summary = comparable.terminalOutcome.summary ?? "";

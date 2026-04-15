@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
 import type { Run } from "../../domain/run";
 import type { RunStorePort } from "../ports/run-store-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** runs 表行结构：JSON 列保留 blockingReason 与 ledgerState */
 type RunRow = {
   run_id: string;
   thread_id: string;
@@ -19,6 +20,7 @@ type RunRow = {
   ledger_state_json: string | null;
 };
 
+/** SQLite run 存储：保存每次执行尝试的生命周期与恢复信息 */
 export class SqliteRunStore implements RunStorePort {
   private readonly db: Database;
   private readonly owned: boolean;
@@ -31,6 +33,8 @@ export class SqliteRunStore implements RunStorePort {
   }
 
   async save(run: Run): Promise<void> {
+    // run 需要保留完整生命周期轨迹；因此 activeTaskId、blockingReason、
+    // ledgerState 都会跟主记录一起持久化。
     this.db.run(
       `INSERT INTO runs (
         run_id, thread_id, status, trigger, input_text, active_task_id, started_at, ended_at, result_summary, resume_token, blocking_reason_json, ledger_state_json
@@ -83,6 +87,7 @@ export class SqliteRunStore implements RunStorePort {
       )
       .all(threadId);
 
+    // listByThread 保留创建顺序，方便上层按时间回放 run 历史。
     return rows.map(mapRunRow);
   }
 
@@ -99,11 +104,12 @@ export class SqliteRunStore implements RunStorePort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }
 
+/** 把 sqlite 行恢复成领域 Run；JSON 列缺失时回退为 undefined */
 function mapRunRow(row: RunRow): Run {
   return {
     runId: row.run_id,

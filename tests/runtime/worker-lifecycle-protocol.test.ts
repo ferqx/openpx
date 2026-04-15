@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createAppContext } from "../../src/app/bootstrap";
-import { createRuntimeService } from "../../src/runtime/service/runtime-service";
+import { createHarnessSessionRegistry } from "../../src/harness/server/harness-session-registry";
 import { createThread } from "../../src/domain/thread";
 import { createTask, transitionTask } from "../../src/domain/task";
 import { createWorker, transitionWorker } from "../../src/domain/worker";
@@ -93,7 +93,7 @@ describe("worker lifecycle protocol", () => {
     );
     await app.stores.workerStore.save(worker);
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot: testDir, projectId });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot: testDir, projectId });
     const snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
 
     expect(snapshot.activeThreadId).toBe(thread.threadId);

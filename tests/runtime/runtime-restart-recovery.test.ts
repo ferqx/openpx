@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createAppContext } from "../../src/app/bootstrap";
-import { createRuntimeService } from "../../src/runtime/service/runtime-service";
+import { createHarnessSessionRegistry } from "../../src/harness/server/harness-session-registry";
 import { createThread } from "../../src/domain/thread";
 import { createTask } from "../../src/domain/task";
 import fs from "node:fs/promises";
@@ -57,7 +57,7 @@ describe("Runtime Restart Recovery", () => {
     expect(blockedResult.status).toBe("blocked");
     expect(scopedThreads).toHaveLength(1);
 
-    const runtime = await createRuntimeService({ dataDir, workspaceRoot, projectId });
+    const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot, projectId });
     const replay = runtime.subscribeEvents({ workspaceRoot, projectId }, 0)[Symbol.asyncIterator]();
 
     const readNext = () =>

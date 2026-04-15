@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildRuntimeSnapshot } from "../../src/runtime/service/runtime-snapshot";
+import { buildRuntimeSnapshot } from "../../src/harness/protocol/views/runtime-snapshot-builder";
 
 describe("Runtime snapshot", () => {
   test("includes narrative summary in the client-facing snapshot contract", () => {

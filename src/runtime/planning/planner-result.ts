@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { workPackageSchema } from "./work-package";
 
+/** PlannerResult：planner 输出的结构化结果 */
 export const plannerResultSchema = z.object({
   workPackages: z.array(workPackageSchema),
   acceptanceCriteria: z.array(z.string().min(1)),

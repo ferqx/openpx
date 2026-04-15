@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { AnswerPane } from "../../src/interface/tui/components/answer-pane";
+import { AnswerPane } from "../../src/surfaces/tui/components/answer-pane";
 
 describe("AnswerPane", () => {
   test("shows changed files and line deltas", () => {

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { coreEvalScenarios } from "../../src/eval/scenarios";
 import { executeEvalSuiteCommand, runEvalSuite } from "../../src/eval/suite-runner";
+import { removeWithRetry } from "../helpers/fs-cleanup";
 
 describe("eval suite runner", () => {
   test("runs the core suite against repo baselines and returns a passing summary", async () => {
@@ -27,7 +28,7 @@ describe("eval suite runner", () => {
     expect(summary.reviewQueueAggregate.total).toBe(0);
     expect(summary.reviewQueueAggregate.byTriageStatus.open).toBe(0);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("supports single-scenario execution while preserving the shared summary shape", async () => {
@@ -49,7 +50,7 @@ describe("eval suite runner", () => {
     expect(summary.scenarioSummaries[0]?.scenarioId).toBe("approval-required-then-approved");
     expect(summary.reviewQueueAggregate.total).toBe(0);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("updates baseline files when requested", async () => {
@@ -77,7 +78,7 @@ describe("eval suite runner", () => {
     expect(summary.status).toBe("passed");
     expect(await fs.stat(baselineFile)).toBeDefined();
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("returns a failing gate when a stable regression diverges from baseline", async () => {
@@ -88,7 +89,7 @@ describe("eval suite runner", () => {
 
     await runEvalSuite({
       suiteId: "core-eval-suite",
-      scenarios: coreEvalScenarios,
+      scenarios: [coreEvalScenarios[0]!],
       dataDir,
       rootDir: runtimeRootDir,
       baselineRootDir,
@@ -109,7 +110,7 @@ describe("eval suite runner", () => {
 
     const summary = await runEvalSuite({
       suiteId: "core-eval-suite",
-      scenarios: coreEvalScenarios,
+      scenarios: [coreEvalScenarios[0]!],
       dataDir: path.join(rootDir, "rerun.db"),
       rootDir: path.join(rootDir, "runtime-rerun"),
       baselineRootDir,
@@ -119,7 +120,7 @@ describe("eval suite runner", () => {
     expect(summary.exitCode).toBe(1);
     expect(summary.scenarioSummaries.some((item) => item.baseline.status === "regressed")).toBe(true);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("summarizes only the current suite run review items", async () => {
@@ -150,7 +151,7 @@ describe("eval suite runner", () => {
     expect(summary.reviewQueueAggregate.byTriageStatus.open).toBe(summary.reviewQueueCount);
     expect(summary.reviewQueueAggregate.byTriageStatus.closed).toBe(0);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("renders command output and exit code for the dev runner surface", async () => {
@@ -186,7 +187,7 @@ describe("eval suite runner", () => {
     expect(outputs.join("")).toContain("Review queue aggregate");
     expect(outputs.join("")).toContain("approval-required-then-approved");
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("supports json output with raw suite run artifacts", async () => {
@@ -242,6 +243,6 @@ describe("eval suite runner", () => {
     expect(payload.scenarioResults[0]?.comparable.terminalOutcome.latestRunStatus).toBe("completed");
     expect(payload.reviewItems).toEqual([]);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 });

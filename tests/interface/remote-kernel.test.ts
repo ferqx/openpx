@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { createRemoteKernel } from "../../src/interface/runtime/remote-kernel";
-import type { RuntimeClient } from "../../src/interface/runtime/runtime-client";
-import type { TuiKernelEvent } from "../../src/interface/tui/hooks/use-kernel";
+import { createRemoteKernel } from "../../src/surfaces/tui/runtime/remote-kernel";
+import type { RuntimeClient } from "../../src/surfaces/tui/runtime/runtime-client";
+import type { TuiKernelEvent } from "../../src/surfaces/tui/hooks/use-kernel";
 
 describe("Remote Kernel", () => {
   test("derives blocked composer state from snapshot hydration", async () => {

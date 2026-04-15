@@ -12,11 +12,13 @@ import { SqliteEvalStore } from "../persistence/sqlite/sqlite-eval-store";
 import type { EvalReviewQueueRecord, EvalStorePort } from "../persistence/ports/eval-store-port";
 import { resolveEvalDataDir as resolveInternalEvalDataDir } from "./eval-data-dir";
 
+/** eval review 命令的 IO 接口 */
 type EvalReviewCommandIo = {
   stdout: { write(chunk: string): void };
   stderr: { write(chunk: string): void };
 };
 
+/** 渲染 review queue 摘要时会用到的过滤上下文 */
 type RenderReviewQueueSummaryInput = {
   items: ReviewQueueItem[];
   triageStatus?: EvalReviewQueueFilters["triageStatus"];
@@ -26,6 +28,7 @@ type RenderReviewQueueSummaryInput = {
   resolutionType?: EvalReviewQueueFilters["resolutionType"];
 };
 
+/** review 命令选项 */
 type EvalReviewCommandOptions = {
   dataDir: string;
   filters: EvalReviewQueueFilters;
@@ -37,18 +40,21 @@ type EvalReviewCommandOptions = {
   json?: boolean;
 };
 
+/** review 命令 JSON 输出负载 */
 type EvalReviewCommandPayload = {
   filters: EvalReviewQueueFilters;
   aggregate: ReviewQueueAggregateSummary;
   items: ReviewQueueItem[];
 };
 
+/** 输出命令用法 */
 function printUsage(io: EvalReviewCommandIo): void {
   io.stderr.write(
     "Usage: bun run eval:review [--data-dir <path>] [--status <open|triaged|closed>] [--severity <low|medium|high>] [--scenario <scenarioId>] [--source-type <outcome_check|trajectory_rule>] [--resolution-filter <scenario|rule|doc|accepted_noise>] [--stats-only] [--json] [--close <reviewItemId> --resolution <scenario|rule|doc|accepted_noise> --note <text> [--follow-up-suite <suiteId> --follow-up-scenario <scenarioId> [--follow-up-version <n>] | --follow-up-rule <ruleId> [--follow-up-rule-kind <outcome_check|trajectory_rule>] | --follow-up-doc <path>]]\n",
   );
 }
 
+/** 渲染过滤器后缀文本 */
 function renderFilterSuffix(input: RenderReviewQueueSummaryInput): string {
   const filters = [
     input.triageStatus ? `status=${input.triageStatus}` : undefined,
@@ -61,6 +67,7 @@ function renderFilterSuffix(input: RenderReviewQueueSummaryInput): string {
   return filters.length > 0 ? ` (${filters.join(", ")})` : "";
 }
 
+/** 汇总 review queue 统计 */
 export function summarizeReviewQueue(items: ReviewQueueItem[]): ReviewQueueAggregateSummary {
   const summary: ReviewQueueAggregateSummary = {
     total: items.length,

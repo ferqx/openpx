@@ -10,7 +10,7 @@ import {
   resolveSubmitCommandContext,
   resolveSubmitTargetThread,
   shouldShortCircuitBlockedSubmit,
-} from "../../src/kernel/session-command-handler";
+} from "../../src/harness/core/session/session-command-handler";
 
 describe("resolveSubmitTargetThread", () => {
   test("starts a new thread when no latest thread exists", async () => {

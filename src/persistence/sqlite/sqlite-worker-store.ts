@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
 import type { Worker } from "../../domain/worker";
 import type { WorkerStorePort } from "../ports/worker-store-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** workers 表行结构 */
 type WorkerRow = {
   worker_id: string;
   thread_id: string;
@@ -16,8 +17,10 @@ type WorkerRow = {
   resume_token: string | null;
 };
 
+/** 被视为活跃的 worker 状态集合 */
 const ACTIVE_WORKER_STATUSES: Worker["status"][] = ["created", "starting", "running", "paused"];
 
+/** SQLite worker 存储：保存 worker 生命周期并支持按线程查询活跃 worker */
 export class SqliteWorkerStore implements WorkerStorePort {
   private readonly db: Database;
   private readonly owned: boolean;
@@ -96,11 +99,12 @@ export class SqliteWorkerStore implements WorkerStorePort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }
 
+/** 把 sqlite 行恢复成领域 Worker */
 function mapWorkerRow(row: WorkerRow): Worker {
   return {
     workerId: row.worker_id,

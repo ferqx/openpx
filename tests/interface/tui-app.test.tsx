@@ -2,11 +2,11 @@ import React from "react";
 import { describe, expect, mock, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { main } from "../../src/app/main";
-import { App } from "../../src/interface/tui/app";
-import type { TuiKernel } from "../../src/interface/tui/hooks/use-kernel";
-import type { ApprovalCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../../src/interface/tui/commands";
-import type { RuntimeSessionState } from "../../src/interface/runtime/runtime-session";
-import type { ResolvedSettingsConfig } from "../../src/interface/tui/settings/config-resolver";
+import { App } from "../../src/surfaces/tui/app";
+import type { TuiKernel } from "../../src/surfaces/tui/hooks/use-kernel";
+import type { ApprovalCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../../src/surfaces/tui/commands";
+import type { RuntimeSessionState } from "../../src/surfaces/tui/runtime/runtime-session";
+import type { ResolvedSettingsConfig } from "../../src/surfaces/tui/settings/config-resolver";
 
 describe("TUI App", () => {
   const tick = (delayMs = 0) => new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -2034,7 +2034,7 @@ describe("TUI App", () => {
       summary: "Need confirmation before applying the patch",
       blockingReason: {
         kind: "waiting_approval",
-        message: "apply_patch update_file src/interface/tui/app.tsx",
+        message: "apply_patch update_file src/surfaces/tui/app.tsx",
       },
       tasks: [
         {
@@ -2045,7 +2045,7 @@ describe("TUI App", () => {
           summary: "Apply shell patch",
           blockingReason: {
             kind: "waiting_approval",
-            message: "apply_patch update_file src/interface/tui/app.tsx",
+            message: "apply_patch update_file src/surfaces/tui/app.tsx",
           },
         },
       ],
@@ -2056,7 +2056,7 @@ describe("TUI App", () => {
           runId: "run-stage",
           taskId: "task-stage",
           toolCallId: "tool-stage",
-          summary: "apply_patch update_file src/interface/tui/app.tsx",
+          summary: "apply_patch update_file src/surfaces/tui/app.tsx",
           risk: "apply_patch.update_file",
           status: "pending",
         },

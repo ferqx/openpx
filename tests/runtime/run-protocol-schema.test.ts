@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { runViewSchema } from "../../src/runtime/service/protocol/run-view";
+import { runViewSchema } from "../../src/harness/protocol/views/run-view";
 
 describe("run protocol schema", () => {
   test("parses the minimal stable run view", () => {

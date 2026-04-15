@@ -6,12 +6,13 @@
   "scripts": {
     "dev": "bun run src/app/main.ts",
     "eval:core": "bun run eval:suite --suite core-eval-suite --baseline-root-dir eval-baselines",
-    "eval:real": "bun run src/real-eval/run-suite.ts",
+    "eval:real": "bun run src/harness/eval/real/run-suite.ts",
     "eval:review": "bun run src/eval/run-review.ts",
     "eval:suite": "bun run src/eval/run-suite.ts",
     "smoke:planner": "bun run src/app/smoke-planner.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "validation:run": "bun run src/validation/run-suite.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

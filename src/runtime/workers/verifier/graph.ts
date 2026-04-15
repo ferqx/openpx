@@ -4,6 +4,7 @@ import type { ArtifactRecord } from "../../artifacts/artifact-index";
 import type { PlannerResult } from "../../planning/planner-result";
 import type { WorkPackage } from "../../planning/work-package";
 
+/** verifier worker 的局部状态 */
 const VerifierWorkerState = Annotation.Root({
   input: Annotation<string>(),
   summary: Annotation<string>(),
@@ -18,6 +19,7 @@ const VerifierWorkerState = Annotation.Root({
   plannerResult: Annotation<PlannerResult | undefined>(),
 });
 
+/** 创建 verifier worker graph：单节点执行 handler，并回传验证结果 */
 export async function createVerifierWorkerGraph(handler: WorkerHandler<"verify">) {
   return new StateGraph(VerifierWorkerState)
     .addNode("run", async (state, config) =>

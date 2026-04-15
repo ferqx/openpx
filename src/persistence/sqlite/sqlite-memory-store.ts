@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
 import type { MemoryNamespace, MemoryRecord } from "../../domain/memory";
 import type { MemorySearchInput, MemoryStorePort } from "../ports/memory-store-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
+/** memories 表行结构 */
 type MemoryRow = {
   memory_id: string;
   namespace: MemoryNamespace;
@@ -13,6 +14,7 @@ type MemoryRow = {
   created_at: string;
 };
 
+/** SQLite 记忆存储：保存 durable/thread/project 级 memory 记录 */
 export class SqliteMemoryStore implements MemoryStorePort {
   private readonly db: Database;
   private readonly owned: boolean;
@@ -25,6 +27,7 @@ export class SqliteMemoryStore implements MemoryStorePort {
   }
 
   async save(record: MemoryRecord): Promise<void> {
+    // createdAt 在更新时保持首次创建时间，避免把“修改时间”伪装成“创建时间”。
     const createdAt = record.createdAt ?? new Date().toISOString();
 
     this.db.run(
@@ -51,6 +54,7 @@ export class SqliteMemoryStore implements MemoryStorePort {
   }
 
   async search(namespace: MemoryNamespace, input: MemorySearchInput): Promise<MemoryRecord[]> {
+    // 当前检索仍是简单 LIKE 查询；后续若引入向量检索，可从这里升级。
     const query = (input.query ?? "").trim().toLowerCase();
     const threadId = input.threadId ?? "";
     const rows = this.db
@@ -70,11 +74,12 @@ export class SqliteMemoryStore implements MemoryStorePort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }
 
+/** 把 sqlite 行恢复成领域 MemoryRecord */
 function mapMemoryRow(row: MemoryRow): MemoryRecord {
   return {
     memoryId: row.memory_id,

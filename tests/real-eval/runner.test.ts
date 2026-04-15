@@ -3,12 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ModelGateway } from "../../src/infra/model-gateway";
-import { realRunTraceSchema, type RealRunTrace } from "../../src/real-eval/real-eval-schema";
-import { evaluateRealTrace } from "../../src/real-eval/evaluation";
-import { loadStoredRealSample } from "../../src/real-eval/replay";
-import { REAL_EVAL_SUITE_ID, realEvalScenarios } from "../../src/real-eval/scenarios";
-import { executeRealEvalSuiteCommand, runRealEvalSuite } from "../../src/real-eval/suite-runner";
+import { realRunTraceSchema, type RealRunTrace } from "../../src/harness/eval/real/real-eval-schema";
+import { evaluateRealTrace } from "../../src/harness/eval/real/evaluation";
+import { loadStoredRealSample } from "../../src/harness/eval/real/replay";
+import { REAL_EVAL_SUITE_ID, realEvalScenarios } from "../../src/harness/eval/real/scenarios";
+import { executeRealEvalSuiteCommand, runRealEvalSuite } from "../../src/harness/eval/real/suite-runner";
 import { SqliteEvalStore } from "../../src/persistence/sqlite/sqlite-eval-store";
+import { removeWithRetry } from "../helpers/fs-cleanup";
 
 function createDeterministicModelGateway(): ModelGateway {
   let planCallCount = 0;
@@ -302,7 +303,7 @@ describe("real eval runner", () => {
     expect(await Bun.file(path.join(runtimeRootDir, "approval-gated-bugfix-loop", "artifacts", "result.json")).exists()).toBe(true);
     expect(await Bun.file(path.join(runtimeRootDir, "approval-gated-bugfix-loop", "artifacts", "trace.json")).exists()).toBe(true);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("executes a real sample, stores its trace artifact, and persists review records from evaluation", async () => {
@@ -337,7 +338,7 @@ describe("real eval runner", () => {
     expect(reviewRecords.every((record) => record.metadataJson?.includes("\"lane\":\"real-eval\""))).toBe(true);
 
     await store.close();
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("default suite run executes the full V0 live scenario set", async () => {
@@ -360,7 +361,7 @@ describe("real eval runner", () => {
       "interrupt-resume-work-loop",
     ]);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("runs a selected prompt variant and records the variant id in the summary", async () => {
@@ -380,7 +381,7 @@ describe("real eval runner", () => {
     expect(summary.scenarioSummaries[0]?.promptVariantId).toBe("polite");
     expect(summary.scenarioSummaries[0]?.capabilityFamily).toBe("approval_gated_delete");
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("runs all prompt variants for a family when explicitly requested", async () => {
@@ -404,7 +405,7 @@ describe("real eval runner", () => {
     ]);
     expect(summary.scenarioSummaries.every((scenario) => scenario.capabilityFamily === "approval_gated_delete")).toBe(true);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("fails fast when a requested scenario is not in the provided suite subset", async () => {
@@ -420,7 +421,7 @@ describe("real eval runner", () => {
       }),
     ).rejects.toThrow("Unknown real eval scenario in provided suite subset: reject-and-replan-task-loop");
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("prints usage for the command entrypoint help path", async () => {
@@ -477,7 +478,7 @@ describe("real eval runner", () => {
       }),
     ]);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("records evaluation failures with stage, message, and persisted trace path", async () => {
@@ -519,7 +520,7 @@ describe("real eval runner", () => {
     expect(scenario?.artifactsDir).toBe(artifactsDir);
     expect(scenario?.tracePath).toBe(tracePath);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("records review queue persistence failures with stage, message, and trace path", async () => {
@@ -561,7 +562,7 @@ describe("real eval runner", () => {
     expect(scenario?.artifactsDir).toBe(artifactsDir);
     expect(scenario?.tracePath).toBe(tracePath);
 
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("renders failure stage, message, and paths in the default CLI output", async () => {

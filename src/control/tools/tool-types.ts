@@ -2,6 +2,7 @@ import type { ApprovalRequest } from "../../domain/approval";
 import type { PolicyDecision, PolicyRequest } from "../policy/policy-engine";
 import type { PatchAction, ToolEffect } from "../policy/risk-model";
 
+/** 规范化后的工具执行请求：tool-registry / approval / ledger 共用 */
 export type ToolExecuteRequest = {
   toolCallId: string;
   threadId: string;
@@ -18,12 +19,15 @@ export type ToolExecuteRequest = {
   changedFiles?: number;
 };
 
+/** 传给具体 executor 的上下文：保留 request 原文，同时平铺常用字段 */
 export type ToolExecutionContext = {
   request: ToolExecuteRequest;
 } & ToolExecuteRequest;
 
+/** 具体工具执行器接口 */
 export type ToolExecutor = (context: ToolExecutionContext) => Promise<unknown>;
 
+/** 工具定义：名称、副作用类别以及真实执行函数 */
 export type ToolDefinition = {
   name: string;
   effect: ToolEffect;
@@ -31,6 +35,7 @@ export type ToolDefinition = {
   execute: ToolExecutor;
 };
 
+/** 工具执行结果：已执行、被审批阻塞或被策略拒绝 */
 export type ToolExecutionOutcome =
   | {
       kind: "executed";
@@ -49,6 +54,7 @@ export type ToolExecutionOutcome =
       reason: string;
     };
 
+/** 把工具请求映射到 policy engine 的统一风险评估输入 */
 export function toPolicyRequest(tool: ToolDefinition, request: ToolExecuteRequest): PolicyRequest {
   return {
     toolName: tool.name,
@@ -62,6 +68,7 @@ export function toPolicyRequest(tool: ToolDefinition, request: ToolExecuteReques
   };
 }
 
+/** 从 args 中回填 path/command/cwd 等常用字段，得到稳定的规范化请求 */
 export function normalizeToolRequest(request: ToolExecuteRequest): ToolExecuteRequest {
   const path = request.path ?? (typeof request.args.path === "string" ? request.args.path : undefined);
   const command = request.command ?? (typeof request.args.command === "string" ? request.args.command : undefined);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildPromotionSummaries, listPromotionGuardrailsForFamily } from "../../src/real-eval/promotion";
-import type { RealEvalPromotionGuardrail, RealEvalScenarioResult } from "../../src/real-eval/real-eval-schema";
+import { buildPromotionSummaries, listPromotionGuardrailsForFamily } from "../../src/harness/eval/real/promotion";
+import type { RealEvalPromotionGuardrail, RealEvalScenarioResult } from "../../src/harness/eval/real/real-eval-schema";
 
 function createScenarioSummary(
   overrides?: Partial<RealEvalScenarioResult>,

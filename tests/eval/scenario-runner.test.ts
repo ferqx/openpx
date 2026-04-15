@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import { coreEvalScenarios } from "../../src/eval/scenarios";
 import { runScenario, runScenarioSuite } from "../../src/eval/scenario-runner";
 import { SqliteEvalStore } from "../../src/persistence/sqlite/sqlite-eval-store";
+import { removeWithRetry } from "../helpers/fs-cleanup";
 
 function stripRuntimeRefs<T extends { runtimeRefs?: unknown }>(value: T): Omit<T, "runtimeRefs"> {
   const { runtimeRefs: _runtimeRefs, ...rest } = value;
@@ -39,7 +40,7 @@ describe("eval scenario runner", () => {
     );
 
     await store.close();
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("produces stable comparable objects across repeated healthy runs", async () => {
@@ -64,8 +65,8 @@ describe("eval scenario runner", () => {
 
     expect(stripRuntimeRefs(first.comparable)).toEqual(stripRuntimeRefs(second.comparable));
 
-    await fs.rm(firstRootDir, { recursive: true, force: true });
-    await fs.rm(secondRootDir, { recursive: true, force: true });
+    await removeWithRetry(firstRootDir, { recursive: true, force: true });
+    await removeWithRetry(secondRootDir, { recursive: true, force: true });
   });
 
   test("enqueues review items when a scenario outcome is intentionally wrong", async () => {
@@ -98,6 +99,6 @@ describe("eval scenario runner", () => {
     expect(reviewItems[0]?.scenarioId).toBe("capability-happy-path-broken-expectation");
 
     await store.close();
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 });

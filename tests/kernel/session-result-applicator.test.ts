@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ThreadNarrativeService } from "../../src/control/context/thread-narrative-service";
 import { createThread } from "../../src/domain/thread";
-import { applySessionControlPlaneResult } from "../../src/kernel/session-result-applicator";
+import { applySessionControlPlaneResult } from "../../src/harness/core/run/session-result-applicator";
 
 describe("applySessionControlPlaneResult", () => {
   test("projects control-plane results into persisted thread truth", async () => {

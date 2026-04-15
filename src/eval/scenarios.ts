@@ -10,12 +10,15 @@ import { createRootGraph } from "../runtime/graph/root/graph";
 import type { ModelGateway } from "../infra/model-gateway";
 import type { EvalScenario } from "./eval-schema";
 
+/** 核心 deterministic eval suite 标识 */
 export const CORE_EVAL_SUITE_ID = "core-eval-suite";
 
+/** 返回空的状态/事件监听器 */
 function createNoopHandlers() {
   return () => {};
 }
 
+/** happy-path 专用测试 gateway */
 function createHappyPathGateway(): ModelGateway {
   return {
     async plan() {
@@ -36,6 +39,7 @@ function createHappyPathGateway(): ModelGateway {
   };
 }
 
+/** approval 场景专用 gateway */
 function createApprovalGateway(): ModelGateway {
   return {
     async plan() {
@@ -73,6 +77,7 @@ function createApprovalGateway(): ModelGateway {
   };
 }
 
+/** reject/replan 场景专用 gateway */
 function createRejectionGateway(): ModelGateway {
   return {
     async plan(input: { prompt: string }) {
@@ -190,7 +195,7 @@ export const coreEvalScenarios: EvalScenario[] = [
     expectedOutcome: {
       terminalRunStatus: "completed",
       terminalTaskStatus: "completed",
-      expectedSummaryIncludes: ["Tool approval was rejected for proposal", "Replan safely without repeating that proposal."],
+      expectedSummaryIncludes: ["continue safely without deleting files"],
       expectedApprovalCount: 1,
       expectedPendingApprovalCount: 0,
       expectedToolCallCount: 0,
@@ -456,7 +461,7 @@ export const coreEvalScenarios: EvalScenario[] = [
     expectedOutcome: {
       terminalRunStatus: "completed",
       terminalTaskStatus: "completed",
-      expectedSummaryIncludes: ["Tool approval was rejected for proposal", "Replan safely without repeating that proposal."],
+      expectedSummaryIncludes: ["continue safely without deleting files"],
       expectedApprovalCount: 1,
       expectedPendingApprovalCount: 0,
       expectedToolCallCount: 0,
