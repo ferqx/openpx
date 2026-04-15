@@ -605,7 +605,10 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     session?.messages,
     session?.narrativeSummary,
     session?.tasks,
-    session?.summary,
+    session?.finalResponse,
+    session?.pauseSummary,
+    session?.verificationSummary,
+    session?.executionSummary,
     session?.workers,
   ]);
 

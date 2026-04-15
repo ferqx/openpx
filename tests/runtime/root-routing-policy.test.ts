@@ -144,8 +144,8 @@ describe("root routing policy", () => {
         },
       }),
     ).toEqual({
-      route: "finish",
-      mode: "done",
+      route: "responder",
+      mode: "respond",
       currentWorkPackageId: "pkg_1",
     });
   });

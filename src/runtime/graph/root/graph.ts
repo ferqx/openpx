@@ -1,5 +1,5 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
-import type { RootGraphContext } from "./context";
+import type { InteractionIntent, RootGraphContext } from "./context";
 import { RootState } from "./state";
 import { routeNode } from "./nodes/route";
 import { postTurnGuardNode } from "./nodes/post-turn-guard";
@@ -11,6 +11,41 @@ import { createVerifierWorkerGraph } from "../../workers/verifier/graph";
 import type { ResumeControl } from "./resume-control";
 import type { WorkPackage } from "../../planning/work-package";
 import type { ArtifactRecord } from "../../artifacts/artifact-index";
+
+function deriveInteractionIntent(input: {
+  normalizedGoal: string;
+  resumeValue?: string | ResumeControl;
+}): InteractionIntent {
+  if (input.resumeValue && typeof input.resumeValue !== "string") {
+    return "resume_approval";
+  }
+
+  if (/^\s*(verify|verification)\b/i.test(input.normalizedGoal)) {
+    return "verification_request";
+  }
+
+  return "user_request";
+}
+
+function buildSystemFallbackFinalResponse(state: {
+  input: string;
+  executionSummary?: string;
+  verificationSummary?: string;
+  artifacts?: ArtifactRecord[];
+  latestArtifacts?: ArtifactRecord[];
+}) {
+  const artifactSummary = [...(state.artifacts ?? []), ...(state.latestArtifacts ?? [])]
+    .map((artifact) => artifact.summary.trim())
+    .filter((value) => value.length > 0)
+    .join("; ");
+  const parts = [
+    state.executionSummary?.trim(),
+    state.verificationSummary?.trim(),
+    artifactSummary || undefined,
+  ].filter((value): value is string => Boolean(value && value.length > 0));
+
+  return parts.length > 0 ? parts.join("\n") : `Completed request: ${state.input}`;
+}
 
 /** 解析当前 work package；未显式指定时回退到第一个待办包 */
 function resolveCurrentWorkPackage(state: {
@@ -68,9 +103,14 @@ export async function createRootGraph(context: RootGraphContext) {
       }
 
       const normalizedInput = intakeNormalizeNode({ input: input.trim() }).normalizedInput;
+      const interactionIntent = deriveInteractionIntent({
+        normalizedGoal: normalizedInput.goal,
+        resumeValue: state.resumeValue,
+      });
 
       return {
         input: normalizedInput.goal,
+        interactionIntent,
         resumeValue: nextResumeValue,
         // 如有持久化 thread view，则把压缩后的恢复状态重新注入根图。
         ...(view ? {
@@ -88,18 +128,28 @@ export async function createRootGraph(context: RootGraphContext) {
     })
     .addNode("responder", async (state, config) => {
       if (!context.responder) {
-        return { summary: state.input, mode: "done" };
+        return {
+          finalResponse: buildSystemFallbackFinalResponse(state),
+          finalResponseSource: "system_fallback" as const,
+          mode: "done" as const,
+          route: "finish" as const,
+        };
       }
-      // responder 是可选分支；缺失时直接把输入作为最终摘要返回。
+      // responder 负责生成真正的最终回答。
       const result = await context.responder({
         input: state.input,
         threadId: config.configurable?.thread_id as string | undefined,
         taskId: config.configurable?.task_id as string | undefined,
+        artifacts: [...(state.artifacts ?? []), ...(state.latestArtifacts ?? [])],
+        plannerResult: state.plannerResult,
+        verificationReport: state.verificationReport,
         configurable: config.configurable,
       });
       return {
-        summary: result.summary,
+        finalResponse: result.finalResponse ?? buildSystemFallbackFinalResponse(state),
+        finalResponseSource: result.finalResponseSource ?? "responder",
         mode: "done" as const,
+        route: "finish" as const,
       };
     })
     .addNode("executor", (state, config) => {
@@ -111,6 +161,7 @@ export async function createRootGraph(context: RootGraphContext) {
         currentWorkPackage,
         artifacts: resolveArtifactsForCurrentWorkPackage(state),
         plannerResult: state.plannerResult,
+        verificationReport: state.verificationReport,
         approvedApprovalRequestId: state.approvedApprovalRequestId,
         configurable: config.configurable,
       });
@@ -127,12 +178,21 @@ export async function createRootGraph(context: RootGraphContext) {
         },
         config,
       );
+      const legacySummary =
+        typeof (result as unknown as { summary?: unknown }).summary === "string"
+          ? (result as unknown as { summary: string }).summary
+          : undefined;
+      const verificationSummary =
+        result.verificationSummary
+        ?? legacySummary
+        ?? result.feedback
+        ?? "";
       return {
-        summary: result.summary,
+        verificationSummary,
         verifierPassed: result.isValid,
         verifierFeedback: result.feedback,
         verificationReport: {
-          summary: result.summary,
+          summary: verificationSummary,
           passed: result.isValid,
           feedback: result.feedback,
         },
@@ -203,15 +263,19 @@ export async function createRootGraph(context: RootGraphContext) {
       return "phase-commit";
     })
     .addConditionalEdges("phase-commit", (state) => {
-      // 还有剩余包就继续 execute；全部提交完成则结束本轮。
+      // 还有剩余包就继续 execute；全部提交完成则进入 responder。
       if (state.mode === "execute") {
         return "executor";
+      }
+      if (state.mode === "respond") {
+        return "responder";
       }
       return END;
     })
     .addEdge("executor", "post-turn-guard")
     .addConditionalEdges("post-turn-guard", (state) => {
       if (state.compactionTrigger) return "compact";
+      if (state.mode === "execute" && !state.finalResponse) return "router";
       if (state.mode === "done") return END;
       return END; 
     })

@@ -11,7 +11,8 @@ describe("projectSessionResult", () => {
       status: "completed",
       workspaceRoot: "/workspace",
       projectId: "project-1",
-      summary: "Completed repo scan",
+      finalResponse: "Completed repo scan",
+      latestExecutionStatus: "completed",
       approvals: [],
       threads: [
         {
@@ -25,7 +26,8 @@ describe("projectSessionResult", () => {
 
     expect(result.threadId).toBe("thread-1");
     expect(result.status).toBe("completed");
-    expect(result.summary).toBe("Completed repo scan");
+    expect(result.finalResponse).toBe("Completed repo scan");
+    expect(result.latestExecutionStatus).toBe("completed");
     expect(result.threads).toHaveLength(1);
   });
 

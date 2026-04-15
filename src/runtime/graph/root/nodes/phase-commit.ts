@@ -14,7 +14,8 @@ export function phaseCommitNode(state: {
   artifacts: ArtifactRecord[];
   currentWorkPackageId: string | undefined;
   executionDetails: undefined;
-  finalAnswer?: string;
+  finalResponse?: undefined;
+  verificationSummary?: string;
   latestArtifacts: [];
   mode: RootMode;
   route: RootRoute;
@@ -32,10 +33,11 @@ export function phaseCommitNode(state: {
     // 避免上一包的临时状态污染后续执行。
     currentWorkPackageId: hasRemainingWork ? remainingWorkPackages[0]?.id : undefined,
     executionDetails: undefined,
-    finalAnswer: hasRemainingWork ? undefined : state.verificationReport?.summary,
+    finalResponse: undefined,
+    verificationSummary: state.verificationReport?.summary,
     latestArtifacts: [],
-    mode: hasRemainingWork ? "execute" : "done",
-    route: hasRemainingWork ? "executor" : "finish",
+    mode: hasRemainingWork ? "execute" : "respond",
+    route: hasRemainingWork ? "executor" : "responder",
     verificationReport: undefined,
     workPackages: remainingWorkPackages,
   };

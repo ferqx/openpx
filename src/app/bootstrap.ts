@@ -39,6 +39,8 @@ import {
   buildVerifierPrompt,
 } from "./worker-inputs";
 import {
+  buildFinalResponderPrompt,
+  buildPlannerPrompt,
   buildResponderPrompt,
   canResetThreadCheckpoint,
   ensureControlTask,
@@ -309,13 +311,14 @@ async function createControlPlane(input: {
     compactionPolicy: { compact: compactThreadView },
     getThreadView: async (threadId: string) => input.stores.threadStore.get(threadId),
     planner: async ({ input: text, threadId, taskId }) => {
+      const threadView = threadId ? await input.stores.threadStore.get(threadId) : undefined;
       // Retrieve project memory for context
       const memories = await input.stores.memoryStore.search("project", { limit: 5 });
-      const memoryContext = memories.length > 0 
-        ? `\nProject Memory:\n${memories.map(m => `- ${m.value}`).join("\n")}\n`
-        : "";
-      
-      const prompt = `${memoryContext}\nUser request: ${text}`;
+      const prompt = buildPlannerPrompt({
+        text,
+        threadView,
+        projectMemory: memories.map((memory) => memory.value),
+      });
       const result = await input.modelGateway.plan({ prompt, threadId, taskId, signal: getAbortSignal(threadId) });
       const normalized = normalizePlannerOutput({
         inputText: text,
@@ -324,7 +327,7 @@ async function createControlPlane(input: {
       });
       
       return {
-        summary: normalized.summary,
+        plannerSummary: normalized.summary,
         mode: "plan",
         plannerResult: normalized.plannerResult,
         workPackages: normalized.plannerResult.workPackages,
@@ -339,10 +342,10 @@ async function createControlPlane(input: {
       });
       const result = await input.modelGateway.verify({ prompt, threadId, taskId, signal: getAbortSignal(threadId) });
       return {
-        summary: result.summary,
+        verificationSummary: result.summary,
         mode: "verify",
         isValid: result.isValid,
-        feedback: result.summary, // Assuming summary contains feedback when invalid
+        feedback: result.summary,
       };
     },
     executor: async ({
@@ -373,7 +376,7 @@ async function createControlPlane(input: {
           const approvedOutcome = await toolRegistry.executeApproved(approvedToolRequest);
           if (approvedOutcome.kind !== "executed") {
             return {
-              summary: `Unable to complete approved action: ${approvedOutcome.reason}`,
+              executionSummary: `Unable to complete approved action: ${approvedOutcome.reason}`,
               mode: "execute",
               approvedApprovalRequestId: resumedApprovalRequestId,
             };
@@ -393,7 +396,7 @@ async function createControlPlane(input: {
             createdAt: new Date().toISOString(),
           });
           return {
-            summary: approvedSummary,
+            executionSummary: approvedSummary,
             mode: "execute",
             approvedApprovalRequestId: resumedApprovalRequestId,
             latestArtifacts: buildApprovedExecutionArtifacts({
@@ -415,7 +418,7 @@ async function createControlPlane(input: {
       if (!deleteRequest || !threadId || !taskId) {
         const summary = `Executed request: ${executionInput}`;
         return {
-          summary,
+          executionSummary: summary,
           mode: "execute",
           approvedApprovalRequestId,
           latestArtifacts: buildExecutionArtifacts({
@@ -463,7 +466,7 @@ async function createControlPlane(input: {
           const approvedToolRequest = resolveApprovalToolRequest(approval, input.config.workspaceRoot);
           if (!approvedToolRequest) {
               return {
-                summary,
+                executionSummary: summary,
                 mode: "execute",
                 approvedApprovalRequestId,
               };
@@ -472,7 +475,7 @@ async function createControlPlane(input: {
           const approvedOutcome = await toolRegistry.executeApproved(approvedToolRequest);
           if (approvedOutcome.kind !== "executed") {
               return {
-                summary: `Unable to complete approved action: ${approvedOutcome.reason}`,
+                executionSummary: `Unable to complete approved action: ${approvedOutcome.reason}`,
                 mode: "execute",
                 approvedApprovalRequestId,
               };
@@ -492,7 +495,7 @@ async function createControlPlane(input: {
             createdAt: new Date().toISOString(),
           });
             return {
-              summary: approvedSummary,
+              executionSummary: approvedSummary,
               mode: "execute",
               approvedApprovalRequestId,
               latestArtifacts: buildApprovedExecutionArtifacts({
@@ -506,7 +509,7 @@ async function createControlPlane(input: {
           };
         }
         return {
-          summary,
+          executionSummary: summary,
           mode: "execute",
           approvedApprovalRequestId,
           pendingToolCallId: `${taskId}:apply_patch`,
@@ -526,7 +529,7 @@ async function createControlPlane(input: {
           createdAt: new Date().toISOString(),
         });
         return {
-          summary,
+          executionSummary: summary,
           mode: "execute",
           approvedApprovalRequestId,
           latestArtifacts: buildExecutionArtifacts({
@@ -549,14 +552,20 @@ async function createControlPlane(input: {
         createdAt: new Date().toISOString(),
       });
       return {
-        summary: errorSummary,
+        executionSummary: errorSummary,
         mode: "execute",
         approvedApprovalRequestId,
       };
     },
-    responder: async ({ input: text, threadId, taskId }) => {
+    responder: async ({ input: text, threadId, taskId, artifacts, plannerResult, verificationReport }) => {
       const threadView = threadId ? await input.stores.threadStore.get(threadId) : undefined;
-      const prompt = buildResponderPrompt({ text, threadView });
+      const prompt = buildFinalResponderPrompt({
+        text,
+        threadView,
+        artifacts,
+        plannerResult,
+        verificationReport,
+      });
       const result = await input.modelGateway.respond({
         prompt,
         threadId,
@@ -564,7 +573,8 @@ async function createControlPlane(input: {
         signal: getAbortSignal(threadId),
       });
       return {
-        summary: result.summary,
+        finalResponse: result.summary,
+        finalResponseSource: "responder",
         mode: "respond",
       };
     },

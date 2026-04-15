@@ -97,7 +97,11 @@ export async function resolveApprovedRequest(
         status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
         task: completedTask,
         approvals: pendingApprovals,
-        summary: summarizeApprovedAction(approval.summary, deps.workspaceRoot, toolRequest.path),
+        finalResponse: pendingApprovals.length > 0
+          ? undefined
+          : summarizeApprovedAction(approval.summary, deps.workspaceRoot, toolRequest.path),
+        executionSummary: summarizeApprovedAction(approval.summary, deps.workspaceRoot, toolRequest.path),
+        pauseSummary: pendingApprovals.length > 0 ? "Additional approvals are still pending." : undefined,
       };
     }
 
@@ -113,7 +117,11 @@ export async function resolveApprovedRequest(
       status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
       task: failedTask,
       approvals: pendingApprovals,
-      summary: `Unable to complete approved action: ${outcome.reason}`,
+      finalResponse: pendingApprovals.length > 0
+        ? undefined
+        : `Unable to complete approved action: ${outcome.reason}`,
+      executionSummary: `Unable to complete approved action: ${outcome.reason}`,
+      pauseSummary: pendingApprovals.length > 0 ? "Additional approvals are still pending." : undefined,
     };
   }
 
@@ -194,6 +202,7 @@ export async function resolveRejectedRequest(
     status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
     task: cancelledTask,
     approvals: pendingApprovals,
-    summary: `Rejected ${approval.summary}`,
+    finalResponse: pendingApprovals.length > 0 ? undefined : `Rejected ${approval.summary}`,
+    pauseSummary: pendingApprovals.length > 0 ? "Additional approvals are still pending." : undefined,
   };
 }

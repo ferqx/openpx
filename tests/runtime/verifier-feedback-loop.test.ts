@@ -11,7 +11,7 @@ describe("verifier feedback loop", () => {
     const graph = await createRootGraph({
       checkpointer,
       planner: async (input) => {
-        return { summary: "planned", mode: "plan" };
+        return { plannerSummary: "planned", mode: "plan" };
       },
       executor: async (input) => {
         executorCalls++;
@@ -19,7 +19,7 @@ describe("verifier feedback loop", () => {
           expect(input.input).toContain("missing tests");
         }
         return { 
-          summary: "executor fixed it. now verify it.", 
+          executionSummary: "executor fixed it. now verify it.", 
           mode: "execute",
         };
       },
@@ -27,14 +27,14 @@ describe("verifier feedback loop", () => {
         verifierCalls++;
         if (verifierCalls === 1) {
           return { 
-            summary: "missing tests", 
+            verificationSummary: "missing tests", 
             mode: "verify",
             isValid: false,
             feedback: "missing tests"
           };
         }
         return { 
-            summary: "verified", 
+            verificationSummary: "verified", 
             mode: "verify",
             isValid: true 
         };
@@ -48,6 +48,6 @@ describe("verifier feedback loop", () => {
     expect(isInterrupted(result)).toBe(false);
     expect(verifierCalls).toBe(1);
     expect(executorCalls).toBe(1);
-    expect(result.summary).toContain("executor fixed it");
+    expect(result.executionSummary).toContain("executor fixed it");
   });
 });

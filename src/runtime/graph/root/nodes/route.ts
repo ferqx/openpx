@@ -1,4 +1,10 @@
-import type { PendingApprovalState, RootMode, RootRoute, VerificationReport } from "../context";
+import type {
+  InteractionIntent,
+  PendingApprovalState,
+  RootMode,
+  RootRoute,
+  VerificationReport,
+} from "../context";
 import { createRecommendationEngine } from "../../../../control/policy/recommendation-engine";
 import type { WorkPackage } from "../../../planning/work-package";
 import type { ArtifactRecord } from "../../../artifacts/artifact-index";
@@ -7,12 +13,14 @@ import { routeNext } from "../root-routing-policy";
 /** route 节点：把 verifier 反馈、审批推荐和 work package 路由统一折成 mode/route */
 export function routeNode(state: { 
   input: string; 
+  interactionIntent?: InteractionIntent;
   workPackages?: WorkPackage[];
   currentWorkPackageId?: string;
   pendingApproval?: PendingApprovalState;
   artifacts?: ArtifactRecord[];
   latestArtifacts?: ArtifactRecord[];
   verificationReport?: VerificationReport;
+  finalResponse?: string;
   verifierPassed?: boolean; 
   verifierFeedback?: string; 
   mode?: RootMode;
@@ -24,8 +32,6 @@ export function routeNode(state: {
   recommendationReason?: string;
   currentWorkPackageId?: string;
 } {
-  const input = state.input.toLowerCase().trim();
-
   if (state.verifierPassed === false) {
     // verifier 失败时，把反馈拼回输入，强制回 executor 修复。
     return {
@@ -38,23 +44,19 @@ export function routeNode(state: {
     };
   }
 
-  if (state.mode === "waiting_approval") {
+  if (state.interactionIntent === "verification_request") {
     return {
-      mode: "waiting_approval",
-      route: "approval",
+      mode: "verify",
+      route: "verifier",
       recommendationReason: undefined,
       currentWorkPackageId: state.currentWorkPackageId,
     };
   }
 
-  if (/\b(completed|done|finished)\b/.test(input)) {
-    return { mode: "done", route: "finish", recommendationReason: undefined };
-  }
-
-  if (/\bverify\b/.test(input)) {
+  if (state.mode === "waiting_approval") {
     return {
-      mode: "verify",
-      route: "verifier",
+      mode: "waiting_approval",
+      route: "approval",
       recommendationReason: undefined,
       currentWorkPackageId: state.currentWorkPackageId,
     };
@@ -79,6 +81,8 @@ export function routeNode(state: {
     artifacts: state.artifacts,
     latestArtifacts: state.latestArtifacts,
     verificationReport: state.verificationReport,
+    finalResponse: state.finalResponse,
+    interactionIntent: state.interactionIntent,
   });
 
   return {

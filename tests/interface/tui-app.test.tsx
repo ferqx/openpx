@@ -15,7 +15,7 @@ describe("TUI App", () => {
   function createCompletedSessionResult(overrides: Partial<RuntimeSessionState> = {}): RuntimeSessionState {
     return {
       status: "completed",
-      summary: "Awaiting answer",
+      finalResponse: "Awaiting answer",
       workspaceRoot: "/tmp/workspace",
       projectId: "project-1",
       tasks: [],
@@ -287,7 +287,7 @@ describe("TUI App", () => {
       async hydrateSession() {
         return {
           status: "completed",
-          summary: "Previous thread summary should stay out of the main stream on launch.",
+            finalResponse: "Previous thread summary should stay out of the main stream on launch.",
           threadId: "thread_previous",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
@@ -376,7 +376,7 @@ describe("TUI App", () => {
       async hydrateSession() {
         return createCompletedSessionResult({
           threadId: "thread_previous",
-          summary: "Old summary from an earlier thread launch.",
+          finalResponse: "Old summary from an earlier thread launch.",
           narrativeSummary: "Old summary from an earlier thread launch.",
           answers: [
             {
@@ -397,7 +397,7 @@ describe("TUI App", () => {
 
         return createCompletedSessionResult({
           threadId: "thread_fresh",
-          summary: "Fresh answer for this launch only.",
+          finalResponse: "Fresh answer for this launch only.",
           answers: [
             {
               answerId: "answer-fresh",
@@ -422,7 +422,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread_fresh",
         status: "completed",
-        summary: "Fresh answer for this launch only.",
+        finalResponse: "Fresh answer for this launch only.",
       },
     });
     await waitFor(
@@ -464,7 +464,7 @@ describe("TUI App", () => {
         if (submitCount === 1) {
           return createCompletedSessionResult({
             threadId: "thread-repeat",
-            summary: "First answer.",
+            finalResponse: "First answer.",
             answers: [
               {
                 answerId: "answer-1",
@@ -477,7 +477,7 @@ describe("TUI App", () => {
 
         return createCompletedSessionResult({
           threadId: "thread-repeat",
-          summary: "First answer.",
+          finalResponse: "First answer.",
           answers: [
             {
               answerId: "answer-1",
@@ -506,7 +506,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-repeat",
         status: "completed",
-        summary: "First answer.",
+        finalResponse: "First answer.",
       },
     });
     await waitFor(
@@ -527,7 +527,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-repeat",
         status: "completed",
-        summary: "Second answer.",
+          finalResponse: "Second answer.",
       },
     });
     await waitFor(
@@ -588,7 +588,7 @@ describe("TUI App", () => {
       payload: {
         status: "completed",
         threadId: "thread_1",
-        summary: "Done.",
+          finalResponse: "Done.",
         tasks: [
           {
             taskId: "task_running",
@@ -755,7 +755,7 @@ describe("TUI App", () => {
         if (command.type === "thread_switch") {
           return createCompletedSessionResult({
             threadId: command.payload.threadId,
-            summary: "Target thread latest answer.",
+            finalResponse: "Target thread latest answer.",
             messages: [
               {
                 messageId: "message-target-1",
@@ -1036,7 +1036,7 @@ describe("TUI App", () => {
         payload: {
           threadId: "thread-overflow",
           status: "completed",
-          summary: `response ${index + 1}`,
+            finalResponse: `response ${index + 1}`,
           messages: [...messages],
           answers: [
             {
@@ -1101,7 +1101,7 @@ describe("TUI App", () => {
         payload: {
           threadId: "thread-scroll",
           status: "completed",
-          summary: `response ${index + 1}`,
+            finalResponse: `response ${index + 1}`,
           messages: [...messages],
           answers: [
             {
@@ -1434,7 +1434,7 @@ describe("TUI App", () => {
       async handleCommand() {
         return {
           status: "waiting_approval",
-          summary: "Approval required before deleting src/old.ts",
+            pauseSummary: "Approval required before deleting src/old.ts",
           threadId: "thread_1",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
@@ -1517,7 +1517,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-worker-ui",
         status: "completed",
-        summary: "Workerized task in progress.",
+          finalResponse: "Workerized task in progress.",
         tasks: [],
         approvals: [],
         answers: [],
@@ -1547,7 +1547,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-worker-ui",
         status: "completed",
-        summary: "Workerized task complete.",
+          finalResponse: "Workerized task complete.",
         tasks: [],
         approvals: [],
         answers: [],
@@ -1588,7 +1588,7 @@ describe("TUI App", () => {
       payload: {
         status: "waiting_approval",
         threadId: "thread-hydrated-approval",
-        summary: "Approval needed.",
+          pauseSummary: "Approval needed.",
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
         approvals: [
@@ -1632,7 +1632,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-hydrated-approval",
         status: "completed",
-        summary: "Done.",
+          finalResponse: "Done.",
         tasks: [],
         approvals: [],
         answers: [],
@@ -1671,7 +1671,7 @@ describe("TUI App", () => {
       async hydrateSession() {
         return {
           status: "waiting_approval",
-          summary: "Approval required before deleting src/resume-me.ts",
+            pauseSummary: "Approval required before deleting src/resume-me.ts",
           threadId: "thread_resume",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
@@ -1737,7 +1737,7 @@ describe("TUI App", () => {
       async hydrateSession() {
         return {
           status: "completed",
-          summary: "Awaiting answer",
+            finalResponse: "Awaiting answer",
           threadId: "thread-narrative",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
@@ -1776,7 +1776,7 @@ describe("TUI App", () => {
       async hydrateSession() {
         return {
           status: "completed",
-          summary: "Awaiting answer",
+            finalResponse: "Awaiting answer",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
           threadId: "thread-active",
@@ -1836,7 +1836,7 @@ describe("TUI App", () => {
       async hydrateSession() {
         return {
           status: "blocked",
-          summary: "Awaiting answer",
+            pauseSummary: "Awaiting answer",
           threadId: "thread_recovery",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
@@ -1905,7 +1905,7 @@ describe("TUI App", () => {
       payload: {
         status: "blocked",
         threadId: "thread_live_recovery",
-        summary: "Manual recovery required from live event.",
+          pauseSummary: "Manual recovery required from live event.",
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
         recoveryFacts: {
@@ -2031,7 +2031,7 @@ describe("TUI App", () => {
     deferred.resolve(createCompletedSessionResult({
       status: "waiting_approval",
       threadId: "thread-executing",
-      summary: "Need confirmation before applying the patch",
+        pauseSummary: "Need confirmation before applying the patch",
       blockingReason: {
         kind: "waiting_approval",
         message: "apply_patch update_file src/surfaces/tui/app.tsx",
@@ -2154,7 +2154,7 @@ describe("TUI App", () => {
 
         return createCompletedSessionResult({
           threadId: "thread-active",
-          summary: "First answer.",
+          finalResponse: "First answer.",
           answers: [
             {
               answerId: "answer-1",
@@ -2168,7 +2168,7 @@ describe("TUI App", () => {
         interruptCount += 1;
         return createCompletedSessionResult({
           threadId: "thread-active",
-          summary: "First answer.",
+          finalResponse: "First answer.",
           answers: [
             {
               answerId: "answer-1",
@@ -2188,7 +2188,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-active",
         status: "completed",
-        summary: "First answer.",
+        finalResponse: "First answer.",
       },
     });
     await waitFor(
@@ -2253,7 +2253,7 @@ describe("TUI App", () => {
         payload: {
           threadId: "thread-collision",
           status: "completed",
-          summary: "First assistant summary",
+            finalResponse: "First assistant summary",
         },
       });
       await tick();
@@ -2263,7 +2263,7 @@ describe("TUI App", () => {
         payload: {
           threadId: "thread-collision",
           status: "completed",
-          summary: "Second assistant summary",
+            finalResponse: "Second assistant summary",
         },
       });
       await tick();

@@ -125,7 +125,7 @@ export function createRemoteKernel(client: RemoteRuntimeClient): TuiKernel {
         const session = deriveRuntimeSession(snapshot);
         return {
           ...session,
-          summary: formatThreadListSummary(session),
+          finalResponse: formatThreadListSummary(session),
         };
       }
       

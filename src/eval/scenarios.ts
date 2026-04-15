@@ -28,7 +28,7 @@ function createHappyPathGateway(): ModelGateway {
       return { summary: "verified", isValid: true };
     },
     async respond() {
-      return { summary: "responded" };
+      return { summary: "plan" };
     },
     onStatusChange() {
       return createNoopHandlers();
@@ -66,7 +66,7 @@ function createApprovalGateway(): ModelGateway {
       return { summary: "verified", isValid: true };
     },
     async respond() {
-      return { summary: "responded" };
+      return { summary: "Deleted approved.txt" };
     },
     onStatusChange() {
       return createNoopHandlers();
@@ -87,7 +87,7 @@ function createRejectionGateway(): ModelGateway {
       return { summary: "verified", isValid: true };
     },
     async respond() {
-      return { summary: "responded" };
+      return { summary: "continue safely without deleting files" };
     },
     onStatusChange() {
       return createNoopHandlers();

@@ -23,10 +23,10 @@ describe("root graph", () => {
         plannerCallInput = input.input;
         plannerCallThreadId = input.threadId;
         plannerCallTaskId = input.taskId;
-        return { summary: "planned", mode: "plan" };
+        return { plannerSummary: "planned", mode: "plan" };
       },
-      executor: async () => ({ summary: "executed", mode: "execute" }),
-      verifier: async () => ({ summary: "verified", mode: "verify" }),
+      executor: async () => ({ executionSummary: "executed", mode: "execute" }),
+      verifier: async () => ({ verificationSummary: "verified", mode: "verify" }),
     });
 
     const result = await graph.invoke(
@@ -42,7 +42,7 @@ describe("root graph", () => {
     expect(result.approved).toBe(false);
     expect(result.artifacts).toEqual([]);
     expect(result.verificationReport).toBeUndefined();
-    expect(result.finalAnswer).toBeUndefined();
+    expect(result.finalResponse).toBeUndefined();
     expect(plannerCallInput).toBe("plan the repository");
     expect(plannerCallThreadId).toBe("thread_1");
     expect(plannerCallTaskId).toBe("task_1");
@@ -58,16 +58,16 @@ describe("root graph", () => {
       planner: async () => {
         plannerCalled = true;
         return {
-          summary: "planned startup message update",
+          plannerSummary: "planned startup message update",
           mode: "plan",
           workPackages: [startupMessageWorkPackage],
         };
       },
       executor: async () => {
         executorCalled = true;
-        return { summary: "executed startup message update", mode: "execute" };
+        return { executionSummary: "executed startup message update", mode: "execute" };
       },
-      verifier: async () => ({ summary: "verified", mode: "verify" }),
+      verifier: async () => ({ verificationSummary: "verified", mode: "verify" }),
     });
 
     const result = await graph.invoke(
@@ -79,7 +79,7 @@ describe("root graph", () => {
     expect(executorCalled).toBe(true);
     expect(result.workPackages).toEqual([startupMessageWorkPackage]);
     expect(result.currentWorkPackageId).toBe("pkg_startup_message");
-    expect(result.summary).toBe("executed startup message update");
+    expect(result.executionSummary).toBe("executed startup message update");
   });
 
   test("commits executor-produced latest artifacts after a follow-up verification turn", async () => {
@@ -87,12 +87,12 @@ describe("root graph", () => {
     const graph = await createRootGraph({
       checkpointer,
       planner: async () => ({
-        summary: "planned startup message update",
+        plannerSummary: "planned startup message update",
         mode: "plan",
         workPackages: [startupMessageWorkPackage],
       }),
       executor: async () => ({
-        summary: "executed startup message update",
+        executionSummary: "executed startup message update",
         mode: "execute",
         latestArtifacts: [
           {
@@ -103,7 +103,8 @@ describe("root graph", () => {
           },
         ],
       }),
-      verifier: async () => ({ summary: "verified", mode: "verify", isValid: true }),
+      verifier: async () => ({ verificationSummary: "verified", mode: "verify", isValid: true }),
+      responder: async () => ({ finalResponse: "responded", finalResponseSource: "responder", mode: "respond" }),
     });
 
     const first = await graph.invoke(
@@ -115,8 +116,7 @@ describe("root graph", () => {
       { configurable: { thread_id: "thread_artifact_commit", task_id: "task_artifact_commit" } },
     );
 
-    expect(first.artifacts).toEqual([]);
-    expect(first.latestArtifacts).toEqual([
+    expect(first.artifacts).toEqual([
       {
         ref: "patch:src/app/main.ts",
         kind: "patch",
@@ -124,6 +124,7 @@ describe("root graph", () => {
         workPackageId: "pkg_startup_message",
       },
     ]);
+    expect(first.latestArtifacts).toEqual([]);
 
     const second = await graph.invoke(
       { input: "continue" },
@@ -139,7 +140,8 @@ describe("root graph", () => {
       },
     ]);
     expect(second.latestArtifacts).toEqual([]);
-    expect(second.finalAnswer).toBe("verified");
+    expect(second.finalResponse).toBe("responded");
+    expect(second.verificationSummary).toBe("verified");
   });
 
   test("passes active work package context into executor and verifier", async () => {
@@ -303,15 +305,15 @@ describe("root graph", () => {
       checkpointer,
       planner: async () => {
         plannerCalled = true;
-        return { summary: "planned", mode: "plan" };
+        return { plannerSummary: "planned", mode: "plan" };
       },
       executor: async () => {
         executorCalled = true;
-        return { summary: "executed pwd", mode: "execute" };
+        return { executionSummary: "executed pwd", mode: "execute" };
       },
       verifier: async () => {
         verifierCalled = true;
-        return { summary: "verified", mode: "verify" };
+        return { verificationSummary: "verified", mode: "verify" };
       },
     });
 
@@ -324,7 +326,7 @@ describe("root graph", () => {
     expect(plannerCalled).toBe(false);
     expect(verifierCalled).toBe(false);
     expect(result.mode).toBe("done");
-    expect(result.summary).toBe("executed pwd");
+    expect(result.finalResponse).toBe("executed pwd");
     expect(result.currentWorkPackageId).toBe("pkg_startup_message");
   });
 
@@ -338,16 +340,17 @@ describe("root graph", () => {
       checkpointer,
       planner: async () => {
         plannerCalled = true;
-        return { summary: "planned", mode: "plan" };
+        return { plannerSummary: "planned", mode: "plan" };
       },
       executor: async () => {
         executorCalled = true;
-        return { summary: "executed", mode: "execute" };
+        return { executionSummary: "executed", mode: "execute" };
       },
       verifier: async () => {
         verifierCalled = true;
-        return { summary: "verified", mode: "verify" };
+        return { verificationSummary: "verified", mode: "verify", isValid: true };
       },
+      responder: async () => ({ finalResponse: "responded", finalResponseSource: "responder", mode: "respond" }),
     });
 
     const result = await graph.invoke(
@@ -371,7 +374,8 @@ describe("root graph", () => {
     expect(plannerCalled).toBe(false);
     expect(executorCalled).toBe(false);
     expect(result.mode).toBe("done");
-    expect(result.summary).toBe("verified");
+    expect(result.finalResponse).toBe("responded");
+    expect(result.verificationSummary).toBe("verified");
     expect(result.route).toBe("finish");
     expect(result.currentWorkPackageId).toBeUndefined();
   });
@@ -528,7 +532,7 @@ describe("root graph", () => {
 
     expect(executedApprovedRequestIds).toEqual(["approval-once"]);
     expect(genericExecutions).toEqual(["pkg_followup"]);
-    expect(resumed.latestArtifacts?.[0]?.workPackageId).toBe("pkg_delete");
-    expect(followUp.latestArtifacts?.[0]?.workPackageId).toBe("pkg_followup");
+    expect(resumed.artifacts.some((artifact) => artifact.workPackageId === "pkg_delete")).toBe(true);
+    expect(followUp.artifacts.some((artifact) => artifact.workPackageId === "pkg_followup")).toBe(true);
   });
 });

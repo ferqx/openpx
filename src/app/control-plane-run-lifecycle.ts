@@ -41,7 +41,10 @@ type RootTaskFinalizationDeps = {
 /** graph 返回值的最小兼容形状：这里只关心控制面生命周期需要的字段 */
 type RootTaskGraphResultLike = {
   mode?: string;
-  summary?: string;
+  finalResponse?: string;
+  executionSummary?: string;
+  verificationSummary?: string;
+  pauseSummary?: string;
   recommendationReason?: string;
   lastCompletedToolCallId?: string;
   lastCompletedToolName?: string;
@@ -53,7 +56,10 @@ export type RootTaskFinalizationResult = {
   status: "waiting_approval" | "completed";
   task: ControlTask;
   approvals: ApprovalRequest[];
-  summary: string;
+  finalResponse?: string;
+  executionSummary?: string;
+  verificationSummary?: string;
+  pauseSummary?: string;
   recommendationReason?: string;
   lastCompletedToolCallId?: string;
   lastCompletedToolName?: string;
@@ -159,24 +165,31 @@ export async function finalizeRootTaskExecution(
     status === "waiting_approval" && approvals.length === 0
       ? (graphResult as RootTaskGraphResultLike)?.recommendationReason
       : undefined;
-  const summary = isInterrupted(graphResult)
-    ? String(interruptValue?.summary ?? resumeInputText(inputValue))
-    : String(
-        (graphResult as RootTaskGraphResultLike)?.summary ??
-        recommendationReason ??
-        resumeInputText(inputValue),
-      );
+  const finalResponse =
+    status === "completed"
+      ? (graphResult as RootTaskGraphResultLike)?.finalResponse
+      : undefined;
+  const executionSummary = (graphResult as RootTaskGraphResultLike)?.executionSummary;
+  const verificationSummary = (graphResult as RootTaskGraphResultLike)?.verificationSummary;
+  const pauseSummary = status === "waiting_approval"
+    ? String(
+        (graphResult as RootTaskGraphResultLike)?.pauseSummary
+        ?? interruptValue?.summary
+        ?? recommendationReason
+        ?? "Execution paused.",
+      )
+    : undefined;
 
   // run 的 blockingReason 代表“为什么现在不能继续自动推进”。
   // 有审批时标记 waiting_approval；否则说明进入了人工恢复场景。
   await deps.updateRunStatus(run, status === "waiting_approval" ? "waiting_approval" : "completed", {
     activeTaskId: finalTask.taskId,
-    resultSummary: summary,
+    resultSummary: finalResponse,
     blockingReason:
       status === "waiting_approval"
         ? {
             kind: approvals.length > 0 ? "waiting_approval" : "human_recovery",
-            message: String(interruptValue?.summary ?? recommendationReason ?? "Execution paused."),
+            message: pauseSummary ?? "Execution paused.",
           }
         : undefined,
     endedAt: status === "waiting_approval" ? undefined : new Date().toISOString(),
@@ -186,7 +199,10 @@ export async function finalizeRootTaskExecution(
     status,
     task: finalTask,
     approvals,
-    summary,
+    finalResponse,
+    executionSummary,
+    verificationSummary,
+    pauseSummary,
     recommendationReason,
     lastCompletedToolCallId: (graphResult as RootTaskGraphResultLike)?.lastCompletedToolCallId,
     lastCompletedToolName: (graphResult as RootTaskGraphResultLike)?.lastCompletedToolName,

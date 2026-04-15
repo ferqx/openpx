@@ -28,7 +28,11 @@ function createEmptySessionResult(scope: HarnessSessionScope): SessionCommandRes
   return {
     threadId: "",
     status: "completed",
-    summary: "Awaiting answer",
+    finalResponse: undefined,
+    executionSummary: undefined,
+    verificationSummary: undefined,
+    pauseSummary: undefined,
+    latestExecutionStatus: "completed",
     workspaceRoot: scope.workspaceRoot,
     projectId: scope.projectId,
     approvals: [],

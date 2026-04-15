@@ -31,6 +31,13 @@ TUI 只是默认 surface（交互表面），而不是产品主轴本身。
 
 `package.json -> src/app/main.ts -> src/runtime/service/runtime-daemon.ts -> src/harness/server/harness-session-registry.ts -> harness core / protocol / app server -> surfaces`
 
+在当前 harness-first 语义下，最终回答与中间阶段摘要必须分层：
+
+- responder 负责生成最终回答（final response）
+- planner / executor / verifier / approval / recovery 只产生各自阶段数据
+- durable answer 只回写 final response
+- pause、verification、execution 摘要只属于控制面与 surface 投影视图
+
 这条主轴的含义是：
 
 - `main.ts`

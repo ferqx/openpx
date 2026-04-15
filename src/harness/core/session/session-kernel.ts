@@ -30,6 +30,7 @@ import { createInterruptService } from "../events/interrupt-service";
 import { runSessionInBackground } from "../run/session-background-runner";
 import { applySessionControlPlaneResult } from "../run/session-result-applicator";
 import { createThreadService } from "../thread/thread-service";
+import { createThreadStateProjector } from "../../../control/context/thread-state-projector";
 import {
   resolveApprovalCommandContext,
   resolveSubmitCommandContext,
@@ -71,7 +72,10 @@ export type SessionControlPlaneResult = {
   status: "completed" | "waiting_approval" | "blocked";
   task: Task;
   approvals: ApprovalRequest[];
-  summary: string;
+  finalResponse?: string;
+  executionSummary?: string;
+  verificationSummary?: string;
+  pauseSummary?: string;
   recommendationReason?: string;
   lastCompletedToolCallId?: string;
   lastCompletedToolName?: string;
@@ -204,12 +208,45 @@ export function createSessionKernel(deps: {
     });
   }
 
+  async function appendUserTranscriptMessage(input: {
+    thread: Thread;
+    content: string;
+  }): Promise<Thread> {
+    const projector = createThreadStateProjector();
+    const nextView = projector.project(
+      {
+        recoveryFacts: input.thread.recoveryFacts,
+        narrativeState: input.thread.narrativeState,
+        workingSetWindow: input.thread.workingSetWindow,
+      },
+      {
+        kind: "transcript_message",
+        messageId: prefixedUuid("msg"),
+        role: "user",
+        content: input.content,
+      },
+    );
+
+    const nextThread: Thread = {
+      ...input.thread,
+      recoveryFacts: nextView.recoveryFacts,
+      narrativeState: nextView.narrativeState,
+      workingSetWindow: nextView.workingSetWindow,
+      revision: nextView.recoveryFacts?.revision ?? input.thread.revision,
+    };
+    await deps.stores.threadStore.save(nextThread);
+    return nextThread;
+  }
+
   async function buildSessionResult(input: {
     thread: Thread;
     status: ProjectedSessionResult["status"];
     tasks: Task[];
     approvals: ApprovalRequest[];
-    summary?: string;
+    finalResponse?: string;
+    executionSummary?: string;
+    verificationSummary?: string;
+    pauseSummary?: string;
     recommendationReason?: string;
     threadList?: SessionThreadSummary[];
   }): Promise<SessionCommandResult> {
@@ -226,7 +263,18 @@ export function createSessionKernel(deps: {
       answers: stableArtifacts.answers,
       messages: stableArtifacts.messages,
       workers: stableArtifacts.workers,
-      summary: input.summary,
+      finalResponse: input.finalResponse,
+      executionSummary: input.executionSummary,
+      verificationSummary: input.verificationSummary,
+      pauseSummary: input.pauseSummary,
+      latestExecutionStatus:
+        input.status === "completed"
+          ? "completed"
+          : input.status === "waiting_approval"
+            ? "waiting_approval"
+            : input.status === "blocked"
+              ? "blocked"
+              : "running",
       recommendationReason: input.recommendationReason,
       workspaceRoot: deps.workspaceRoot,
       projectId: deps.projectId,
@@ -250,7 +298,10 @@ export function createSessionKernel(deps: {
       status: result.status,
       tasks: [result.task],
       approvals: result.approvals,
-      summary: result.summary,
+      finalResponse: result.finalResponse,
+      executionSummary: result.executionSummary,
+      verificationSummary: result.verificationSummary,
+      pauseSummary: result.pauseSummary,
       recommendationReason: result.recommendationReason,
       threadList,
     });
@@ -311,14 +362,19 @@ export function createSessionKernel(deps: {
           });
         }
 
+        const threadWithUserMessage = await appendUserTranscriptMessage({
+          thread,
+          content: command.payload.text,
+        });
+
         startBackgroundControlAction({
-          threadId: thread.threadId,
-          execute: () => deps.controlPlane.startRootTask(thread.threadId, command.payload.text),
+          threadId: threadWithUserMessage.threadId,
+          execute: () => deps.controlPlane.startRootTask(threadWithUserMessage.threadId, command.payload.text),
         });
 
         const threadList = await getThreadSummaries();
         return buildSessionResult({
-          thread,
+          thread: threadWithUserMessage,
           status: deriveProjectedExecutionStatus(submitContext.latestRun, thread.status),
           tasks: submitContext.tasks,
           approvals: submitContext.approvals,

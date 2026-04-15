@@ -56,9 +56,9 @@ describe("phase commit", () => {
     ]);
     expect(result.currentWorkPackageId).toBeUndefined();
     expect(result.executionDetails).toBeUndefined();
-    expect(result.route).toBe("finish");
-    expect(result.mode).toBe("done");
-    expect(result.finalAnswer).toBe("All checks passed");
+    expect(result.route).toBe("responder");
+    expect(result.mode).toBe("respond");
+    expect(result.verificationSummary).toBe("All checks passed");
   });
 
   test("clears transient verification state before advancing to the next work package", () => {

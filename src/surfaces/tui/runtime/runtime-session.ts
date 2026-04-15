@@ -8,7 +8,10 @@ export type RuntimeSessionState = {
   status: "completed" | "waiting_approval" | "blocked";
   stage?: SessionStage;
   threadId?: string;
-  summary: string;
+  finalResponse?: string;
+  executionSummary?: string;
+  verificationSummary?: string;
+  pauseSummary?: string;
   tasks: RuntimeSnapshot["tasks"];
   approvals: RuntimeSnapshot["pendingApprovals"];
   answers: RuntimeSnapshot["answers"];
@@ -97,12 +100,10 @@ export function deriveRuntimeSession(snapshot: RuntimeSnapshot): RuntimeSessionS
     status,
     stage,
     threadId: snapshot.activeThreadId,
-    summary:
-      snapshot.answers.at(-1)?.content ??
-      blockingReason?.message ??
-      activeRun?.resultSummary ??
-      snapshot.narrativeSummary ??
-      "Awaiting answer",
+    finalResponse: snapshot.finalResponse ?? snapshot.answers.at(-1)?.content,
+    executionSummary: snapshot.executionSummary,
+    verificationSummary: snapshot.verificationSummary,
+    pauseSummary: snapshot.pauseSummary ?? blockingReason?.message,
     tasks: snapshot.tasks,
     approvals: snapshot.pendingApprovals,
     answers: snapshot.answers,

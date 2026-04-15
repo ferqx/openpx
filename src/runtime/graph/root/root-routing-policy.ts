@@ -1,4 +1,5 @@
 import type {
+  InteractionIntent,
   PendingApprovalState,
   RootMode,
   VerificationReport,
@@ -8,7 +9,7 @@ import type { WorkPackage } from "../../planning/work-package";
 
 /** 路由决策：告诉 root graph 下一步走哪条主路径 */
 export type RoutingDecision = {
-  route: "planner" | "approval" | "executor" | "verifier" | "finish";
+  route: "planner" | "approval" | "executor" | "verifier" | "responder" | "finish";
   mode: RootMode;
   currentWorkPackageId?: string;
 };
@@ -37,6 +38,8 @@ export function routeNext(state: {
   artifacts?: ArtifactRecord[];
   latestArtifacts?: ArtifactRecord[];
   verificationReport?: VerificationReport;
+  finalResponse?: string;
+  interactionIntent?: InteractionIntent;
 }): RoutingDecision {
   if (state.pendingApproval) {
     return {
@@ -88,9 +91,25 @@ export function routeNext(state: {
     };
   }
 
+  if (state.interactionIntent === "verification_request") {
+    return {
+      route: "verifier",
+      mode: "verify",
+      currentWorkPackageId,
+    };
+  }
+
+  if (state.finalResponse) {
+    return {
+      route: "finish",
+      mode: "done",
+      currentWorkPackageId,
+    };
+  }
+
   return {
-    route: "finish",
-    mode: "done",
+    route: "responder",
+    mode: "respond",
     currentWorkPackageId,
   };
 }

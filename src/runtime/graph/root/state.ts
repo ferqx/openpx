@@ -1,5 +1,7 @@
 import { Annotation } from "@langchain/langgraph";
 import type {
+  FinalResponseSource,
+  InteractionIntent,
   PendingApprovalState,
   RootMode,
   RootRoute,
@@ -20,7 +22,16 @@ import type { WorkPackage } from "../../planning/work-package";
  * 以及 thread 压缩视图恢复出的 recovery/narrative/working-set 放在同一个状态对象里。 */
 export const RootState = Annotation.Root({
   input: Annotation<string>(),
-  summary: Annotation<string | undefined>(),
+  plannerSummary: Annotation<string | undefined>(),
+  executionSummary: Annotation<string | undefined>(),
+  verificationSummary: Annotation<string | undefined>(),
+  pauseSummary: Annotation<string | undefined>(),
+  finalResponse: Annotation<string | undefined>(),
+  finalResponseSource: Annotation<FinalResponseSource | undefined>(),
+  interactionIntent: Annotation<InteractionIntent>({
+    reducer: (_, next) => next,
+    default: () => "user_request",
+  }),
   mode: Annotation<RootMode>(),
   route: Annotation<RootRoute>({
     // route 每轮都以最新决策覆盖，不累积历史值。
@@ -45,7 +56,6 @@ export const RootState = Annotation.Root({
     default: () => [],
   }),
   verificationReport: Annotation<VerificationReport | undefined>(),
-  finalAnswer: Annotation<string | undefined>(),
   latestArtifacts: Annotation<ArtifactRecord[]>({
     // latestArtifacts 只保存当前回合新产出的 artifact，phase-commit 后会清空。
     reducer: (_, next) => next,

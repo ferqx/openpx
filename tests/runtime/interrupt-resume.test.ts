@@ -68,12 +68,13 @@ describe("root graph interrupt/resume", () => {
 
     const graph = await createRootGraph({
       checkpointer,
-      planner: async () => ({ summary: "planned", mode: "plan" }),
+      planner: async () => ({ plannerSummary: "planned", mode: "plan" }),
       executor: async () => {
         executorCalled = true;
-        return { summary: "executed", mode: "execute" };
+        return { executionSummary: "executed", mode: "execute" };
       },
-      verifier: async () => ({ summary: "verified", mode: "verify" }),
+      verifier: async () => ({ verificationSummary: "verified", mode: "verify" }),
+      responder: async () => ({ finalResponse: "executed", finalResponseSource: "system_fallback", mode: "respond" }),
     });
 
     const interrupted = await graph.invoke(
@@ -100,7 +101,7 @@ describe("root graph interrupt/resume", () => {
     expect(isInterrupted(resumed)).toBe(false);
     expect(executorCalled).toBe(true);
     expect(resumed.mode).toBe("done");
-    expect(resumed.summary).toBe("executed");
+    expect(resumed.finalResponse).toBe("executed");
   });
 
   test("hydrates legacy pending approvals into the kernel session view", async () => {

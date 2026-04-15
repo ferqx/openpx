@@ -29,6 +29,15 @@ OpenPX 采用 harness-first（以 harness 为先）控制模型。
 
 若文档叙事、目录命名或局部实现与上述原则冲突，以 harness-first 原则为准。
 
+## 最终回答真相约束
+
+面向用户的最终回答（final response）必须与中间运行摘要分离。
+
+- durable answer 只承载真正面向用户的最终回答
+- `executionSummary`、`verificationSummary`、`pauseSummary` 属于运行阶段数据或 surface 投影视图，不是 durable answer
+- `interrupt`、`waiting_approval`、`human_recovery` 产生的是暂停说明，不得写入 durable answer
+- surface 可以分别展示 final response、pause、verification、execution，但不得把 pause / verification / execution 固化成 durable answer
+
 ## 真相层级（harness 语境）
 
 1. durable thread / run / approval / event / ledger

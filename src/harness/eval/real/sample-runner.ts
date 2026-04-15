@@ -516,7 +516,13 @@ async function runInterruptScenario(
       runId: bounded.run.runId,
       taskId: bounded.task.taskId,
       status: "blocked",
-      summaryText: bounded.run.resultSummary ?? resumed.recommendationReason ?? resumed.summary,
+      summaryText:
+        bounded.run.resultSummary
+        ?? resumed.recommendationReason
+        ?? resumed.pauseSummary
+        ?? resumed.executionSummary
+        ?? resumed.verificationSummary
+        ?? resumed.finalResponse,
       approvalPathEvidence: createApprovalPathEvidence({
         approvalRequestObserved: false,
         terminalMode: bounded.run.status,

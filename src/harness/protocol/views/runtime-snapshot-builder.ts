@@ -41,6 +41,19 @@ export function buildRuntimeSnapshot(input: {
     : input.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
 
   const narrativeSummary = input.activeThread?.narrativeState?.threadSummary || input.narrativeSummary;
+  const latestAnswer = input.activeThread?.recoveryFacts?.latestDurableAnswer;
+  const latestRun = input.runs.find((run) => run.runId === input.activeRunId);
+  const latestExecutionStatus =
+    latestRun?.status === "completed"
+      ? "completed" as const
+      : latestRun?.status === "waiting_approval"
+        ? "waiting_approval" as const
+        : latestRun && ["blocked", "failed", "interrupted"].includes(latestRun.status)
+          ? "blocked" as const
+          : latestRun
+            ? "running" as const
+            : undefined;
+  const pauseSummary = activeBlockingReason?.message;
 
   // 事件流恢复以持久层序号为准；没有序号时再回退到内存 liveSeq。
   const lastEventSeq = getStoredEventSequence(input.events.at(-1)) ?? input.fallbackLastEventSeq;
@@ -53,6 +66,9 @@ export function buildRuntimeSnapshot(input: {
     activeThreadId: input.activeThread?.threadId,
     activeRunId: input.activeRunId,
     recommendationReason: input.activeThread?.recommendationReason,
+    finalResponse: latestAnswer?.summary,
+    pauseSummary,
+    latestExecutionStatus,
     narrativeSummary,
     blockingReason: activeBlockingReason,
     threads: input.threads.map((thread) => {
@@ -107,12 +123,12 @@ export function buildRuntimeSnapshot(input: {
     })),
     // 当前 answers/messages 仍主要从 active thread 的 recoveryFacts 中恢复，
     // 这样 snapshot 不依赖完整原始消息历史也能给 TUI 提供稳定视图。
-    answers: input.activeThread?.recoveryFacts?.latestDurableAnswer
+    answers: latestAnswer && input.activeThread
       ? [
           {
-            answerId: input.activeThread.recoveryFacts.latestDurableAnswer.answerId,
+            answerId: latestAnswer.answerId,
             threadId: input.activeThread.threadId,
-            content: input.activeThread.recoveryFacts.latestDurableAnswer.summary,
+            content: latestAnswer.summary,
           },
         ]
       : [],

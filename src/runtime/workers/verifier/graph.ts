@@ -7,7 +7,7 @@ import type { WorkPackage } from "../../planning/work-package";
 /** verifier worker 的局部状态 */
 const VerifierWorkerState = Annotation.Root({
   input: Annotation<string>(),
-  summary: Annotation<string>(),
+  verificationSummary: Annotation<string>(),
   mode: Annotation<"verify">(),
   isValid: Annotation<boolean>(),
   feedback: Annotation<string>(),

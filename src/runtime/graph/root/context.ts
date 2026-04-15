@@ -8,7 +8,15 @@ import type { WorkPackage } from "../../planning/work-package";
 /** 根图主模式：plan/execute/verify/done/waiting_approval/respond */
 export type RootMode = "plan" | "execute" | "verify" | "done" | "waiting_approval" | "respond";
 /** 根图路由结果：决定下一步进入哪个节点 */
-export type RootRoute = "planner" | "approval" | "executor" | "verifier" | "finish" | "unrouted";
+export type RootRoute = "planner" | "approval" | "executor" | "verifier" | "responder" | "finish" | "unrouted";
+/** 交互意图：把显式控制意图与普通用户文本分离 */
+export type InteractionIntent =
+  | "user_request"
+  | "verification_request"
+  | "resume_approval"
+  | "resume_recovery";
+/** 最终回答来源：区分模型生成与系统兜底 */
+export type FinalResponseSource = "responder" | "system_fallback";
 
 /** 待审批状态：供 approval-gate 和 UI 生成审批提示 */
 export type PendingApprovalState = {
@@ -28,8 +36,13 @@ export type WorkerMode = Exclude<RootMode, "done">;
 
 /** worker 返回值的稳定形状：planner/executor/verifier/responder 都向这里对齐 */
 export type WorkerResult<TMode extends WorkerMode = WorkerMode> = {
-  summary: string;
   mode: TMode;
+  plannerSummary?: string;
+  executionSummary?: string;
+  verificationSummary?: string;
+  pauseSummary?: string;
+  finalResponse?: string;
+  finalResponseSource?: FinalResponseSource;
   isValid?: boolean;
   feedback?: string;
   plannerResult?: PlannerResult;
@@ -50,6 +63,7 @@ export type WorkerExecutionContext = {
   currentWorkPackage?: WorkPackage;
   artifacts?: ArtifactRecord[];
   plannerResult?: PlannerResult;
+  verificationReport?: VerificationReport;
   approvedApprovalRequestId?: string;
   configurable?: Record<string, unknown>;
 };

@@ -4,6 +4,9 @@ import type { Thread } from "../domain/thread";
 import type { ModelGatewayError } from "../infra/model-gateway";
 import type { ThreadStorePort } from "../persistence/ports/thread-store-port";
 import type { TaskStorePort } from "../persistence/ports/task-store-port";
+import type { VerificationReport } from "../runtime/graph/root/context";
+import type { ArtifactRecord } from "../runtime/artifacts/artifact-index";
+import type { PlannerResult } from "../runtime/planning/planner-result";
 import { compactThreadView } from "../control/context/thread-compaction-policy";
 import { createThreadStateProjector } from "../control/context/thread-state-projector";
 import type { ControlTask } from "../control/tasks/task-types";
@@ -176,6 +179,56 @@ function formatPromptSection(title: string, lines: string[]): string {
   return `${title}:\n${lines.map((line) => `- ${line}`).join("\n")}`;
 }
 
+function formatRecentTranscript(input: { threadView?: Thread; limit?: number }): string | undefined {
+  const recentTranscript = (input.threadView?.recoveryFacts?.conversationHistory ?? [])
+    .filter((message) => message.content.trim().length > 0)
+    .slice(-(input.limit ?? 8));
+
+  if (recentTranscript.length === 0) {
+    return undefined;
+  }
+
+  return recentTranscript
+    .map((message) => `- ${message.role}: ${message.content}`)
+    .join("\n");
+}
+
+export function buildPlannerPrompt(input: {
+  text: string;
+  threadView?: Thread;
+  projectMemory?: string[];
+}): string {
+  const sections = [`User request: ${input.text}`];
+  const projectMemorySection = formatPromptSection("Project Memory", input.projectMemory ?? []);
+  if (projectMemorySection) {
+    sections.push(projectMemorySection);
+  }
+
+  const threadSummary = input.threadView?.narrativeState?.threadSummary?.trim();
+  if (threadSummary) {
+    sections.push(`Thread summary:\n${threadSummary}`);
+  }
+
+  const recentTranscript = formatRecentTranscript({ threadView: input.threadView, limit: 8 });
+  if (recentTranscript) {
+    sections.push(`Recent conversation transcript:\n${recentTranscript}`);
+  }
+
+  const latestAnswer = input.threadView?.recoveryFacts?.latestDurableAnswer?.summary?.trim();
+  if (latestAnswer) {
+    sections.push(`Latest durable answer:\n- ${latestAnswer}`);
+  }
+
+  sections.push(
+    [
+      "Decide the next step using the recent conversation as authoritative context.",
+      "If the user is having a normal conversation or asking a direct question that can be answered from the conversation context, prefer a respond_only plan instead of inventing code work.",
+    ].join("\n"),
+  );
+
+  return sections.join("\n\n");
+}
+
 export function buildResponderPrompt(input: { text: string; threadView?: Thread }): string {
   const sections = [`Current user request: ${input.text}`];
   const threadSummary = input.threadView?.narrativeState?.threadSummary?.trim();
@@ -206,6 +259,11 @@ export function buildResponderPrompt(input: { text: string; threadView?: Thread 
     sections.push(workingSection);
   }
 
+  const recentTranscript = formatRecentTranscript({ threadView: input.threadView, limit: 8 });
+  if (recentTranscript) {
+    sections.push(`Recent conversation transcript:\n${recentTranscript}`);
+  }
+
   const memorySection = formatPromptSection("Retrieved memories", retrievedMemories);
   if (memorySection) {
     sections.push(memorySection);
@@ -216,6 +274,53 @@ export function buildResponderPrompt(input: { text: string; threadView?: Thread 
   }
 
   return sections.join("\n\n");
+}
+
+export function buildFinalResponderPrompt(input: {
+  text: string;
+  threadView?: Thread;
+  artifacts?: ArtifactRecord[];
+  plannerResult?: PlannerResult;
+  verificationReport?: VerificationReport;
+}): string {
+  const sections = [
+    buildResponderPrompt({ text: input.text, threadView: input.threadView }),
+  ];
+
+  const workPackages = input.plannerResult?.workPackages ?? [];
+  if (workPackages.length > 0) {
+    sections.push(
+      `Work packages:\n${workPackages.map((item) => `- ${item.id}: ${item.objective}`).join("\n")}`,
+    );
+  }
+
+  const artifacts = input.artifacts ?? [];
+  if (artifacts.length > 0) {
+    sections.push(
+      `Completed artifacts:\n${artifacts.map((artifact) => `- ${artifact.ref}: ${artifact.summary}`).join("\n")}`,
+    );
+  }
+
+  if (input.verificationReport) {
+    const verificationLines = [
+      `- passed: ${input.verificationReport.passed === false ? "false" : "true"}`,
+      `- summary: ${input.verificationReport.summary}`,
+      input.verificationReport.feedback ? `- feedback: ${input.verificationReport.feedback}` : undefined,
+    ].filter((line): line is string => Boolean(line));
+    sections.push(`Verification report:\n${verificationLines.join("\n")}`);
+  }
+
+  sections.push(
+    [
+      "Compose the final user-facing response in Chinese unless the user clearly asked for another language.",
+      "Treat the recent conversation transcript as authoritative context for identity, prior answers, and follow-up questions.",
+      "If the user asks a conversational follow-up such as recalling a name, answer from the transcript instead of restarting with a generic greeting.",
+      "Only summarize the durable final outcome; do not present verification, approval, or execution notes as separate final answers.",
+      "Be concise and mention important changed artifacts when they are known.",
+    ].join("\n"),
+  );
+
+  return sections.filter((section) => section.trim().length > 0).join("\n\n");
 }
 
 export function isCancelledError(error: unknown): boolean {

@@ -199,7 +199,8 @@ describe("createAppContext", () => {
     expect(updatedRun?.runId).toBe(run.runId);
     expect(updatedRun?.status).toBe("completed");
     expect(updatedRun?.activeTaskId).toBe("task-approve");
-    expect(result.summary).toBe("apply_patch create_file approved.txt");
+    expect(result.finalResponse).toBe("apply_patch create_file approved.txt");
+    expect(result.executionSummary).toBe("apply_patch create_file approved.txt");
     expect(ledgerEntries).toHaveLength(1);
     expect(ledgerEntries[0]?.runId).toBe(run.runId);
     expect(ledgerEntries[0]?.toolName).toBe("apply_patch");
@@ -266,7 +267,7 @@ describe("createAppContext", () => {
     const interruptedRun = await ctx.stores.runStore.getLatestByThread(thread.threadId);
 
     expect(blocked.status).toBe("waiting_approval");
-    expect(blocked.summary).toContain("Approval required before deleting approved.txt");
+    expect(blocked.pauseSummary).toContain("Approval required before deleting approved.txt");
     expect(approvalRequestId).toBeDefined();
     expect(interruptedRun?.status).toBe("waiting_approval");
 
@@ -275,7 +276,8 @@ describe("createAppContext", () => {
     const ledgerEntries = await ctx.stores.executionLedger.listByThread(thread.threadId);
 
     expect(resumed.status).toBe("completed");
-    expect(resumed.summary).toBe("Deleted approved.txt");
+    expect(resumed.finalResponse).toBe("responded");
+    expect(resumed.executionSummary).toBe("Deleted approved.txt");
     expect(resumed.lastCompletedToolCallId).toBe(`${blocked.task.taskId}:apply_patch`);
     expect(resumed.lastCompletedToolName).toBe("apply_patch");
     expect(resumed.approvals).toHaveLength(0);
@@ -411,8 +413,9 @@ describe("createAppContext", () => {
     const result = await ctx.controlPlane.rejectRequest("approval-reject");
 
     expect(result.status).toBe("completed");
-    expect(result.summary).toContain("continue safely without deleting files");
-    expect(result.summary).not.toContain("rejected for proposal");
+    expect(result.finalResponse).toBe("responded");
+    expect(result.executionSummary).toContain("continue safely without deleting files");
+    expect(result.executionSummary).not.toContain("rejected for proposal");
     expect(result.approvals).toHaveLength(0);
     expect(await Bun.file(filePath).exists()).toBe(true);
 
@@ -515,8 +518,9 @@ describe("createAppContext", () => {
     const result = await ctx.controlPlane.rejectRequest(approvalRequestId!);
 
     expect(result.status).toBe("completed");
-    expect(result.summary).toContain("continue safely without deleting files");
-    expect(result.summary).not.toContain("rejected for proposal");
+    expect(result.finalResponse).toBe("responded");
+    expect(result.executionSummary).toContain("continue safely without deleting files");
+    expect(result.executionSummary).not.toContain("rejected for proposal");
     expect(await Bun.file(filePath).exists()).toBe(true);
 
     await closeAppContext(ctx);
