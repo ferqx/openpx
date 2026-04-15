@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ThreadRegistry } from "../../src/kernel/thread-registry";
+import { ThreadRegistry } from "../../src/harness/core/thread/thread-registry";
 import { SqliteThreadStore } from "../../src/persistence/sqlite/sqlite-thread-store";
 import { createSqlite } from "../../src/persistence/sqlite/sqlite-client";
 import { migrateSqlite } from "../../src/persistence/sqlite/sqlite-migrator";

@@ -57,7 +57,7 @@
 - `docs/space/generated/` 与 `docs/space/references/` 默认降权，不直接作为长期权威。
 - 新增或重构 surface 时，先定义 protocol 边界，再实现 surface 适配。
 - 当新的 `harness/` 或 `surfaces/` 目录已建立后，新增模块默认优先落在新目录中，而不是继续扩张旧的 `interface/` 或 `kernel/` 语义边界。
-- 在兼容层仍处于收尾阶段时，新增模块也不得继续扩张 legacy `runtime/`、`interface/`、`kernel/`、`real-eval/` 语义边界；兼容层清理完成后，这些路径不再接受新增代码。
+- 兼容层已经移除后，不再接受新增代码落在 legacy `runtime/`、`interface/`、`kernel/`、`real-eval/` 语义边界。
 - 任何会影响 thread、approval、recovery、artifact truth（产物真相）、side effect（副作用）语义的改动，都必须同步更新 harness 文档与评测闭环。
 - 在接受任何非平凡的 AI 辅助变更之前，记录：
   受影响的主要子系统、受影响的入口点/脚本、证明测试、词汇影响，以及 `CONTROL.md` 是否必须变更。

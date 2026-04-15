@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { runSessionInBackground } from "../../src/kernel/session-background-runner";
+import { runSessionInBackground } from "../../src/harness/core/run/session-background-runner";
 
 describe("runSessionInBackground", () => {
   test("forwards successful results to finalize", async () => {
