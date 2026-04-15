@@ -1,4 +1,6 @@
 import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
+import type { Database } from "bun:sqlite";
+import { closeSqliteHandle } from "../persistence/sqlite/sqlite-client";
 
 /** createAppContext 关心的最小配置形状 */
 type ConfigLike = {
@@ -23,6 +25,8 @@ type ScopeLike = {
 type ClosableLike = {
   close?: () => void | Promise<void>;
 };
+
+type SqliteLike = ClosableLike & Partial<Pick<Database, "run" | "close">>;
 
 /** 持久化层装配结果：sqlite + stores + checkpointer */
 type PersistenceLayer<TSqlite, TStores, TCheckpointer> = {
@@ -178,7 +182,7 @@ export function bridgeModelGatewayEvents<TEvent>(modelGateway: ModelGateway, ker
 export async function closeAppContextResources(input: {
   stores: Record<string, ClosableLike | undefined>;
   checkpointer?: ClosableLike;
-  sqlite: ClosableLike;
+  sqlite: SqliteLike;
 }) {
   // 关闭顺序上优先释放 stores/checkpointer，再关闭底层 sqlite 句柄，
   // 防止 store.close 期间仍访问已经被关掉的数据库连接。
@@ -186,5 +190,13 @@ export async function closeAppContextResources(input: {
     ...Object.values(input.stores).map((store) => store?.close?.()),
     input.checkpointer?.close?.(),
   ]);
+  if (typeof input.sqlite.close === "function" && typeof input.sqlite.run === "function") {
+    closeSqliteHandle({
+      run: input.sqlite.run.bind(input.sqlite),
+      close: input.sqlite.close.bind(input.sqlite),
+    });
+    return;
+  }
+
   input.sqlite.close?.();
 }

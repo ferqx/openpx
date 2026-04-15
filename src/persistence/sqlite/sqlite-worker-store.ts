@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Worker } from "../../domain/worker";
 import type { WorkerStorePort } from "../ports/worker-store-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 /** workers 表行结构 */
@@ -99,7 +99,7 @@ export class SqliteWorkerStore implements WorkerStorePort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

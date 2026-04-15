@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { ApprovalRequest, ApprovalToolRequest } from "../../domain/approval";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 /** approvals 表行结构：toolRequest 以 JSON 列持久化 */
@@ -96,7 +96,7 @@ export class SqliteApprovalStore {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

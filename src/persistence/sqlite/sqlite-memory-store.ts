@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { MemoryNamespace, MemoryRecord } from "../../domain/memory";
 import type { MemorySearchInput, MemoryStorePort } from "../ports/memory-store-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 /** memories 表行结构 */
@@ -74,7 +74,7 @@ export class SqliteMemoryStore implements MemoryStorePort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

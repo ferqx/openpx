@@ -32,6 +32,7 @@ Harness App Server 负责把 protocol 暴露给 surface。
 
 当前代码锚点：
 
+- `src/harness/server/app-server.ts`
 - `src/harness/server/harness-session-registry.ts`
 - `src/harness/server/http/runtime-router.ts`
 - `src/harness/server/http/runtime-http-server.ts`

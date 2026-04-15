@@ -136,7 +136,9 @@ export function resolveApprovalToolRequest(
       taskId: approval.toolRequest.taskId,
       toolName: approval.toolRequest.toolName,
       args: approval.toolRequest.args,
-      path: approval.toolRequest.path,
+      path: approval.toolRequest.path
+        ? resolve(workspaceRoot, approval.toolRequest.path)
+        : undefined,
       action: approval.toolRequest.action as ToolExecuteRequest["action"],
       changedFiles: approval.toolRequest.changedFiles,
     };
@@ -217,7 +219,7 @@ export function buildResponderPrompt(input: { text: string; threadView?: Thread 
 }
 
 export function isCancelledError(error: unknown): boolean {
-  // 与 kernel/session-background-runner 保持同一取消语义，
+  // 与 harness/core/run/session-background-runner 保持同一取消语义，
   // 让 control-plane 可以把模型主动取消视为正常结束路径。
   return typeof error === "object"
     && error !== null

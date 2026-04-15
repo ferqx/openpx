@@ -1,2 +1,1 @@
-// 这里先保留 thread 真相层入口，后续再逐步挂入真实实现。
-export {};
+export * from "./thread-service";

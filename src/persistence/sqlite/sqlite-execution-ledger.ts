@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { ExecutionLedgerEntry, ExecutionLedgerPort, ExecutionStatus } from "../ports/execution-ledger-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 /** execution_ledger 表行结构 */
@@ -84,7 +84,7 @@ export class SqliteExecutionLedger implements ExecutionLedgerPort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

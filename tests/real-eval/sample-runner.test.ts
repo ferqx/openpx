@@ -8,11 +8,12 @@ import { findRealEvalScenario, realEvalScenarios } from "../../src/harness/eval/
 import { runRealSample } from "../../src/harness/eval/real/sample-runner";
 import { buildRealRunTrace } from "../../src/harness/eval/real/trace";
 import { inspectRealSampleTrace, loadStoredRealSample, replayStoredRealSampleEvaluation } from "../../src/harness/eval/real/replay";
+import { removeWithRetry } from "../helpers/fs-cleanup";
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  await Promise.all(tempDirs.splice(0).map((dir) => removeWithRetry(dir, { recursive: true, force: true })));
 });
 
 async function createTempDir(prefix: string) {
@@ -218,8 +219,10 @@ describe("real sample runner", () => {
     expect(movedLoaded.trace).toEqual(sample.trace);
     expect(movedLoaded.summary.tracePath).toBe(path.join(movedArtifactsDir, "trace.json"));
 
-    await fs.rm(sample.workspaceRoot, { recursive: true, force: true });
-    await fs.rm(path.join(rootDir, "eval.sqlite"), { force: true });
+    await removeWithRetry(sample.workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(path.join(rootDir, "eval.sqlite"), { force: true });
+    await removeWithRetry(path.join(rootDir, "eval.sqlite-wal"), { force: true });
+    await removeWithRetry(path.join(rootDir, "eval.sqlite-shm"), { force: true });
 
     const replayed = await replayStoredRealSampleEvaluation(movedArtifactsDir);
     expect(replayed.trace.scenarioId).toBe("approval-gated-bugfix-loop");

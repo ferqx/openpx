@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Task } from "../../domain/task";
 import type { TaskStorePort } from "../ports/task-store-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 /** tasks 表行结构：blockingReason 以 JSON 列持久化 */
@@ -71,7 +71,7 @@ export class SqliteTaskStore implements TaskStorePort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

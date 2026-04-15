@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Run } from "../../domain/run";
 import type { RunStorePort } from "../ports/run-store-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 /** runs 表行结构：JSON 列保留 blockingReason 与 ledgerState */
@@ -104,7 +104,7 @@ export class SqliteRunStore implements RunStorePort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

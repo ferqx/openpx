@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Event } from "../../domain/event";
 import type { EventLogPort } from "../ports/event-log-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 /** events 表行结构：sequence 由 sqlite 自增生成，payload 走 JSON 列 */
@@ -71,7 +71,7 @@ export class SqliteEventLog implements EventLogPort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

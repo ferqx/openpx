@@ -6,7 +6,7 @@ import type {
   WorkingSetWindow,
 } from "../../control/context/thread-compaction-types";
 import type { ThreadStorePort } from "../ports/thread-store-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 /** threads 表行结构：把 thread 主字段与压缩状态 JSON 列一起取回 */
@@ -205,7 +205,7 @@ export class SqliteThreadStore implements ThreadStorePort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

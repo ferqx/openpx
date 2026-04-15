@@ -1,3 +1,4 @@
+import { isAbsolute, relative } from "node:path";
 import type { ApprovalRequest } from "../domain/approval";
 import type { Event } from "../domain/event";
 import type { Run } from "../domain/run";
@@ -32,7 +33,40 @@ function normalizeWorkspacePath(text: string | undefined, workspaceRoot: string)
   }
 
   const normalizedRoot = workspaceRoot.replace(/\\/g, "/");
-  return text.replaceAll(normalizedRoot, "<workspace>");
+  const normalizedText = text.replace(/\\/g, "/");
+  return normalizedText.replaceAll(normalizedRoot, "<workspace>");
+}
+
+/** 优先把绝对路径折叠成 workspace 相对路径，再做剩余的稳定化处理。 */
+function normalizeWorkspaceRelativePath(pathValue: string | undefined, workspaceRoot: string): string | undefined {
+  if (!pathValue) {
+    return undefined;
+  }
+
+  const normalizedValue = pathValue.replace(/\\/g, "/");
+  if (!isAbsolute(pathValue)) {
+    return normalizedValue;
+  }
+
+  const relativePath = relative(workspaceRoot, pathValue).replace(/\\/g, "/");
+  if (relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath)) {
+    return relativePath;
+  }
+
+  return normalizeWorkspacePath(pathValue, workspaceRoot);
+}
+
+/** 审批摘要中的 delete_file 路径需要稳定成 workspace 相对路径。 */
+function normalizeApprovalSummary(summary: string, workspaceRoot: string): string {
+  const legacyDeleteMatch = summary.match(/^(apply_patch delete_file)\s+(.+)$/);
+  if (!legacyDeleteMatch) {
+    return normalizeWorkspacePath(summary, workspaceRoot) ?? summary;
+  }
+
+  const prefix = legacyDeleteMatch[1] ?? "apply_patch delete_file";
+  const rawPath = legacyDeleteMatch[2]?.trim();
+  const normalizedPath = normalizeWorkspaceRelativePath(rawPath, workspaceRoot);
+  return normalizedPath ? `${prefix} ${normalizedPath}` : prefix;
 }
 
 /** 为一组运行时 ID 生成稳定 alias */
@@ -156,7 +190,7 @@ export function normalizeComparableRun(input: NormalizeComparableRunInput): Eval
         runAlias: requireAlias(runAliasMap, approval.runId, "run"),
         taskAlias: requireAlias(taskAliasMap, approval.taskId, "task"),
         status: approval.status,
-        summary: normalizeWorkspacePath(approval.summary, input.thread.workspaceRoot),
+        summary: normalizeApprovalSummary(approval.summary, input.thread.workspaceRoot),
         toolName: approval.toolRequest.toolName,
         action: approval.toolRequest.action,
       })),

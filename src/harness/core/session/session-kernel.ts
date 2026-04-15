@@ -25,11 +25,11 @@ import type { ThreadStorePort } from "../../../persistence/ports/thread-store-po
 import type { WorkerStorePort } from "../../../persistence/ports/worker-store-port";
 import type { ResumeControl } from "../../../runtime/graph/root/resume-control";
 import { prefixedUuid } from "../../../shared/id-generators";
-import { createEventBus, type KernelEvent } from "../../../kernel/event-bus";
-import { createInterruptService } from "../../../kernel/interrupt-service";
-import { applySessionControlPlaneResult } from "../../../kernel/session-result-applicator";
-import { runSessionInBackground } from "../../../kernel/session-background-runner";
-import { createThreadService } from "../../../kernel/thread-service";
+import { createEventBus, type KernelEvent } from "../events/event-bus";
+import { createInterruptService } from "../events/interrupt-service";
+import { runSessionInBackground } from "../run/session-background-runner";
+import { applySessionControlPlaneResult } from "../run/session-result-applicator";
+import { createThreadService } from "../thread/thread-service";
 import {
   resolveApprovalCommandContext,
   resolveSubmitCommandContext,

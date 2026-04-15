@@ -12,7 +12,7 @@ import {
   type PendingWrite,
 } from "@langchain/langgraph-checkpoint";
 import type { Database } from "bun:sqlite";
-import { createSqlite } from "./sqlite-client";
+import { closeSqliteHandle, createSqlite } from "./sqlite-client";
 import type { CheckpointPort } from "../ports/checkpoint-port";
 
 /** checkpoints 表行结构 */
@@ -331,7 +331,7 @@ class BunSqliteSaver extends BaseCheckpointSaver {
   }
 
   async close(): Promise<void> {
-    this.db.close();
+    closeSqliteHandle(this.db);
   }
 }
 

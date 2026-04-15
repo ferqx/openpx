@@ -12,7 +12,7 @@ import {
   updateReviewQueueItemInputSchema,
 } from "../../eval/eval-schema";
 import type { EvalReviewQueueRecord, EvalStorePort } from "../ports/eval-store-port";
-import { resolveSqlite } from "./sqlite-client";
+import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
 
 /** eval_suite_runs 表行结构 */
@@ -267,7 +267,7 @@ export class SqliteEvalStore implements EvalStorePort {
 
   async close(): Promise<void> {
     if (this.owned) {
-      this.db.close();
+      closeSqliteHandle(this.db);
     }
   }
 }

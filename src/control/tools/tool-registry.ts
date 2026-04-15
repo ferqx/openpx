@@ -44,13 +44,34 @@ function summarizeRequest(request: ToolExecuteRequest, workspaceRoot?: string): 
   if (workspaceRoot && request.path) {
     const relativePath = relative(workspaceRoot, request.path);
     if (relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath)) {
-      targetPath = relativePath;
+      targetPath = relativePath.replace(/\\/g, "/");
     }
+  }
+  if (targetPath) {
+    targetPath = targetPath.replace(/\\/g, "/");
   }
 
   const target = targetPath ? ` ${targetPath}` : "";
   const action = request.action ?? "execute";
   return `${request.toolName} ${action}${target}`;
+}
+
+/** 把待持久化的工具路径收敛成 workspace 相对路径，避免把宿主机绝对路径写入审批真相。 */
+function toStoredRequestPath(request: ToolExecuteRequest, workspaceRoot?: string): string | undefined {
+  if (!request.path) {
+    return undefined;
+  }
+
+  if (!workspaceRoot || !isAbsolute(request.path)) {
+    return request.path.replace(/\\/g, "/");
+  }
+
+  const relativePath = relative(workspaceRoot, request.path);
+  if (relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath)) {
+    return relativePath.replace(/\\/g, "/");
+  }
+
+  return request.path.replace(/\\/g, "/");
 }
 
 /** 创建工具注册表：负责工具发现、策略判定、审批创建与执行账本记录 */
@@ -186,6 +207,7 @@ export function createToolRegistry(input: {
           toolRequest: {
             ...normalizedRequest,
             runId: normalizedRequest.runId ?? normalizedRequest.taskId,
+            path: toStoredRequestPath(normalizedRequest, workspaceRoot),
           },
           summary: summarizeRequest(normalizedRequest, workspaceRoot),
           risk: decision.risk.key,
