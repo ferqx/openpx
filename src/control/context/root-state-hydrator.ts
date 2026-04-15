@@ -1,8 +1,8 @@
 /** 
  * @module control/context/root-state-hydrator
  * 根状态水合器（root state hydrator）。
- * 
- * 从压缩后的协作线投影视图中恢复 LangGraph 根状态，
+ *
+ * 从压缩后的协作线投影视图中恢复 run-loop 根状态，
  * 包括环境一致性校验、恢复上下文注入和初始模式推导。
  * 
  * 术语对照：hydrate=水合/回填，root state=根状态，
@@ -11,6 +11,8 @@
 import type { DerivedThreadView, RecoveryFacts, NarrativeState, WorkingSetWindow } from "./thread-compaction-types";
 import { EnvironmentService } from "./environment-service";
 
+import type { RunLoopState } from "../../harness/core/run-loop/step-types";
+
 /** 水合选项 */
 export type HydrationOptions = {
   workspaceRoot: string;
@@ -18,12 +20,22 @@ export type HydrationOptions = {
 };
 
 /**
- * 从压缩后的协作线投影视图水合（恢复）LangGraph 根状态。
+ * 从压缩后的协作线投影视图水合（恢复）run-loop 根状态。
  */
-export function hydrateRootState(view: DerivedThreadView, options: HydrationOptions) {
+export function hydrateRunLoopState(
+  view: DerivedThreadView,
+  options: HydrationOptions,
+): Pick<RunLoopState, "recoveryFacts" | "narrativeState" | "workingSetWindow" | "nextStep"> & {
+  mode: "plan" | "execute" | "verify" | "done" | "waiting_approval";
+  messages: string[];
+  systemMessages: string[];
+  revision: number;
+  lastEventSeq: number;
+  status: string;
+} {
   const recoveryFacts = view.recoveryFacts;
   if (!recoveryFacts) {
-    throw new Error("Cannot hydrate root state without recovery facts");
+    throw new Error("Cannot hydrate run-loop state without recovery facts");
   }
 
   const narrativeState = view.narrativeState ?? createEmptyNarrative();  // 叙事状态，缺失时创建空状态
@@ -69,19 +81,30 @@ export function hydrateRootState(view: DerivedThreadView, options: HydrationOpti
     );
   }
 
+  const nextStep = deriveInitialMode(recoveryFacts);
+
   return {
     recoveryFacts: { ...recoveryFacts },
     narrativeState: { ...narrativeState },
+    workingSetWindow: { ...workingSet },
     messages: [
+      ...contextualMessages,
+      ...(workingSet.messages ?? [])
+    ],
+    systemMessages: [
       ...contextualMessages,
       ...(workingSet.messages ?? [])
     ],
     revision: recoveryFacts.revision,
     lastEventSeq: recoveryFacts.resumeAnchor?.lastEventSeq ?? 0,
-    mode: deriveInitialMode(recoveryFacts),
+    nextStep,
+    mode: nextStep,
     status: recoveryFacts.status,
   };
 }
+
+/** 兼容旧调用方：过渡期仍允许旧名字读取 run-loop 水合结果。 */
+export const hydrateRootState = hydrateRunLoopState;
 
 /** 创建空的叙事状态 */
 function createEmptyNarrative(): NarrativeState {

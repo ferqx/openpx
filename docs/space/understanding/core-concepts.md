@@ -79,7 +79,7 @@
 
 - `worker`
   当前是内部运行时概念，不是主要产品概念
-- `planner / executor / verifier / graph / node`
+- `planner / executor / verifier / run-loop / step`
   当前是实现机制，不是用户面向的主要架构词汇
 
 ## 使用原则

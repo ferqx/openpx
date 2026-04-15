@@ -152,6 +152,47 @@ export function migrateSqlite(db: Database): void {
   db.run("CREATE INDEX IF NOT EXISTS idx_workers_thread_id ON workers (thread_id)");
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS run_loop_states (
+      run_id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      task_id TEXT,
+      step TEXT NOT NULL,
+      state_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS run_suspensions (
+      suspension_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      approval_request_id TEXT,
+      reason_kind TEXT NOT NULL,
+      resume_step TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      resumed_at TEXT
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS run_continuations (
+      continuation_id TEXT PRIMARY KEY,
+      thread_id TEXT,
+      run_id TEXT,
+      kind TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  db.run("CREATE INDEX IF NOT EXISTS idx_run_loop_states_thread_id ON run_loop_states (thread_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_run_suspensions_thread_id ON run_suspensions (thread_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_run_continuations_thread_id ON run_continuations (thread_id)");
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS eval_suite_runs (
       suite_run_id TEXT PRIMARY KEY,
       suite_id TEXT NOT NULL,

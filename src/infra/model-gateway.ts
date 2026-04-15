@@ -1,4 +1,4 @@
-import { ChatOpenAI } from "@langchain/openai";
+import OpenAI from "openai";
 import { plannerResultSchema, type PlannerResult } from "../runtime/planning/planner-result";
 
 export type PlannerModelInput = {
@@ -65,11 +65,11 @@ export type ModelGatewayEvent =
       };
     };
 
-type ModelMessage = ["system" | "human", string];
+type ModelMessage = ["system" | "user", string];
 
 type ModelInvocationResponse = {
-  content: unknown;
-} & Record<string, unknown>;
+  content: string;
+};
 
 export type ModelGateway = {
   plan(input: PlannerModelInput): Promise<PlannerModelOutput>;
@@ -195,19 +195,17 @@ function getErrorStatus(error: unknown): number | undefined {
 }
 
 class SingleProviderGateway {
-  private model: ChatOpenAI;
+  private client: OpenAI;
+  private modelName: string;
   private timeoutMs: number;
 
   constructor(config: ModelProviderConfig) {
     this.timeoutMs = config.timeoutMs ?? 120000;
-    this.model = new ChatOpenAI({
+    this.modelName = config.modelName;
+    this.client = new OpenAI({
       apiKey: config.apiKey,
-      model: config.modelName,
-      temperature: 0,
+      baseURL: config.baseURL,
       maxRetries: 0,
-      configuration: {
-        baseURL: config.baseURL,
-      },
     });
   }
 
@@ -236,28 +234,36 @@ class SingleProviderGateway {
     onStatus("thinking");
 
     try {
-      const stream = await this.model.stream(messages, { signal: controller.signal });
+      const stream = await this.client.chat.completions.create(
+        {
+          model: this.modelName,
+          temperature: 0,
+          stream: true,
+          messages: messages.map(([role, content]) => ({ role, content })),
+        },
+        {
+          signal: controller.signal,
+        },
+      );
       
       let firstTokenTime: number | undefined;
       let fullContent = "";
-      let lastChunk: ModelInvocationResponse | undefined;
 
       for await (const chunk of stream) {
+        const contentDelta = chunk.choices
+          .map((choice) => choice.delta?.content ?? "")
+          .join("");
+        if (!contentDelta) {
+          continue;
+        }
+
         if (!firstTokenTime) {
           firstTokenTime = Date.now();
           onEvent({ type: "model.first_token_received", payload: { timestamp: firstTokenTime } });
           onStatus("responding");
         }
-        
-        const chunkContent = isRecord(chunk) ? chunk.content : undefined;
-        if (typeof chunkContent === "string") {
-          fullContent += chunkContent;
-        } else if (Array.isArray(chunkContent)) {
-          // Handle complex content if necessary
-        }
-        lastChunk = isRecord(chunk)
-          ? { ...chunk, content: chunkContent }
-          : { content: chunkContent };
+
+        fullContent += contentDelta;
       }
 
       const endTime = Date.now();
@@ -273,9 +279,7 @@ class SingleProviderGateway {
         } 
       });
 
-      // Wrap the reconstructed content into an object that matches ChatOpenAI's response format
       return {
-        ...(lastChunk ?? {}),
         content: fullContent,
       };
     } catch (error: unknown) {
@@ -376,7 +380,7 @@ class MultiModelGateway implements ModelGateway {
           '{"summary":"<concise plan summary>","plannerResult":{"workPackages":[{"id":"pkg_id","objective":"...","capabilityMarker":"respond_only","capabilityFamily":"approval_gated_delete","requiresApproval":false,"allowedTools":["read_file"],"inputRefs":["thread:goal"],"expectedArtifacts":["patch:file"]}],"acceptanceCriteria":["..."],"riskFlags":[],"approvalRequiredActions":[],"verificationScope":["..."]}}',
         ].join(" "),
       ],
-      ["human", input.prompt],
+      ["user", input.prompt],
     ], input.signal);
 
     const text = normalizeModelText(response.content);
@@ -389,7 +393,7 @@ class MultiModelGateway implements ModelGateway {
   async verify(input: VerifierModelInput): Promise<VerifierModelOutput> {
     const response = await this.tryAllProviders([
       ["system", "You are the verifier. Confirm if the task is complete. Return 'VALID: <summary>' or 'INVALID: <reason>'."],
-      ["human", input.prompt],
+      ["user", input.prompt],
     ], input.signal);
 
     const text = normalizeModelText(response.content);
@@ -405,7 +409,7 @@ class MultiModelGateway implements ModelGateway {
   async respond(input: RespondModelInput): Promise<RespondModelOutput> {
     const response = await this.tryAllProviders([
       ["system", "You are a helpful AI assistant. Respond naturally and concisely."],
-      ["human", input.prompt],
+      ["user", input.prompt],
     ], input.signal);
 
     const summary = normalizeModelText(response.content);

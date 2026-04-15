@@ -438,7 +438,7 @@ describe("eval review queue", () => {
           runId: "run_meta_1",
           failureClass: "graph_bypass_after_approval",
           impactedObject: "run:run_meta_1",
-          nextSuggestedAction: "resume via graph",
+          nextSuggestedAction: "resume via run-loop",
           status: "failed",
         }),
       },

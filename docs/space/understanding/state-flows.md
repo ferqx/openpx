@@ -13,7 +13,7 @@
 
 关键点：
 
-- TUI 不直接推进 graph
+- TUI 不直接推进 run-loop
 - kernel 负责稳定命令边界
 - control plane 负责真正推进执行
 
@@ -25,11 +25,11 @@
 2. 将 `Run` 置为 `running`
 3. 创建根 `Task`
 4. 将 `Task` 置为 `running`
-5. 调用 `rootGraph.invoke(...)`
+5. 调用 run-loop engine 推进 plan / execute / verify / respond
 
 ## 3. 等待审批
 
-如果 graph 执行期间产生 pending approval 或 interrupt：
+如果 run-loop 执行期间产生 pending approval 或 suspension（挂起）：
 
 - `Task` 变为 `blocked`
 - `Run` 变为 `waiting_approval`
@@ -46,9 +46,9 @@
 
 当前有两条恢复路径：
 
-- 如果存在 checkpoint（检查点）
-  - 系统继续走 graph resume（恢复继续执行）
-- 如果没有 checkpoint
+- 如果存在 run-loop suspension（挂起记录）
+  - 系统消费 continuation（继续执行信封），从挂起步骤继续推进
+- 如果没有 suspension
   - 系统直接执行已经批准的 tool request（工具请求）
 
 共同目标：
@@ -58,18 +58,17 @@
 
 关键约束：
 
-- 批准恢复时，除了 `resume` 结构体本身，还必须保留 `approval_request_id` 的上下文，避免已批准动作再次掉回等待审批
+- 批准恢复时，必须保留 `approvalRequestId` 的上下文，避免已批准动作再次掉回等待审批
 
 ## 5. 拒绝后恢复
 
 入口：`reject_request`
 
-如果存在 checkpoint：
+如果存在 suspension：
 
-1. 当前 task 会先结束
+1. 当前 run-loop 消费 rejection continuation
 2. 系统构造“拒绝该动作后的原因”
-3. 再次调用 `startRootTask(...)`
-4. 进入重新规划（replan）路径
+3. 从 planner 步骤重新进入规划（replan）路径
 
 关键点：
 
@@ -78,10 +77,10 @@
 
 ## 6. interrupt / hydrate
 
-### interrupt
+### suspension / continuation
 
-- 含义：人为停止当前 run 的推进
-- 作用：终止当前执行流，而不是重写业务真相
+- suspension：暂停执行并保存恢复锚点
+- continuation：描述“为什么以及如何继续”的结构化输入
 
 ### hydrate
 

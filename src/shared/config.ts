@@ -6,7 +6,7 @@
  * 包括工作区根路径、项目标识、数据目录和模型参数。
  * 
  * 术语对照：workspaceRoot=工作区根路径，projectId=项目标识，
- * dataDir=数据目录，checkpoint=检查点
+ * dataDir=数据目录
  */
 import { join, resolve } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
@@ -16,7 +16,6 @@ export type AppConfig = {
   workspaceRoot: string;             // 工作区根路径
   projectId: string;                 // 项目标识，用于隔离不同项目的数据
   dataDir: string;                   // 数据存储目录
-  checkpointConnString: string;      // 检查点数据库连接字符串
   model: {                           // 模型相关配置
     apiKey?: string;               // API 密钥，从 OPENAI_API_KEY 环境变量读取
     baseURL?: string;              // API 基础 URL，从 OPENAI_BASE_URL 环境变量读取
@@ -53,7 +52,6 @@ export function resolveConfig(input: {
     workspaceRoot,
     projectId,
     dataDir: input.dataDir,
-    checkpointConnString: input.dataDir,
     model: {                           // 模型相关配置
       apiKey: process.env.OPENAI_API_KEY,
       baseURL: process.env.OPENAI_BASE_URL,

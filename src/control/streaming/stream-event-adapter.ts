@@ -1,16 +1,26 @@
-import type { StreamEvent as LangGraphStreamEvent } from "@langchain/core/tracers/log_stream";
 import type { StreamEvent } from "../../domain/stream-events";
 import { ulid } from "ulid";
 
 const TEXT_CHUNK_TIME_MS = 100;
 const TEXT_CHUNK_SIZE = 200;
 
+/** 最小流式事件形状：当前适配器只依赖 event/data/name 三个字段。 */
+type ModelStreamEvent = {
+  event?: string;
+  data?: Record<string, unknown>;
+  name?: string;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
 /** 当前适配器真正依赖的最小图接口：只要求能暴露 LangGraph streamEvents */
 type StreamEventSourceGraph = {
   streamEvents(
     graphInput: Record<string, unknown>,
     config: Record<string, unknown>,
-  ): AsyncIterable<LangGraphStreamEvent>;
+  ): AsyncIterable<ModelStreamEvent>;
 };
 
 /** 流式事件适配器输入：把 LangGraph 事件流翻译成 OpenPX StreamEvent */
@@ -75,7 +85,7 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
     version: "v2",
   });
 
-  for await (const event of stream as AsyncIterable<LangGraphStreamEvent>) {
+  for await (const event of stream as AsyncIterable<ModelStreamEvent>) {
     const { event: eventType, data, name } = event;
 
     switch (eventType) {
@@ -89,7 +99,7 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
         break;
 
       case "on_chat_model_stream": {
-        const chunk = data?.chunk;
+        const chunk = asRecord(data?.chunk);
         if (chunk) {
           if (typeof chunk.content === "string") {
             textBuffer += chunk.content;
@@ -124,8 +134,9 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
 
       case "on_tool_start": {
         const toolName = name ?? "unknown";
-        const toolCallId = (data?.input?.id ?? data?.input?.tool_call_id ?? "") as string;
-        const args = data?.input ?? data?.input?.args ?? {};
+        const toolInput = asRecord(data?.input);
+        const toolCallId = String(toolInput?.id ?? toolInput?.tool_call_id ?? "");
+        const args = asRecord(toolInput?.args) ?? toolInput ?? {};
         yield {
           ...makeBase(),
           type: "stream.tool_call_started",
@@ -136,7 +147,8 @@ export async function* streamEventsAdapter(input: StreamEventAdapterInput): Asyn
 
       case "on_tool_end": {
         const toolName = name ?? "unknown";
-        const toolCallId = (data?.output?.tool_call_id ?? "") as string;
+        const toolOutput = asRecord(data?.output);
+        const toolCallId = String(toolOutput?.tool_call_id ?? "");
         const result = data?.output ?? data?.chunk ?? {};
         yield {
           ...makeBase(),

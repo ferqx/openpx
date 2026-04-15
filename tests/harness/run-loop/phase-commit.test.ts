@@ -1,22 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { artifactRecordSchema } from "../../src/runtime/artifacts/artifact-index";
-import { phaseCommitNode } from "../../src/runtime/graph/root/nodes/phase-commit";
+import { commitCompletedWorkPackage } from "../../../src/harness/core/run-loop/phase-commit";
 
-describe("phase commit", () => {
-  test("parses compact artifact records for completed work packages", () => {
-    const parsed = artifactRecordSchema.parse({
-      ref: "patch:src/app/main.ts",
-      kind: "patch",
-      summary: "Updated startup message copy",
-      workPackageId: "pkg_startup_message",
-    });
-
-    expect(parsed.kind).toBe("patch");
-    expect(parsed.workPackageId).toBe("pkg_startup_message");
-  });
-
-  test("stores compact artifact refs and clears bulky execution details", () => {
-    const result = phaseCommitNode({
+describe("run-loop phase commit", () => {
+  test("在最后一个工作包完成后进入 responder", () => {
+    const result = commitCompletedWorkPackage({
       currentWorkPackageId: "pkg_startup_message",
       verificationReport: {
         summary: "All checks passed",
@@ -42,7 +29,6 @@ describe("phase commit", () => {
       ],
       executionDetails: {
         rawToolOutput: "very large raw stdout",
-        diff: "--- a\n+++ b",
       },
     });
 
@@ -56,13 +42,12 @@ describe("phase commit", () => {
     ]);
     expect(result.currentWorkPackageId).toBeUndefined();
     expect(result.executionDetails).toBeUndefined();
-    expect(result.route).toBe("responder");
-    expect(result.mode).toBe("respond");
+    expect(result.nextStep).toBe("respond");
     expect(result.verificationSummary).toBe("All checks passed");
   });
 
-  test("clears transient verification state before advancing to the next work package", () => {
-    const result = phaseCommitNode({
+  test("在仍有剩余工作包时切到下一包继续执行", () => {
+    const result = commitCompletedWorkPackage({
       currentWorkPackageId: "pkg_startup_message",
       verificationReport: {
         summary: "All checks passed",
@@ -99,8 +84,7 @@ describe("phase commit", () => {
     });
 
     expect(result.currentWorkPackageId).toBe("pkg_tests");
-    expect(result.mode).toBe("execute");
-    expect(result.route).toBe("executor");
+    expect(result.nextStep).toBe("execute");
     expect(result.latestArtifacts).toEqual([]);
     expect(result.verificationReport).toBeUndefined();
   });

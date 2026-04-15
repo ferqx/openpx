@@ -1,12 +1,10 @@
-import { interrupt } from "@langchain/langgraph";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createAppContext } from "../app/bootstrap";
 import { createApprovalRequest } from "../domain/approval";
 import { createRun, transitionRun } from "../domain/run";
 import { createThread } from "../domain/thread";
-import { createSqliteCheckpointer } from "../persistence/sqlite/sqlite-checkpointer";
-import { createRootGraph } from "../runtime/graph/root/graph";
+import { createApprovalSuspension } from "../harness/core/run-loop/approval-suspension";
 import type { ModelGateway } from "../infra/model-gateway";
 import type { EvalScenario } from "./eval-schema";
 
@@ -137,7 +135,7 @@ export const coreEvalScenarios: EvalScenario[] = [
     id: "approval-required-then-approved",
     version: 1,
     family: "approval-required",
-    summary: "approval-required task resumes through the graph after approval",
+    summary: "approval-required task resumes through the run-loop after approval",
     setup: "workspace contains approved.txt and planner emits a delete work package",
     steps: ["create thread", "start root task", "pause on approval", "approve request"],
     expectedControlSemantics: {
@@ -180,12 +178,12 @@ export const coreEvalScenarios: EvalScenario[] = [
     },
   },
   {
-    id: "rejection-then-graph-replan",
+    id: "rejection-then-run-loop-replan",
     version: 1,
     family: "reject-and-replan",
     summary: "rejected approval routes back through planning with a deterministic reason",
-    setup: "checkpoint-backed run is waiting on a delete approval",
-    steps: ["seed checkpoint", "seed waiting approval", "reject request", "collect replanned run"],
+    setup: "run-loop state is waiting on a delete approval",
+    steps: ["seed run-loop suspension", "seed waiting approval", "reject request", "collect replanned run"],
     expectedControlSemantics: {
       requiresApproval: true,
       expectedDecision: "rejected",
@@ -208,38 +206,13 @@ export const coreEvalScenarios: EvalScenario[] = [
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, "export const legacyDelete = true;\n");
 
-      const checkpointSaver = createSqliteCheckpointer(dataDir);
-      const checkpointGraph = await createRootGraph({
-        checkpointer: checkpointSaver,
-        planner: async () => ({ summary: "planned", mode: "plan" }),
-        executor: async () => {
-          interrupt({
-            kind: "approval-required",
-            mode: "execute",
-            summary: "Approval required before deleting src/legacy-delete.ts",
-          });
-          return { summary: "unreachable", mode: "execute" };
-        },
-        verifier: async () => ({ summary: "verified", mode: "verify", isValid: true }),
-      });
-
-      await checkpointGraph.invoke(
-        {
-          input: "continue",
-          workPackages: [
-            {
-              id: "pkg_delete",
-              objective: "delete src/legacy-delete.ts",
-              allowedTools: ["apply_patch"],
-              inputRefs: ["thread:goal", "file:src/legacy-delete.ts"],
-              expectedArtifacts: ["patch:src/legacy-delete.ts"],
-            },
-          ],
-          currentWorkPackageId: "pkg_delete",
-        },
-        { configurable: { thread_id: "thread_reject_path", task_id: "task_reject_path" } },
-      );
-      await (checkpointSaver as { close?: () => Promise<void> }).close?.();
+      const deletePackage = {
+        id: "pkg_delete",
+        objective: "delete src/legacy-delete.ts",
+        allowedTools: ["apply_patch"],
+        inputRefs: ["thread:goal", "file:src/legacy-delete.ts"],
+        expectedArtifacts: ["patch:src/legacy-delete.ts"],
+      };
 
       const thread = createThread("thread_reject_path", workspaceRoot, ctx.config.projectId);
       await ctx.stores.threadStore.save(thread);
@@ -296,6 +269,31 @@ export const coreEvalScenarios: EvalScenario[] = [
           },
           summary: "apply_patch delete_file src/legacy-delete.ts",
           risk: "apply_patch.delete_file",
+        }),
+      );
+      await ctx.stores.runStateStore.saveState({
+        threadId: thread.threadId,
+        runId: run.runId,
+        taskId: "task_reject_path",
+        input: "reject patch",
+        nextStep: "waiting_approval",
+        currentWorkPackageId: "pkg_delete",
+        workPackages: [deletePackage],
+        artifacts: [],
+        latestArtifacts: [],
+        pendingApproval: {
+          summary: "Approval required before deleting src/legacy-delete.ts",
+          approvalRequestId: "approval_reject_path",
+        },
+      });
+      await ctx.stores.runStateStore.saveSuspension(
+        createApprovalSuspension({
+          threadId: thread.threadId,
+          runId: run.runId,
+          taskId: "task_reject_path",
+          step: "execute",
+          summary: "Approval required before deleting src/legacy-delete.ts",
+          approvalRequestId: "approval_reject_path",
         }),
       );
 
@@ -450,8 +448,8 @@ export const coreEvalScenarios: EvalScenario[] = [
     version: 1,
     family: "reject-and-replan",
     summary: "rejected approvals reroute through planning without executor side effects",
-    setup: "checkpoint-backed rejection flow includes a planned ledger entry but must not produce executed side effects",
-    steps: ["seed checkpoint", "seed waiting approval", "seed planned ledger", "reject request", "collect replanned run"],
+    setup: "run-loop rejection flow includes a planned ledger entry but must not produce executed side effects",
+    steps: ["seed run-loop suspension", "seed waiting approval", "seed planned ledger", "reject request", "collect replanned run"],
     expectedControlSemantics: {
       requiresApproval: true,
       expectedDecision: "rejected",
@@ -474,38 +472,13 @@ export const coreEvalScenarios: EvalScenario[] = [
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, "export const shortcutRisk = true;\n");
 
-      const checkpointSaver = createSqliteCheckpointer(dataDir);
-      const checkpointGraph = await createRootGraph({
-        checkpointer: checkpointSaver,
-        planner: async () => ({ summary: "planned", mode: "plan" }),
-        executor: async () => {
-          interrupt({
-            kind: "approval-required",
-            mode: "execute",
-            summary: "Approval required before deleting src/shortcut-risk.ts",
-          });
-          return { summary: "unreachable", mode: "execute" };
-        },
-        verifier: async () => ({ summary: "verified", mode: "verify", isValid: true }),
-      });
-
-      await checkpointGraph.invoke(
-        {
-          input: "continue",
-          workPackages: [
-            {
-              id: "pkg_delete",
-              objective: "delete src/shortcut-risk.ts",
-              allowedTools: ["apply_patch"],
-              inputRefs: ["thread:goal", "file:src/shortcut-risk.ts"],
-              expectedArtifacts: ["patch:src/shortcut-risk.ts"],
-            },
-          ],
-          currentWorkPackageId: "pkg_delete",
-        },
-        { configurable: { thread_id: "thread_reject_shortcut_path", task_id: "task_reject_shortcut" } },
-      );
-      await (checkpointSaver as { close?: () => Promise<void> }).close?.();
+      const deletePackage = {
+        id: "pkg_delete",
+        objective: "delete src/shortcut-risk.ts",
+        allowedTools: ["apply_patch"],
+        inputRefs: ["thread:goal", "file:src/shortcut-risk.ts"],
+        expectedArtifacts: ["patch:src/shortcut-risk.ts"],
+      };
 
       const thread = createThread("thread_reject_shortcut_path", workspaceRoot, ctx.config.projectId);
       await ctx.stores.threadStore.save(thread);
@@ -562,6 +535,31 @@ export const coreEvalScenarios: EvalScenario[] = [
           },
           summary: "apply_patch delete_file src/shortcut-risk.ts",
           risk: "apply_patch.delete_file",
+        }),
+      );
+      await ctx.stores.runStateStore.saveState({
+        threadId: thread.threadId,
+        runId: run.runId,
+        taskId: "task_reject_shortcut",
+        input: "reject patch",
+        nextStep: "waiting_approval",
+        currentWorkPackageId: "pkg_delete",
+        workPackages: [deletePackage],
+        artifacts: [],
+        latestArtifacts: [],
+        pendingApproval: {
+          summary: "Approval required before deleting src/shortcut-risk.ts",
+          approvalRequestId: "approval_reject_shortcut",
+        },
+      });
+      await ctx.stores.runStateStore.saveSuspension(
+        createApprovalSuspension({
+          threadId: thread.threadId,
+          runId: run.runId,
+          taskId: "task_reject_shortcut",
+          step: "execute",
+          summary: "Approval required before deleting src/shortcut-risk.ts",
+          approvalRequestId: "approval_reject_shortcut",
         }),
       );
       await ctx.stores.executionLedger.save({

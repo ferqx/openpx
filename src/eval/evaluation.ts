@@ -122,11 +122,11 @@ export function evaluateTrajectory(scenario: EvalScenario, comparable: EvalCompa
 
   results.push(
     createResult(
-      "trajectory.graph_resume",
+      "trajectory.run_loop_resume",
       scenario.expectedControlSemantics.expectedGraphResume
         ? comparable.approvalFlow.graphResumeDetected
         : true,
-      "Expected graph-backed approval/rejection resume signals.",
+      "Expected run-loop approval/rejection continuation signals.",
       comparable,
     ),
   );

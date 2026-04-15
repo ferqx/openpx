@@ -58,7 +58,18 @@ bun run typecheck
 bun test tests/eval/runner.test.ts
 ```
 
-### 改动触及 approval、resume、reject、graph 推进或 runtime 行为
+如果改动触及 planner 连通性、模型基础配置或 provider/代理诊断，再补：
+
+```bash
+bun test tests/app/smoke-planner.test.ts
+bun run smoke:planner
+```
+
+这里的 `smoke:planner` 是 direct planner（直接 planner）烟雾测试，
+目标是尽快回答“planner 模型是否真的可连、可返回摘要”，
+而不是覆盖完整 run-loop。
+
+### 改动触及 approval、resume、reject、run-loop 推进或 runtime 行为
 
 优先：
 

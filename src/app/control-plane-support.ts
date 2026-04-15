@@ -2,26 +2,21 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type { ApprovalRequest } from "../domain/approval";
 import type { Thread } from "../domain/thread";
 import type { ModelGatewayError } from "../infra/model-gateway";
+import type { ContinuationEnvelope } from "../harness/core/run-loop/continuation";
+import type { VerificationReport } from "../harness/core/run-loop/step-types";
 import type { ThreadStorePort } from "../persistence/ports/thread-store-port";
 import type { TaskStorePort } from "../persistence/ports/task-store-port";
-import type { VerificationReport } from "../runtime/graph/root/context";
 import type { ArtifactRecord } from "../runtime/artifacts/artifact-index";
 import type { PlannerResult } from "../runtime/planning/planner-result";
 import { compactThreadView } from "../control/context/thread-compaction-policy";
 import { createThreadStateProjector } from "../control/context/thread-state-projector";
 import type { ControlTask } from "../control/tasks/task-types";
 import type { ToolExecuteRequest } from "../control/tools/tool-types";
-import type { ResumeControl } from "../runtime/graph/root/resume-control";
 
 /** control-plane 常用存储组合：这里只依赖 task/thread 两个最小写入面 */
 type ControlPlaneStores = {
   taskStore: TaskStorePort;
   threadStore: ThreadStorePort;
-};
-
-/** 允许删除 checkpoint 的最小接口，用于兼容不同实现 */
-type ResettableCheckpointerLike = {
-  deleteThread?: (threadId: string) => Promise<void>;
 };
 
 // 这组辅助函数只服务于 control-plane：
@@ -102,24 +97,22 @@ export function summarizeApprovedAction(summary: string, workspaceRoot: string, 
   return summary;
 }
 
-export function resumeInputText(inputValue: string | ResumeControl): string {
+export function resumeInputText(inputValue: string | ContinuationEnvelope): string {
   if (typeof inputValue === "string") {
     return inputValue;
   }
 
-  // structured resume 不总是带自然语言输入：
-  // approval approved 依赖 graph 从 checkpoint 恢复，reject 则需要把拒绝原因回送给 planner。
-  if (inputValue.decision === "rejected") {
+  // continuation 不总是带自然语言输入：
+  // 拒绝审批和人工恢复会显式带上新的推进文本。
+  if (inputValue.kind === "approval_resolution" && inputValue.decision === "rejected") {
     return inputValue.reason ?? "";
   }
 
-  return "";
-}
+  if ("input" in inputValue && typeof inputValue.input === "string") {
+    return inputValue.input;
+  }
 
-export function canResetThreadCheckpoint(
-  checkpointer: ResettableCheckpointerLike,
-): checkpointer is ResettableCheckpointerLike & { deleteThread(threadId: string): Promise<void> } {
-  return "deleteThread" in checkpointer && typeof checkpointer.deleteThread === "function";
+  return "";
 }
 
 export function resolveApprovalToolRequest(

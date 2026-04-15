@@ -135,12 +135,7 @@ export function normalizeComparableRun(input: NormalizeComparableRunInput): Eval
         .map((run) => run.inputText ?? run.resultSummary)
         .find((value) => typeof value === "string" && isCapabilityReplanInput(value))
     : undefined;
-  const reroutedToPlanner = Boolean(
-    rejectionReason
-    && input.runs.some(
-      (run) => run.trigger === "user_input" && typeof run.inputText === "string" && isCapabilityReplanInput(run.inputText),
-    ),
-  );
+  const reroutedToPlanner = Boolean(rejectionReason);
   const toolExecutedCount = input.events.filter((event) => event.type === "tool.executed").length;
   const graphResumeDetected = resolution === "approved" ? toolExecutedCount > 0 : reroutedToPlanner;
 

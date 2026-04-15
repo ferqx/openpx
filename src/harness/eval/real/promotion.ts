@@ -38,12 +38,12 @@ const PROMOTION_GUARDRAILS: readonly RealEvalPromotionGuardrail[] = [
     description: "Deletion patch, would-be-deleted, and cleanup-preview wording must normalize into apply_patch.delete_file.",
   },
   {
-    guardrailId: "approval.runtime.graph_resume_after_approval",
+    guardrailId: "approval.runtime.run_loop_resume_after_approval",
     capabilityFamily: "approval_gated_delete",
     failureClass: "approval_control_failure",
     rootCauseLayer: "approval_runtime",
     regressionType: "runtime_test",
-    description: "Approved delete requests must return through the graph and execute the stored apply_patch delete action.",
+    description: "Approved delete requests must return through the run-loop and execute the stored apply_patch delete action.",
     invariantId: HARNESS_INVARIANTS.APPROVAL_MUST_RETURN_THROUGH_GRAPH.id,
   },
   {

@@ -19,11 +19,11 @@ import type { Run } from "../../../domain/run";
 import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
 import type { ThreadNarrativeService } from "../../../control/context/thread-narrative-service";
+import type { ContinuationEnvelope } from "../run-loop/continuation";
 import type { EventLogPort } from "../../../persistence/ports/event-log-port";
 import type { TaskStorePort } from "../../../persistence/ports/task-store-port";
 import type { ThreadStorePort } from "../../../persistence/ports/thread-store-port";
 import type { WorkerStorePort } from "../../../persistence/ports/worker-store-port";
-import type { ResumeControl } from "../../../runtime/graph/root/resume-control";
 import { prefixedUuid } from "../../../shared/id-generators";
 import { createEventBus, type KernelEvent } from "../events/event-bus";
 import { createInterruptService } from "../events/interrupt-service";
@@ -107,7 +107,7 @@ export function createSessionKernel(deps: {
     eventLog?: EventLogPort;
   };
   controlPlane: {
-    startRootTask: (threadId: string, input: string | ResumeControl) => Promise<SessionControlPlaneResult>;
+    startRootTask: (threadId: string, input: string | ContinuationEnvelope) => Promise<SessionControlPlaneResult>;
     approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
   };
