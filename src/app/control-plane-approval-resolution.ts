@@ -26,6 +26,12 @@ type ApprovalResolutionDeps = {
   updateRunStatus: (run: Run, status: Run["status"], patch?: Partial<Run>) => Promise<Run>;
   executeApprovedTool: (request: ToolExecuteRequest) => Promise<ToolExecutionOutcome>;
   hasSuspension: (runId: string, threadId: string) => Promise<boolean>;
+  buildCurrentResult: (input: {
+    threadId: string;
+    run: Run;
+    resumeDisposition: SessionControlPlaneResult["resumeDisposition"];
+    fallbackTaskSummary: string;
+  }) => Promise<SessionControlPlaneResult>;
   startRootTask: (threadId: string, input: string | import("../harness/core/run-loop/continuation").ContinuationEnvelope) => Promise<SessionControlPlaneResult>;
 };
 
@@ -50,6 +56,14 @@ export async function resolveApprovedRequest(
   }
 
   const run = approval.runId ? await deps.getRun(approval.runId) : undefined;
+  if (approval.status !== "pending" && run) {
+    return deps.buildCurrentResult({
+      threadId: approval.threadId,
+      run,
+      resumeDisposition: run.blockingReason?.kind === "human_recovery" ? "not_resumable" : "already_resolved",
+      fallbackTaskSummary: approval.summary,
+    });
+  }
   const toolRequest = resolveApprovalToolRequest(approval, deps.workspaceRoot);
   if (!toolRequest) {
     throw new Error(`approval request ${approvalRequestId} cannot be resumed without a stored tool request`);
@@ -133,8 +147,12 @@ export async function resolveApprovedRequest(
   return deps.startRootTask(
     approval.threadId,
     buildApprovalContinuation({
+      threadId: approval.threadId,
+      runId: run.runId,
+      taskId: approval.taskId,
       approvalRequestId,
       decision: "approved",
+      step: "execute",
     }),
   );
 }
@@ -149,6 +167,14 @@ export async function resolveRejectedRequest(
   }
 
   const run = approval.runId ? await deps.getRun(approval.runId) : undefined;
+  if (approval.status !== "pending" && run) {
+    return deps.buildCurrentResult({
+      threadId: approval.threadId,
+      run,
+      resumeDisposition: run.blockingReason?.kind === "human_recovery" ? "not_resumable" : "already_resolved",
+      fallbackTaskSummary: approval.summary,
+    });
+  }
   await deps.approvals.updateStatus(approvalRequestId, "rejected");
   const hasSuspension = run ? await deps.hasSuspension(run.runId, approval.threadId) : false;
 
@@ -161,9 +187,13 @@ export async function resolveRejectedRequest(
     return deps.startRootTask(
       approval.threadId,
       buildApprovalContinuation({
+        threadId: approval.threadId,
+        runId: run.runId,
+        taskId: approval.taskId,
         approvalRequestId,
         decision: "rejected",
         reason: buildRejectedApprovalReason(approval.summary, capabilityMarker),
+        step: "plan",
       }),
     );
   }

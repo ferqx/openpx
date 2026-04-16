@@ -1,6 +1,8 @@
 import { createContinuationId, type ContinuationEnvelope } from "./continuation";
 import type { LoopStep } from "./step-types";
 
+export type SuspensionStatus = "active" | "resolved" | "invalidated";
+
 /** approval suspension：等待审批时的显式挂起记录。 */
 export type ApprovalSuspension = {
   suspensionId: string;
@@ -12,6 +14,11 @@ export type ApprovalSuspension = {
   approvalRequestId: string;
   resumeStep: LoopStep;
   createdAt: string;
+  status: SuspensionStatus;
+  resolvedAt?: string;
+  resolvedByContinuationId?: string;
+  invalidatedAt?: string;
+  invalidationReason?: string;
 };
 
 /** 显式创建审批挂起，替代旧的隐式 interrupt 机制。 */
@@ -33,21 +40,31 @@ export function createApprovalSuspension(input: {
     approvalRequestId: input.approvalRequestId,
     resumeStep: input.step,
     createdAt: new Date().toISOString(),
+    status: "active",
   };
 }
 
 /** 把审批决议封装成 continuation。 */
 export function buildApprovalContinuation(input: {
+  threadId: string;
+  runId: string;
+  taskId?: string;
   approvalRequestId?: string;
   decision: "approved" | "rejected";
   reason?: string;
+  step?: LoopStep;
 }): ContinuationEnvelope {
   return {
     continuationId: createContinuationId(),
+    threadId: input.threadId,
+    runId: input.runId,
+    taskId: input.taskId,
     kind: "approval_resolution",
     approvalRequestId: input.approvalRequestId,
     decision: input.decision,
     reason: input.reason,
+    step: input.step,
+    status: "created",
   };
 }
 

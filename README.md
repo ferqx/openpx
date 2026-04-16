@@ -92,3 +92,14 @@ OPENAI_MODEL=kimi-k2.5
 ## 审批
 
 审批受策略控制。当工具调用存在风险时，内核会创建待定审批请求而不是执行更改。TUI 在启动时水合最新的阻塞线程，支持使用 `/approve <approval-id>` 和 `/reject <approval-id>` 继续或取消阻塞的操作。
+
+## 恢复合同
+
+当前 v1 的 run-loop 恢复语义固定如下：
+
+- `waiting_approval` 是唯一允许自动恢复的边界。系统只承诺恢复事务已落盘、且下一步尚未产生新副作用。
+- `plan / execute / verify / respond` 不承诺任意边界的自动精确续跑。只读步骤可安全重试，但不会被自动续跑。
+- 只要 execution ledger（执行账本）显示副作用结果不确定，系统就会把当前 run 明确转成 `human_recovery`。
+- `human_recovery` 不能自动退出，只能通过公开恢复动作解除：`restart_run`、`resubmit_intent`、`abandon_run`。
+
+当前默认 TUI 仍以审批面板为主；恢复动作已经进入 harness protocol（协议层）与 runtime 命令面，便于 CLI、Web、IDE 等后续 surface 复用。

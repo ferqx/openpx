@@ -66,12 +66,32 @@ export type RejectRequestCommand = {
   };
 };
 
-export type SessionCommand = SubmitInputCommand | ApproveRequestCommand | RejectRequestCommand;
+export type RecoveryCommand =
+  | {
+      type: "restart_run";
+      payload: {
+        threadId: string;
+      };
+    }
+  | {
+      type: "resubmit_intent";
+      payload: {
+        threadId: string;
+        content: string;
+      };
+    }
+  | {
+      type: "abandon_run";
+      payload: {
+        threadId: string;
+      };
+    };
 
 export type SessionControlPlaneResult = {
   status: "completed" | "waiting_approval" | "blocked";
   task: Task;
   approvals: ApprovalRequest[];
+  resumeDisposition?: "resumed" | "already_resolved" | "already_consumed" | "invalidated" | "not_resumable";
   finalResponse?: string;
   executionSummary?: string;
   verificationSummary?: string;
@@ -82,6 +102,8 @@ export type SessionControlPlaneResult = {
   pendingToolCallId?: string;
   pendingToolName?: string;
 };
+
+export type SessionCommand = SubmitInputCommand | ApproveRequestCommand | RejectRequestCommand | RecoveryCommand;
 
 export type SessionCommandResult = ProjectedSessionResult;
 
@@ -110,6 +132,9 @@ export function createSessionKernel(deps: {
     startRootTask: (threadId: string, input: string | ContinuationEnvelope) => Promise<SessionControlPlaneResult>;
     approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
+    restartRun: (threadId: string) => Promise<SessionControlPlaneResult>;
+    resubmitIntent: (threadId: string, content: string) => Promise<SessionControlPlaneResult>;
+    abandonRun: (threadId: string) => Promise<SessionControlPlaneResult>;
   };
   narrativeService?: ThreadNarrativeService;
   workspaceRoot?: string;
@@ -197,12 +222,14 @@ export function createSessionKernel(deps: {
   function startBackgroundControlAction(input: {
     threadId: string;
     execute: () => Promise<SessionControlPlaneResult>;
+    onFinalized?: () => Promise<void>;
   }) {
     void runSessionInBackground({
       threadId: input.threadId,
       execute: input.execute,
       finalize: async (result) => {
         await finalize(input.threadId, result);
+        await input.onFinalized?.();
       },
       publishFailure: publishTaskFailure,
     });
@@ -244,6 +271,7 @@ export function createSessionKernel(deps: {
     tasks: Task[];
     approvals: ApprovalRequest[];
     finalResponse?: string;
+    resumeDisposition?: ProjectedSessionResult["resumeDisposition"];
     executionSummary?: string;
     verificationSummary?: string;
     pauseSummary?: string;
@@ -264,6 +292,7 @@ export function createSessionKernel(deps: {
       messages: stableArtifacts.messages,
       workers: stableArtifacts.workers,
       finalResponse: input.finalResponse,
+      resumeDisposition: input.resumeDisposition,
       executionSummary: input.executionSummary,
       verificationSummary: input.verificationSummary,
       pauseSummary: input.pauseSummary,
@@ -299,6 +328,7 @@ export function createSessionKernel(deps: {
       tasks: [result.task],
       approvals: result.approvals,
       finalResponse: result.finalResponse,
+      resumeDisposition: result.resumeDisposition,
       executionSummary: result.executionSummary,
       verificationSummary: result.verificationSummary,
       pauseSummary: result.pauseSummary,
@@ -428,6 +458,60 @@ export function createSessionKernel(deps: {
           status: deriveProjectedExecutionStatus(approvalContext.latestRun, approvalContext.thread.status),
           tasks: approvalContext.tasks,
           approvals: approvalContext.approvals,
+          threadList,
+        });
+      }
+
+      if (
+        command.type === "restart_run"
+        || command.type === "resubmit_intent"
+        || command.type === "abandon_run"
+      ) {
+        const thread = await deps.stores.threadStore.get(command.payload.threadId);
+        if (!thread) {
+          throw new Error(`thread ${command.payload.threadId} not found`);
+        }
+        const latestRun = await deps.stores.runStore.getLatestByThread(thread.threadId);
+        const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
+        const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
+
+        startBackgroundControlAction({
+          threadId: thread.threadId,
+          execute: () => {
+            if (command.type === "restart_run") {
+              return deps.controlPlane.restartRun(thread.threadId);
+            }
+            if (command.type === "resubmit_intent") {
+              return deps.controlPlane.resubmitIntent(thread.threadId, command.payload.content);
+            }
+            return deps.controlPlane.abandonRun(thread.threadId);
+          },
+          onFinalized: () =>
+            (async () => {
+              events.publish({
+                type: "thread.recovery_resolved",
+                payload: {
+                  threadId: thread.threadId,
+                  action: command.type,
+                },
+              });
+              await appendRuntimeEvent({
+                threadId: thread.threadId,
+                type: "thread.recovery_resolved",
+                payload: {
+                  threadId: thread.threadId,
+                  action: command.type,
+                },
+              });
+            })(),
+        });
+
+        const threadList = await getThreadSummaries();
+        return buildSessionResult({
+          thread,
+          status: deriveProjectedExecutionStatus(latestRun, thread.status),
+          tasks,
+          approvals,
           threadList,
         });
       }

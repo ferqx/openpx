@@ -29,6 +29,21 @@ OpenPX 采用 harness-first（以 harness 为先）控制模型。
 
 若文档叙事、目录命名或局部实现与上述原则冲突，以 harness-first 原则为准。
 
+## Run-loop 恢复合同
+
+当前 run-loop v1 的恢复合同固定如下：
+
+- `waiting_approval` 是唯一允许自动恢复的边界。
+- 审批恢复只承诺到“恢复事务完成、下一步尚未产生新副作用”的边界。
+- `plan / execute / verify / respond` 不承诺任意边界的自动精确续跑。
+- execution ledger 一旦表明副作用结果不确定，必须显式落 `human_recovery`。
+- `human_recovery` 不可自动退出；只能由显式恢复动作解除。
+- 显式恢复动作当前固定为：
+  - `restart_run`
+  - `resubmit_intent`
+  - `abandon_run`
+- 旧 continuation 不得在恢复动作之后继续消费。
+
 ## 最终回答真相约束
 
 面向用户的最终回答（final response）必须与中间运行摘要分离。

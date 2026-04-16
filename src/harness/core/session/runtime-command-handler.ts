@@ -157,6 +157,37 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       return result;
     }
 
+    if (
+      command.kind === "restart_run"
+      || command.kind === "resubmit_intent"
+      || command.kind === "abandon_run"
+    ) {
+      const thread = await deps.context.stores.threadStore.get(command.threadId);
+      if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
+        throw new Error(`thread ${command.threadId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+
+      await deps.touchThread(thread, "active");
+      deps.setActiveThreadId(thread.threadId);
+
+      if (command.kind === "restart_run") {
+        return deps.context.kernel.handleCommand({
+          type: "restart_run",
+          payload: { threadId: thread.threadId },
+        });
+      }
+      if (command.kind === "resubmit_intent") {
+        return deps.context.kernel.handleCommand({
+          type: "resubmit_intent",
+          payload: { threadId: thread.threadId, content: command.content },
+        });
+      }
+      return deps.context.kernel.handleCommand({
+        type: "abandon_run",
+        payload: { threadId: thread.threadId },
+      });
+    }
+
     if (command.kind === "interrupt") {
       const threadId = command.threadId;
       if (!threadId) {

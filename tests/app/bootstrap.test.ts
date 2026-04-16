@@ -288,6 +288,73 @@ describe("createAppContext", () => {
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });
 
+  test("重复 approve 返回 already_resolved，而不是再次推进执行", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-approve-idempotent-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+    const filePath = path.join(workspaceRoot, "approved.txt");
+
+    await fs.mkdir(workspaceRoot, { recursive: true });
+    await fs.writeFile(filePath, "approved\n");
+
+    const modelGateway = {
+      async plan() {
+        return {
+          summary: "plan delete",
+          plannerResult: {
+            workPackages: [
+              {
+                id: "pkg_delete",
+                objective: "delete approved.txt",
+                allowedTools: ["apply_patch"],
+                inputRefs: ["thread:goal", "file:approved.txt"],
+                expectedArtifacts: ["patch:approved.txt"],
+              },
+            ],
+            acceptanceCriteria: ["approved.txt is removed"],
+            riskFlags: [],
+            approvalRequiredActions: ["apply_patch.delete_file"],
+            verificationScope: ["workspace file state"],
+          },
+        };
+      },
+      async verify() {
+        return { summary: "verified", isValid: true };
+      },
+      async respond() {
+        return { summary: "responded" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway,
+    });
+
+    const thread = createThread("thread-approve-idempotent", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+
+    const blocked = await ctx.controlPlane.startRootTask(thread.threadId, "clean up approved artifact");
+    const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+    expect(approvalRequestId).toBeDefined();
+
+    const first = await ctx.controlPlane.approveRequest(approvalRequestId!);
+    const second = await ctx.controlPlane.approveRequest(approvalRequestId!);
+
+    expect(first.status).toBe("completed");
+    expect(second.resumeDisposition).toBe("already_resolved");
+    expect(second.status).toBe("completed");
+
+    await closeAppContext(ctx);
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  });
+
   test("invalidates legacy checkpoint-backed threads on boot", async () => {
     const workspaceRoot = path.join(os.tmpdir(), `openpx-reject-run-${Date.now()}`);
     const dataDir = path.join(workspaceRoot, "openpx.db");
@@ -537,6 +604,78 @@ describe("createAppContext", () => {
     expect(result.executionSummary).toContain("continue safely without deleting files");
     expect(result.executionSummary).not.toContain("rejected for proposal");
     expect(await Bun.file(filePath).exists()).toBe(true);
+
+    await closeAppContext(ctx);
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  });
+
+  test("restart_run 为 human_recovery 创建新的 run，并清掉旧恢复锚点", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-restart-run-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+
+    await fs.mkdir(workspaceRoot, { recursive: true });
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway: createTestModelGateway(),
+    });
+
+    const thread = createThread("thread-restart", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+    const run = transitionRun(
+      transitionRun(
+        createRun({
+          runId: "run-restart",
+          threadId: thread.threadId,
+          trigger: "system_resume",
+          inputText: "retry previous intent",
+        }),
+        "running",
+      ),
+      "blocked",
+    );
+    await ctx.stores.runStore.save({
+      ...run,
+      activeTaskId: "task-restart",
+      blockingReason: {
+        kind: "human_recovery",
+        message: "Manual recovery required.",
+      },
+    });
+    await ctx.stores.taskStore.save({
+      taskId: "task-restart",
+      threadId: thread.threadId,
+      runId: run.runId,
+      summary: "Recover blocked run",
+      status: "blocked",
+      blockingReason: {
+        kind: "human_recovery",
+        message: "Manual recovery required.",
+      },
+    });
+    await ctx.stores.runStateStore.saveState({
+      stateVersion: 1,
+      engineVersion: "run-loop-v1",
+      threadId: thread.threadId,
+      runId: run.runId,
+      taskId: "task-restart",
+      input: "retry previous intent",
+      nextStep: "execute",
+      artifacts: [],
+      latestArtifacts: [],
+    });
+
+    const restarted = await ctx.controlPlane.restartRun(thread.threadId);
+    const runs = await ctx.stores.runStore.listByThread(thread.threadId);
+    const oldState = await ctx.stores.runStateStore.loadByRun(run.runId);
+
+    expect(restarted.status).toBe("completed");
+    expect(runs).toHaveLength(2);
+    expect(runs[0]?.runId).toBe(run.runId);
+    expect(runs[0]?.status).toBe("interrupted");
+    expect(runs[1]?.runId).not.toBe(run.runId);
+    expect(oldState).toBeUndefined();
 
     await closeAppContext(ctx);
     await fs.rm(workspaceRoot, { recursive: true, force: true });

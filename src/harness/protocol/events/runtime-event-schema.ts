@@ -12,7 +12,14 @@ export const runtimeEventTypes = [
   "thread.started",
   "thread.interrupted",
   "thread.blocked",
+  "thread.recovery_resolved",
   "thread.view_updated",
+  "loop.step_started",
+  "loop.step_completed",
+  "loop.step_failed",
+  "loop.suspended",
+  "loop.resumed",
+  "loop.finished",
   "task.created",
   "task.updated",
   "task.started",
@@ -138,6 +145,7 @@ const threadViewUpdatedPayloadSchema = z.object({
   status: sessionStatusSchema,
   threadId: z.string().min(1),
   finalResponse: z.string().optional(),
+  resumeDisposition: z.enum(["resumed", "already_resolved", "already_consumed", "invalidated", "not_resumable"]).optional(),
   executionSummary: z.string().optional(),
   verificationSummary: z.string().optional(),
   pauseSummary: z.string().optional(),
@@ -187,6 +195,25 @@ const threadBlockedPayloadSchema = z.object({
   threadId: z.string().min(1),
   status: threadStatusSchema,
   blockingReason: taskBlockingReasonSchema.optional(),
+}).strict();
+
+const threadRecoveryResolvedPayloadSchema = z.object({
+  threadId: z.string().min(1),
+  action: z.enum(["restart_run", "resubmit_intent", "abandon_run"]),
+}).strict();
+
+const loopEventPayloadSchema = z.object({
+  threadId: z.string().min(1),
+  runId: z.string().min(1),
+  taskId: z.string().min(1),
+  step: z.enum(["plan", "execute", "verify", "respond", "waiting_approval", "done"]),
+  suspensionId: z.string().min(1).optional(),
+  continuationId: z.string().min(1).optional(),
+  approvalRequestId: z.string().min(1).optional(),
+  resumeDisposition: z.enum(["resumed", "already_resolved", "already_consumed", "invalidated", "not_resumable"]).optional(),
+  failureReason: z.string().optional(),
+  stateVersion: z.number().int().nonnegative().optional(),
+  engineVersion: z.string().min(1).optional(),
 }).strict();
 
 const toolEventPayloadSchema = z.object({
@@ -250,7 +277,14 @@ export const runtimeEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("thread.started"), payload: threadStartedPayloadSchema }),
   z.object({ type: z.literal("thread.interrupted"), payload: threadInterruptedPayloadSchema }),
   z.object({ type: z.literal("thread.blocked"), payload: threadBlockedPayloadSchema }),
+  z.object({ type: z.literal("thread.recovery_resolved"), payload: threadRecoveryResolvedPayloadSchema }),
   z.object({ type: z.literal("thread.view_updated"), payload: threadViewUpdatedPayloadSchema }),
+  z.object({ type: z.literal("loop.step_started"), payload: loopEventPayloadSchema }),
+  z.object({ type: z.literal("loop.step_completed"), payload: loopEventPayloadSchema }),
+  z.object({ type: z.literal("loop.step_failed"), payload: loopEventPayloadSchema }),
+  z.object({ type: z.literal("loop.suspended"), payload: loopEventPayloadSchema }),
+  z.object({ type: z.literal("loop.resumed"), payload: loopEventPayloadSchema }),
+  z.object({ type: z.literal("loop.finished"), payload: loopEventPayloadSchema }),
   z.object({ type: z.literal("task.created"), payload: taskLifecyclePayloadSchema }),
   z.object({ type: z.literal("task.updated"), payload: taskLifecyclePayloadSchema }),
   z.object({ type: z.literal("task.started"), payload: taskLifecyclePayloadSchema }),

@@ -33,6 +33,7 @@ export type SessionThreadSummary = {
 export type ProjectedSessionResult = DerivedThreadView & {
   status: "idle" | "active" | "completed" | "waiting_approval" | "blocked" | "failed" | "interrupted";
   threadId: string;
+  resumeDisposition?: "resumed" | "already_resolved" | "already_consumed" | "invalidated" | "not_resumable";
   finalResponse?: string;
   executionSummary?: string;
   verificationSummary?: string;
@@ -132,6 +133,7 @@ export async function projectSessionResult(input: {
   workspaceRoot?: string;
   projectId?: string;
   finalResponse?: string;
+  resumeDisposition?: ProjectedSessionResult["resumeDisposition"];
   executionSummary?: string;
   verificationSummary?: string;
   pauseSummary?: string;
@@ -151,6 +153,7 @@ export async function projectSessionResult(input: {
     status: input.status,
     threadId: input.thread.threadId,
     finalResponse: input.finalResponse,
+    resumeDisposition: input.resumeDisposition,
     executionSummary: input.executionSummary,
     verificationSummary: input.verificationSummary,
     pauseSummary: input.pauseSummary,

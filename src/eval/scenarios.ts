@@ -272,6 +272,8 @@ export const coreEvalScenarios: EvalScenario[] = [
         }),
       );
       await ctx.stores.runStateStore.saveState({
+        stateVersion: 1,
+        engineVersion: "run-loop-v1",
         threadId: thread.threadId,
         runId: run.runId,
         taskId: "task_reject_path",
@@ -538,6 +540,8 @@ export const coreEvalScenarios: EvalScenario[] = [
         }),
       );
       await ctx.stores.runStateStore.saveState({
+        stateVersion: 1,
+        engineVersion: "run-loop-v1",
         threadId: thread.threadId,
         runId: run.runId,
         taskId: "task_reject_shortcut",

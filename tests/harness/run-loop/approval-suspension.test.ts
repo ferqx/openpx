@@ -26,8 +26,12 @@ describe("run-loop approval suspension", () => {
 
   test("批准后从原步骤继续执行", () => {
     const continuation = buildApprovalContinuation({
+      threadId: "thread_1",
+      runId: "run_1",
+      taskId: "task_1",
       approvalRequestId: "approval_1",
       decision: "approved",
+      step: "execute",
     });
     const result = resolveSuspensionAfterApproval({
       suspension: createApprovalSuspension({
@@ -49,9 +53,13 @@ describe("run-loop approval suspension", () => {
 
   test("拒绝后回到 plan，并优先使用 rejection reason", () => {
     const continuation = buildApprovalContinuation({
+      threadId: "thread_1",
+      runId: "run_1",
+      taskId: "task_1",
       approvalRequestId: "approval_1",
       decision: "rejected",
       reason: "continue safely without deleting files",
+      step: "plan",
     });
     const result = resolveSuspensionAfterApproval({
       suspension: createApprovalSuspension({

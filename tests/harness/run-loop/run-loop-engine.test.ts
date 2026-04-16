@@ -1,16 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { createRunLoopEngine } from "../../../src/harness/core/run-loop/run-loop-engine";
+import type { ApprovalSuspension } from "../../../src/harness/core/run-loop/approval-suspension";
 import type { RunStateStorePort } from "../../../src/persistence/ports/run-state-store";
 import type { RunLoopState } from "../../../src/harness/core/run-loop/step-types";
 import type { ContinuationEnvelope } from "../../../src/harness/core/run-loop/continuation";
 
 function createMemoryRunStateStore(): RunStateStorePort & {
   states: Map<string, RunLoopState>;
-  suspensions: Map<string, unknown>;
+  suspensions: Map<string, ApprovalSuspension>;
   continuations: Map<string, ContinuationEnvelope>;
 } {
   const states = new Map<string, RunLoopState>();
-  const suspensions = new Map<string, unknown>();
+  const suspensions = new Map<string, ApprovalSuspension>();
   const continuations = new Map<string, ContinuationEnvelope>();
 
   return {
@@ -22,6 +23,12 @@ function createMemoryRunStateStore(): RunStateStorePort & {
     },
     async loadByRun(runId) {
       return states.get(runId);
+    },
+    async loadActiveSuspensionByRun(runId) {
+      return [...suspensions.values()].find((suspension) => suspension.runId === runId && suspension.status === "active");
+    },
+    async loadContinuation(continuationId) {
+      return continuations.get(continuationId);
     },
     async saveState(state) {
       if (!state.runId) {
@@ -40,11 +47,51 @@ function createMemoryRunStateStore(): RunStateStorePort & {
       if (!continuation) {
         return undefined;
       }
-      continuations.delete(continuationId);
-      return continuation;
+      const consumed = { ...continuation, status: "consumed" as const };
+      continuations.set(continuationId, consumed);
+      return consumed;
+    },
+    async resolveSuspension({ suspensionId, continuationId }) {
+      const suspension = suspensions.get(suspensionId);
+      if (!suspension || suspension.status !== "active") {
+        return false;
+      }
+      suspensions.set(suspensionId, {
+        ...suspension,
+        status: "resolved",
+        resolvedAt: new Date().toISOString(),
+        resolvedByContinuationId: continuationId,
+      });
+      return true;
+    },
+    async invalidateSuspension({ suspensionId, reason }) {
+      const suspension = suspensions.get(suspensionId);
+      if (!suspension || suspension.status !== "active") {
+        return false;
+      }
+      suspensions.set(suspensionId, {
+        ...suspension,
+        status: "invalidated",
+        invalidatedAt: new Date().toISOString(),
+        invalidationReason: reason,
+      });
+      return true;
+    },
+    async invalidateContinuation({ continuationId, reason }) {
+      const continuation = continuations.get(continuationId);
+      if (!continuation || continuation.status !== "created") {
+        return false;
+      }
+      continuations.set(continuationId, {
+        ...continuation,
+        status: "invalidated",
+        invalidatedAt: new Date().toISOString(),
+        invalidationReason: reason,
+      });
+      return true;
     },
     async listSuspensionsByThread(threadId) {
-      return [...suspensions.values()].filter((item) => (item as { threadId: string }).threadId === threadId) as never[];
+      return [...suspensions.values()].filter((item) => item.threadId === threadId);
     },
     async resetThreadState(threadId) {
       for (const [runId, state] of states.entries()) {
@@ -58,8 +105,11 @@ function createMemoryRunStateStore(): RunStateStorePort & {
         }
       }
     },
-    async deleteRunState(runId) {
+    async deleteActiveRunState(runId) {
       states.delete(runId);
+    },
+    async deleteExpiredAuditRecords() {
+      return { suspensions: 0, continuations: 0 };
     },
   };
 }
@@ -224,9 +274,14 @@ describe("run-loop engine", () => {
       taskId: "task_1",
       continuation: {
         continuationId: "continuation_1",
+        threadId: "thread_1",
+        runId: "run_1",
+        taskId: "task_1",
         kind: "approval_resolution",
         approvalRequestId: "approval_1",
         decision: "approved",
+        step: "execute",
+        status: "created",
       },
     });
 

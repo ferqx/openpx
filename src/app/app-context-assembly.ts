@@ -141,6 +141,14 @@ export async function createAppServiceLayer<
     workspaceRoot: input.config.workspaceRoot,
     projectId: input.config.projectId,
   });
+  const kernelAwareControlPlane = controlPlane as TControlPlane & {
+    attachKernelEventPublisher?: (publisher: (event: unknown) => void) => void;
+  };
+  if (kernelAwareControlPlane.attachKernelEventPublisher) {
+    kernelAwareControlPlane.attachKernelEventPublisher((event: unknown) => {
+      (kernel as { events?: { publish?: (event: unknown) => void } }).events?.publish?.(event);
+    });
+  }
 
   return {
     narrativeService,

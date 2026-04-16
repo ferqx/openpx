@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { createApprovalService, type ApprovalService, type CreateApprovalInput } from "../control/policy/approval-service";
 import { createPolicyEngine } from "../control/policy/policy-engine";
 import { createTaskManager } from "../control/tasks/task-manager";
-import type { ControlTask } from "../control/tasks/task-types";
+import { createControlTask, type ControlTask } from "../control/tasks/task-types";
 import { createToolRegistry } from "../control/tools/tool-registry";
 import type { ContinuationEnvelope } from "../harness/core/run-loop/continuation";
 import { createRunLoopEngine } from "../harness/core/run-loop/run-loop-engine";
@@ -70,7 +70,22 @@ type ControlPlane = {
   startRootTask(threadId: string, input: string | ContinuationEnvelope): Promise<SessionControlPlaneResult>;
   approveRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   rejectRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
+  restartRun(threadId: string): Promise<SessionControlPlaneResult>;
+  resubmitIntent(threadId: string, content: string): Promise<SessionControlPlaneResult>;
+  abandonRun(threadId: string): Promise<SessionControlPlaneResult>;
   cancelThread(threadId: string, reason?: string): Promise<boolean>;
+  attachKernelEventPublisher(
+    publisher: (event: {
+      type:
+        | "loop.step_started"
+        | "loop.step_completed"
+        | "loop.step_failed"
+        | "loop.suspended"
+        | "loop.resumed"
+        | "loop.finished";
+      payload: Record<string, unknown>;
+    }) => void,
+  ): void;
 };
 
 function createStores(path: string | ReturnType<typeof createSqlite>) {
@@ -361,6 +376,20 @@ async function createControlPlane(input: {
   });
   const activeExecutions = new Map<string, { taskId: string; controller: AbortController }>();
   const getAbortSignal = (threadId?: string) => (threadId ? activeExecutions.get(threadId)?.controller.signal : undefined);
+  let kernelEventPublisher:
+    | ((
+        event: {
+          type:
+            | "loop.step_started"
+            | "loop.step_completed"
+            | "loop.step_failed"
+            | "loop.suspended"
+            | "loop.resumed"
+            | "loop.finished";
+          payload: Record<string, unknown>;
+        },
+      ) => void)
+    | undefined;
 
   async function saveRun(run: Run): Promise<Run> {
     await input.stores.runStore.save(run);
@@ -380,6 +409,75 @@ async function createControlPlane(input: {
     return await saveRun(next);
   }
 
+  async function buildCurrentControlPlaneResult(args: {
+    threadId: string;
+    run: Run;
+    resumeDisposition?: SessionControlPlaneResult["resumeDisposition"];
+    fallbackTaskSummary: string;
+  }): Promise<SessionControlPlaneResult> {
+    const tasks = await input.stores.taskStore.listByThread(args.threadId);
+    const currentTask = tasks.at(-1);
+    const fallbackBlockingReason =
+      args.run.blockingReason?.kind === "waiting_approval" || args.run.blockingReason?.kind === "human_recovery"
+        ? {
+            kind: args.run.blockingReason.kind,
+            message: args.run.blockingReason.message,
+          }
+        : undefined;
+    const task = currentTask
+      ? ensureControlTask(currentTask)
+      : createControlTask({
+          taskId: prefixedUuid("task"),
+          threadId: args.threadId,
+          runId: args.run.runId,
+          summary: args.fallbackTaskSummary,
+          status: args.run.status === "waiting_approval" ? "blocked" : args.run.status === "blocked" ? "blocked" : "completed",
+          blockingReason: fallbackBlockingReason,
+        });
+    const approvals = await input.stores.approvalStore.listPendingByThread(args.threadId);
+
+    return {
+      status:
+        args.run.status === "waiting_approval"
+          ? "waiting_approval"
+          : args.run.status === "blocked" || args.run.status === "interrupted"
+            ? "blocked"
+            : "completed",
+      task,
+      approvals,
+      resumeDisposition: args.resumeDisposition,
+      finalResponse: args.run.resultSummary,
+      executionSummary: args.run.resultSummary,
+      pauseSummary: args.run.blockingReason?.message,
+      recommendationReason:
+        args.run.blockingReason?.kind === "human_recovery"
+          ? args.run.blockingReason.message
+          : undefined,
+    };
+  }
+
+  async function resolveBlockedRecoveryRun(threadId: string): Promise<{
+    run: Run;
+    task: ControlTask;
+  }> {
+    const activeRun = await input.stores.runStore.getLatestByThread(threadId);
+    if (!activeRun) {
+      throw new Error(`no run found for thread ${threadId}`);
+    }
+    if (activeRun.blockingReason?.kind !== "human_recovery" && activeRun.status !== "blocked") {
+      throw new Error(`thread ${threadId} is not in human_recovery`);
+    }
+    const tasks = await input.stores.taskStore.listByThread(threadId);
+    const lastTask = tasks.at(-1);
+    if (!lastTask) {
+      throw new Error(`no task found for thread ${threadId}`);
+    }
+    return {
+      run: activeRun,
+      task: ensureControlTask(lastTask),
+    };
+  }
+
   async function cancelActiveThread(threadId: string): Promise<boolean> {
     const execution = activeExecutions.get(threadId);
     const activeRun = await input.stores.runStore.getLatestByThread(threadId);
@@ -388,6 +486,15 @@ async function createControlPlane(input: {
         activeRun &&
         ["created", "running", "waiting_approval", "blocked"].includes(activeRun.status)
       ) {
+        if (activeRun.status === "waiting_approval") {
+          const suspension = await input.stores.runStateStore.loadActiveSuspensionByRun(activeRun.runId);
+          if (suspension) {
+            await input.stores.runStateStore.invalidateSuspension({
+              suspensionId: suspension.suspensionId,
+              reason: "cancelled by user",
+            });
+          }
+        }
         await updateRunStatus(activeRun, "interrupted", {
           endedAt: new Date().toISOString(),
           resultSummary: "Interrupted from TUI",
@@ -405,6 +512,15 @@ async function createControlPlane(input: {
     }
 
     if (activeRun && activeRun.status !== "interrupted") {
+      if (activeRun.status === "waiting_approval") {
+        const suspension = await input.stores.runStateStore.loadActiveSuspensionByRun(activeRun.runId);
+        if (suspension) {
+          await input.stores.runStateStore.invalidateSuspension({
+            suspensionId: suspension.suspensionId,
+            reason: "cancelled by user",
+          });
+        }
+      }
       await updateRunStatus(activeRun, "interrupted", {
         endedAt: new Date().toISOString(),
         resultSummary: "Interrupted from TUI",
@@ -425,6 +541,9 @@ async function createControlPlane(input: {
 
   const runLoopEngine = createRunLoopEngine({
     runStateStore: input.stores.runStateStore,
+    emitRuntimeEvent: (event) => {
+      kernelEventPublisher?.(event);
+    },
     planner: async (state) => {
       const text = state.input;
       const threadId = state.threadId;
@@ -724,6 +843,13 @@ async function createControlPlane(input: {
           executeApprovedTool: (request) => toolRegistry.executeApproved(request),
           hasSuspension: async (runId, threadId) =>
             (await input.stores.runStateStore.listSuspensionsByThread(threadId)).some((item) => item.runId === runId),
+          buildCurrentResult: ({ threadId: targetThreadId, run, resumeDisposition, fallbackTaskSummary }) =>
+            buildCurrentControlPlaneResult({
+              threadId: targetThreadId,
+              run,
+              resumeDisposition,
+              fallbackTaskSummary,
+            }),
           startRootTask: (threadId, resumeInput) => controlPlane.startRootTask(threadId, resumeInput),
         },
         approvalRequestId,
@@ -746,14 +872,70 @@ async function createControlPlane(input: {
           executeApprovedTool: (request) => toolRegistry.executeApproved(request),
           hasSuspension: async (runId, threadId) =>
             (await input.stores.runStateStore.listSuspensionsByThread(threadId)).some((item) => item.runId === runId),
+          buildCurrentResult: ({ threadId: targetThreadId, run, resumeDisposition, fallbackTaskSummary }) =>
+            buildCurrentControlPlaneResult({
+              threadId: targetThreadId,
+              run,
+              resumeDisposition,
+              fallbackTaskSummary,
+            }),
           startRootTask: (threadId, resumeInput) => controlPlane.startRootTask(threadId, resumeInput),
         },
         approvalRequestId,
       );
     },
 
+    async restartRun(threadId: string) {
+      const { run, task } = await resolveBlockedRecoveryRun(threadId);
+      await input.stores.runStateStore.resetThreadState(threadId);
+      await saveTaskStatus(input.stores, task, "cancelled");
+      await updateRunStatus(run, "interrupted", {
+        activeTaskId: task.taskId,
+        blockingReason: undefined,
+        endedAt: new Date().toISOString(),
+        resultSummary: "Manual recovery resolved by restart_run",
+      });
+
+      return controlPlane.startRootTask(threadId, run.inputText ?? task.summary);
+    },
+
+    async resubmitIntent(threadId: string, content: string) {
+      const { run, task } = await resolveBlockedRecoveryRun(threadId);
+      await input.stores.runStateStore.resetThreadState(threadId);
+      await saveTaskStatus(input.stores, task, "cancelled");
+      await updateRunStatus(run, "interrupted", {
+        activeTaskId: task.taskId,
+        blockingReason: undefined,
+        endedAt: new Date().toISOString(),
+        resultSummary: "Manual recovery resolved by resubmit_intent",
+      });
+
+      return controlPlane.startRootTask(threadId, content);
+    },
+
+    async abandonRun(threadId: string) {
+      const { run, task } = await resolveBlockedRecoveryRun(threadId);
+      await input.stores.runStateStore.resetThreadState(threadId);
+      const cancelledTask = await saveTaskStatus(input.stores, task, "cancelled");
+      const interruptedRun = await updateRunStatus(run, "interrupted", {
+        activeTaskId: cancelledTask.taskId,
+        blockingReason: undefined,
+        endedAt: new Date().toISOString(),
+        resultSummary: "Manual recovery resolved by abandon_run",
+      });
+
+      return buildCurrentControlPlaneResult({
+        threadId,
+        run: interruptedRun,
+        fallbackTaskSummary: cancelledTask.summary,
+      });
+    },
+
     async cancelThread(threadId: string) {
       return cancelActiveThread(threadId);
+    },
+    attachKernelEventPublisher(publisher) {
+      kernelEventPublisher = publisher;
     },
   };
   return controlPlane;

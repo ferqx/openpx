@@ -157,10 +157,14 @@ export function migrateSqlite(db: Database): void {
       thread_id TEXT NOT NULL,
       task_id TEXT,
       step TEXT NOT NULL,
+      state_version INTEGER NOT NULL DEFAULT 1,
+      engine_version TEXT NOT NULL DEFAULT 'run-loop-v1',
       state_json TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `);
+  ensureColumn(db, "run_loop_states", "state_version", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn(db, "run_loop_states", "engine_version", "TEXT NOT NULL DEFAULT 'run-loop-v1'");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS run_suspensions (
@@ -171,11 +175,21 @@ export function migrateSqlite(db: Database): void {
       approval_request_id TEXT,
       reason_kind TEXT NOT NULL,
       resume_step TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
       payload_json TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      resumed_at TEXT
+      resumed_at TEXT,
+      resolved_at TEXT,
+      resolved_by_continuation_id TEXT,
+      invalidated_at TEXT,
+      invalidation_reason TEXT
     )
   `);
+  ensureColumn(db, "run_suspensions", "status", "TEXT NOT NULL DEFAULT 'active'");
+  ensureColumn(db, "run_suspensions", "resolved_at", "TEXT");
+  ensureColumn(db, "run_suspensions", "resolved_by_continuation_id", "TEXT");
+  ensureColumn(db, "run_suspensions", "invalidated_at", "TEXT");
+  ensureColumn(db, "run_suspensions", "invalidation_reason", "TEXT");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS run_continuations (
@@ -183,14 +197,38 @@ export function migrateSqlite(db: Database): void {
       thread_id TEXT,
       run_id TEXT,
       kind TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'created',
       payload_json TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      consumed_at TEXT,
+      invalidated_at TEXT,
+      invalidation_reason TEXT
+    )
+  `);
+  ensureColumn(db, "run_continuations", "status", "TEXT NOT NULL DEFAULT 'created'");
+  ensureColumn(db, "run_continuations", "consumed_at", "TEXT");
+  ensureColumn(db, "run_continuations", "invalidated_at", "TEXT");
+  ensureColumn(db, "run_continuations", "invalidation_reason", "TEXT");
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS system_migrations (
+      migration_key TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL
     )
   `);
 
   db.run("CREATE INDEX IF NOT EXISTS idx_run_loop_states_thread_id ON run_loop_states (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_run_suspensions_thread_id ON run_suspensions (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_run_continuations_thread_id ON run_continuations (thread_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_run_suspensions_run_status ON run_suspensions (run_id, status)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_run_suspensions_approval_status ON run_suspensions (approval_request_id, status)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_run_continuations_run_status ON run_continuations (run_id, status)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_run_continuations_thread_status ON run_continuations (thread_id, status)");
+  db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_run_suspensions_one_active_per_run
+    ON run_suspensions (run_id)
+    WHERE status = 'active'
+  `);
 
   db.run(`
     CREATE TABLE IF NOT EXISTS eval_suite_runs (
