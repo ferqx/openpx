@@ -196,6 +196,8 @@ export function migrateSqlite(db: Database): void {
       continuation_id TEXT PRIMARY KEY,
       thread_id TEXT,
       run_id TEXT,
+      task_id TEXT,
+      approval_request_id TEXT,
       kind TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'created',
       payload_json TEXT NOT NULL,
@@ -205,6 +207,8 @@ export function migrateSqlite(db: Database): void {
       invalidation_reason TEXT
     )
   `);
+  ensureColumn(db, "run_continuations", "task_id", "TEXT");
+  ensureColumn(db, "run_continuations", "approval_request_id", "TEXT");
   ensureColumn(db, "run_continuations", "status", "TEXT NOT NULL DEFAULT 'created'");
   ensureColumn(db, "run_continuations", "consumed_at", "TEXT");
   ensureColumn(db, "run_continuations", "invalidated_at", "TEXT");

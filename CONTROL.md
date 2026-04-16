@@ -42,7 +42,9 @@ OpenPX 采用 harness-first（以 harness 为先）控制模型。
   - `restart_run`
   - `resubmit_intent`
   - `abandon_run`
+- `cancel` 必须失效当前 run 关联的 active suspension、created continuation 与 pending approval，不得让旧审批继续复活已中断 run。
 - 旧 continuation 不得在恢复动作之后继续消费。
+- run-loop 审计记录默认保留 7 天；completed run 只删除 active state，不立即物理删除 suspension / continuation 审计记录。
 
 ## 最终回答真相约束
 

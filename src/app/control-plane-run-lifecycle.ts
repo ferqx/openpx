@@ -39,9 +39,10 @@ type RootTaskFinalizationDeps = {
 };
 
 export type RootTaskFinalizationResult = {
-  status: "waiting_approval" | "completed";
+  status: "waiting_approval" | "completed" | "blocked";
   task: ControlTask;
   approvals: ApprovalRequest[];
+  resumeDisposition?: RunLoopEngineResult["resumeDisposition"];
   finalResponse?: string;
   executionSummary?: string;
   verificationSummary?: string;
@@ -128,18 +129,25 @@ export async function finalizeRootTaskExecution(
   engineResult: RunLoopEngineResult,
 ): Promise<RootTaskFinalizationResult> {
   const approvals = await deps.listPendingApprovals(threadId);
-  const status: "waiting_approval" | "completed" =
-    engineResult.status === "waiting_approval" || approvals.length > 0 ? "waiting_approval" : "completed";
+  const status: "waiting_approval" | "completed" | "blocked" =
+    engineResult.status === "blocked"
+      ? "blocked"
+      : engineResult.status === "waiting_approval" || approvals.length > 0
+        ? "waiting_approval"
+        : "completed";
 
-  const finalTask = await deps.saveTaskStatus(task, status === "waiting_approval" ? "blocked" : "completed");
+  const finalTask = await deps.saveTaskStatus(
+    task,
+    status === "completed" ? "completed" : "blocked",
+  );
   const recommendationReason =
-    status === "waiting_approval" && approvals.length === 0
+    status !== "completed" && approvals.length === 0
       ? engineResult.recommendationReason
       : undefined;
   const finalResponse = status === "completed" ? engineResult.finalResponse : undefined;
   const executionSummary = engineResult.executionSummary;
   const verificationSummary = engineResult.verificationSummary;
-  const pauseSummary = status === "waiting_approval"
+  const pauseSummary = status !== "completed"
     ? String(
         engineResult.pauseSummary
         ?? recommendationReason
@@ -149,23 +157,28 @@ export async function finalizeRootTaskExecution(
 
   // run 的 blockingReason 代表“为什么现在不能继续自动推进”。
   // 有审批时标记 waiting_approval；否则说明进入了人工恢复场景。
-  await deps.updateRunStatus(run, status === "waiting_approval" ? "waiting_approval" : "completed", {
-    activeTaskId: finalTask.taskId,
-    resultSummary: finalResponse,
-    blockingReason:
-      status === "waiting_approval"
-        ? {
-            kind: approvals.length > 0 ? "waiting_approval" : "human_recovery",
+  await deps.updateRunStatus(
+    run,
+    status === "completed" ? "completed" : status === "waiting_approval" ? "waiting_approval" : "blocked",
+    {
+      activeTaskId: finalTask.taskId,
+      resultSummary: finalResponse,
+      blockingReason:
+        status !== "completed"
+          ? {
+            kind: status === "waiting_approval" && approvals.length > 0 ? "waiting_approval" : "human_recovery",
             message: pauseSummary ?? "Execution paused.",
           }
         : undefined,
-    endedAt: status === "waiting_approval" ? undefined : new Date().toISOString(),
-  });
+      endedAt: status === "completed" ? new Date().toISOString() : undefined,
+    },
+  );
 
   return {
     status,
     task: finalTask,
     approvals,
+    resumeDisposition: engineResult.resumeDisposition,
     finalResponse,
     executionSummary,
     verificationSummary,

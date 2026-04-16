@@ -46,6 +46,19 @@ function buildFallbackTask(approval: ApprovalRequest): ControlTask {
   };
 }
 
+function resolveDispositionForNonPendingApproval(input: {
+  approval: ApprovalRequest;
+  run?: Run;
+}): SessionControlPlaneResult["resumeDisposition"] {
+  if (input.approval.status === "cancelled") {
+    return "invalidated";
+  }
+  if (input.run?.blockingReason?.kind === "human_recovery") {
+    return "not_resumable";
+  }
+  return "already_resolved";
+}
+
 export async function resolveApprovedRequest(
   deps: ApprovalResolutionDeps,
   approvalRequestId: string,
@@ -60,7 +73,7 @@ export async function resolveApprovedRequest(
     return deps.buildCurrentResult({
       threadId: approval.threadId,
       run,
-      resumeDisposition: run.blockingReason?.kind === "human_recovery" ? "not_resumable" : "already_resolved",
+      resumeDisposition: resolveDispositionForNonPendingApproval({ approval, run }),
       fallbackTaskSummary: approval.summary,
     });
   }
@@ -69,12 +82,21 @@ export async function resolveApprovedRequest(
     throw new Error(`approval request ${approvalRequestId} cannot be resumed without a stored tool request`);
   }
 
-  await deps.approvals.updateStatus(approvalRequestId, "approved");
   const hasSuspension = run ? await deps.hasSuspension(run.runId, approval.threadId) : false;
+
+  if (run && !hasSuspension && (run.status === "interrupted" || run.blockingReason?.kind === "human_recovery" || run.status === "blocked")) {
+    return deps.buildCurrentResult({
+      threadId: approval.threadId,
+      run,
+      resumeDisposition: run.status === "interrupted" ? "invalidated" : run.blockingReason?.kind === "human_recovery" ? "not_resumable" : "already_resolved",
+      fallbackTaskSummary: approval.summary,
+    });
+  }
 
   // 没有 suspension 时，说明无法回到 run-loop 中点继续执行；
   // 此时退化为“直接执行已批准工具，然后手动收尾 run/task 状态”。
   if (!hasSuspension || !run) {
+    await deps.approvals.updateStatus(approvalRequestId, "approved");
     const currentTask = (await deps.getTask(approval.taskId)) ?? buildFallbackTask(approval);
     const runningTask = await deps.saveTaskStatus(ensureControlTask(currentTask), "running");
     if (run) {
@@ -171,11 +193,10 @@ export async function resolveRejectedRequest(
     return deps.buildCurrentResult({
       threadId: approval.threadId,
       run,
-      resumeDisposition: run.blockingReason?.kind === "human_recovery" ? "not_resumable" : "already_resolved",
+      resumeDisposition: resolveDispositionForNonPendingApproval({ approval, run }),
       fallbackTaskSummary: approval.summary,
     });
   }
-  await deps.approvals.updateStatus(approvalRequestId, "rejected");
   const hasSuspension = run ? await deps.hasSuspension(run.runId, approval.threadId) : false;
 
   if (hasSuspension && run) {
@@ -198,6 +219,16 @@ export async function resolveRejectedRequest(
     );
   }
 
+  if (run && !hasSuspension && (run.status === "interrupted" || run.blockingReason?.kind === "human_recovery" || run.status === "blocked")) {
+    return deps.buildCurrentResult({
+      threadId: approval.threadId,
+      run,
+      resumeDisposition: run.status === "interrupted" ? "invalidated" : run.blockingReason?.kind === "human_recovery" ? "not_resumable" : "already_resolved",
+      fallbackTaskSummary: approval.summary,
+    });
+  }
+
+  await deps.approvals.updateStatus(approvalRequestId, "rejected");
   const currentTask = (await deps.getTask(approval.taskId)) ?? buildFallbackTask(approval);
   const cancelledTask = await deps.saveTaskStatus(ensureControlTask(currentTask), "cancelled");
   const pendingApprovals = await deps.listPendingApprovals(approval.threadId);

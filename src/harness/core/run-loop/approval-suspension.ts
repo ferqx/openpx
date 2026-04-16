@@ -1,4 +1,7 @@
-import { createContinuationId, type ContinuationEnvelope } from "./continuation";
+import {
+  createContinuationId,
+  type ApprovalResolutionContinuation,
+} from "./continuation";
 import type { LoopStep } from "./step-types";
 
 export type SuspensionStatus = "active" | "resolved" | "invalidated";
@@ -48,12 +51,12 @@ export function createApprovalSuspension(input: {
 export function buildApprovalContinuation(input: {
   threadId: string;
   runId: string;
-  taskId?: string;
-  approvalRequestId?: string;
+  taskId: string;
+  approvalRequestId: string;
   decision: "approved" | "rejected";
   reason?: string;
   step?: LoopStep;
-}): ContinuationEnvelope {
+}): ApprovalResolutionContinuation {
   return {
     continuationId: createContinuationId(),
     threadId: input.threadId,
@@ -71,13 +74,9 @@ export function buildApprovalContinuation(input: {
 /** 根据审批决议恢复下一步；批准回原步骤，拒绝回 plan。 */
 export function resolveSuspensionAfterApproval(input: {
   suspension: ApprovalSuspension;
-  continuation: ContinuationEnvelope;
+  continuation: ApprovalResolutionContinuation;
   originalInput: string;
 }) {
-  if (input.continuation.kind !== "approval_resolution") {
-    throw new Error("approval suspension can only be resolved by approval_resolution continuation");
-  }
-
   if (input.continuation.decision === "approved") {
     return {
       input: input.originalInput,

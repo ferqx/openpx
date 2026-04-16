@@ -355,6 +355,77 @@ describe("createAppContext", () => {
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });
 
+  test("waiting_approval 下 cancel 会失效审批，后续 approve 不得复活 run", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-cancel-approval-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+    const filePath = path.join(workspaceRoot, "approved.txt");
+
+    await fs.mkdir(workspaceRoot, { recursive: true });
+    await fs.writeFile(filePath, "approved\n");
+
+    const modelGateway = {
+      async plan() {
+        return {
+          summary: "plan delete",
+          plannerResult: {
+            workPackages: [
+              {
+                id: "pkg_delete",
+                objective: "delete approved.txt",
+                allowedTools: ["apply_patch"],
+                inputRefs: ["thread:goal", "file:approved.txt"],
+                expectedArtifacts: ["patch:approved.txt"],
+              },
+            ],
+            acceptanceCriteria: ["approved.txt is removed"],
+            riskFlags: [],
+            approvalRequiredActions: ["apply_patch.delete_file"],
+            verificationScope: ["workspace file state"],
+          },
+        };
+      },
+      async verify() {
+        return { summary: "verified", isValid: true };
+      },
+      async respond() {
+        return { summary: "responded" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway,
+    });
+
+    const thread = createThread("thread-cancel-approval", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+
+    const blocked = await ctx.controlPlane.startRootTask(thread.threadId, "clean up approved artifact");
+    const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+    expect(approvalRequestId).toBeDefined();
+
+    const cancelled = await ctx.controlPlane.cancelThread(thread.threadId);
+    const approval = await ctx.stores.approvalStore.get(approvalRequestId!);
+    const afterApprove = await ctx.controlPlane.approveRequest(approvalRequestId!);
+    const latestRun = await ctx.stores.runStore.getLatestByThread(thread.threadId);
+
+    expect(cancelled).toBe(true);
+    expect(approval?.status).toBe("cancelled");
+    expect(afterApprove.resumeDisposition).toBe("invalidated");
+    expect(latestRun?.status).toBe("interrupted");
+    expect(await Bun.file(filePath).exists()).toBe(true);
+
+    await closeAppContext(ctx);
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  });
+
   test("invalidates legacy checkpoint-backed threads on boot", async () => {
     const workspaceRoot = path.join(os.tmpdir(), `openpx-reject-run-${Date.now()}`);
     const dataDir = path.join(workspaceRoot, "openpx.db");
@@ -494,14 +565,31 @@ describe("createAppContext", () => {
     const remainingCheckpoints = createSqlite(dataDir)
       .query<{ count: number }, [string]>("SELECT COUNT(*) as count FROM checkpoints WHERE thread_id = ?")
       .get(thread.threadId);
+    const migrationRow = createSqlite(dataDir)
+      .query<{ applied_at: string }, [string]>("SELECT applied_at FROM system_migrations WHERE migration_key = ?")
+      .get("legacy_checkpoint_invalidation_v1");
 
     expect(latestRun?.status).toBe("blocked");
     expect(latestRun?.blockingReason?.kind).toBe("human_recovery");
     expect(tasks.at(-1)?.status).toBe("blocked");
     expect(tasks.at(-1)?.blockingReason?.kind).toBe("human_recovery");
     expect(remainingCheckpoints?.count).toBe(0);
+    expect(migrationRow?.applied_at).toBeDefined();
 
     await closeAppContext(ctx);
+
+    const ctx2 = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway: createTestModelGateway(),
+    });
+    const migrationCount = createSqlite(dataDir)
+      .query<{ count: number }, [string]>("SELECT COUNT(*) as count FROM system_migrations WHERE migration_key = ?")
+      .get("legacy_checkpoint_invalidation_v1");
+
+    expect(migrationCount?.count).toBe(1);
+
+    await closeAppContext(ctx2);
     await fs.rm(workspaceRoot, { recursive: true, force: true });
   });
 

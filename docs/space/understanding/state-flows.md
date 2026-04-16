@@ -49,7 +49,7 @@
 当前 v1 只有一条正式自动恢复路径：
 
 - 系统必须精确加载 `runId` 对应的 active suspension
-- continuation（继续执行信封）必须带完整归属链：`threadId`、`runId`、可选 `taskId`
+- continuation（继续执行信封）必须带完整归属链；`approval_resolution` 必须携带 `threadId`、`runId`、`taskId`、`approvalRequestId`
 - suspension 只能从 `active -> resolved` 一次
 - continuation 只能从 `created -> consumed` 一次
 - 事务提交之后，run-loop 才会继续推进
@@ -59,6 +59,12 @@
 - 自动恢复只允许发生在 `waiting_approval`
 - 恢复事务只承诺到“下一步尚未产生新副作用”
 - 重复 approve / reject / continuation 只返回当前 run 投影视图，不再次推进 loop
+
+如果恢复事务发现 continuation 已消费、suspension 已失效，或者 state 版本不兼容：
+
+- 不再抛裸错给 surface
+- 系统返回稳定的 `resumeDisposition`
+- 必要时把 run 收口到 `human_recovery`
 
 ## 5. 拒绝后恢复
 
@@ -95,7 +101,16 @@ v1 合同：
   - `abandon_run`
 - 任一解除动作都会让旧 continuation 失效，并发布 `thread.recovery_resolved`
 
-## 7. interrupt / hydrate
+## 7. cancel
+
+当用户取消当前 run 时：
+
+- `running` 中的执行会先 abort（中止）当前控制器，再把 task 标成 `cancelled`
+- `waiting_approval` 中的执行会取消 pending approval，并把 active suspension / created continuation 标成 `invalidated`
+- run 会统一转成 `interrupted`
+- 旧 approval 不得在 cancel 之后继续复活该 run
+
+## 8. interrupt / hydrate
 
 ### suspension / continuation
 

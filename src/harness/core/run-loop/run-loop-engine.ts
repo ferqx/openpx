@@ -1,9 +1,11 @@
 import {
   createApprovalSuspension,
-  resolveSuspensionAfterApproval,
   type ApprovalSuspension,
 } from "./approval-suspension";
-import type { ContinuationEnvelope } from "./continuation";
+import type {
+  ApprovalResolutionContinuation,
+  ContinuationEnvelope,
+} from "./continuation";
 import { commitCompletedWorkPackage } from "./phase-commit";
 import { createInitialRunLoopState } from "./run-loop-state";
 import { dispatchNextStep } from "./step-dispatcher";
@@ -22,14 +24,15 @@ export type RunLoopEngine = {
     threadId: string;
     runId: string;
     taskId: string;
-    continuation: ContinuationEnvelope;
+    continuation: ApprovalResolutionContinuation;
   }): Promise<RunLoopEngineResult>;
 };
 
 export type RunLoopEngineResult = {
-  status: "completed" | "waiting_approval";
+  status: "completed" | "waiting_approval" | "blocked";
   state: RunLoopState;
   suspension?: ApprovalSuspension;
+  resumeDisposition?: "resumed" | "already_resolved" | "already_consumed" | "invalidated" | "not_resumable";
   finalResponse?: string;
   executionSummary?: string;
   verificationSummary?: string;
@@ -44,13 +47,15 @@ export type RunLoopEngineResult = {
 
 function projectEngineResult(input: {
   state: RunLoopState;
-  status: "completed" | "waiting_approval";
+  status: "completed" | "waiting_approval" | "blocked";
   suspension?: ApprovalSuspension;
+  resumeDisposition?: RunLoopEngineResult["resumeDisposition"];
 }): RunLoopEngineResult {
   return {
     status: input.status,
     state: input.state,
     suspension: input.suspension,
+    resumeDisposition: input.resumeDisposition,
     finalResponse: input.state.finalResponse,
     executionSummary: input.state.executionSummary,
     verificationSummary: input.state.verificationSummary ?? input.state.verificationReport?.summary,
@@ -72,6 +77,37 @@ function mergeState(state: RunLoopState, patch: Partial<RunLoopState>): RunLoopS
     artifacts: patch.artifacts ?? state.artifacts,
     latestArtifacts: patch.latestArtifacts ?? state.latestArtifacts,
   };
+}
+
+function blockForResumeDisposition(input: {
+  disposition: Exclude<NonNullable<RunLoopEngineResult["resumeDisposition"]>, "resumed">;
+  state: RunLoopState;
+  suspension?: ApprovalSuspension;
+}): RunLoopEngineResult {
+  const status: RunLoopEngineResult["status"] = input.state.nextStep === "done" ? "completed" : "blocked";
+  const blockedState: RunLoopState = {
+    ...input.state,
+    pauseSummary:
+      input.state.pauseSummary
+      ?? (
+        input.disposition === "not_resumable"
+          ? "Run-loop state is no longer safely resumable. Manual recovery is required."
+          : input.disposition === "invalidated"
+            ? "This approval continuation is no longer valid."
+            : "This approval has already been processed."
+      ),
+    recommendationReason:
+      input.disposition === "not_resumable"
+        ? input.state.recommendationReason ?? "Run-loop state is no longer safely resumable. Manual recovery is required."
+        : input.state.recommendationReason,
+  };
+
+  return projectEngineResult({
+    state: blockedState,
+    status,
+    suspension: input.suspension,
+    resumeDisposition: input.disposition,
+  });
 }
 
 export function createRunLoopEngine(input: {
@@ -259,71 +295,29 @@ export function createRunLoopEngine(input: {
     },
 
     async resume(resumeInput) {
-      const state = await input.runStateStore.loadByRun(resumeInput.runId);
-      if (!state) {
-        throw new Error(`no run-loop state found for run ${resumeInput.runId}`);
-      }
-      if (
-        state.stateVersion !== RUN_LOOP_STATE_VERSION
-        || state.engineVersion !== RUN_LOOP_ENGINE_VERSION
-      ) {
-        throw new Error(`run-loop state version mismatch for run ${resumeInput.runId}`);
-      }
-
-      await input.runStateStore.saveContinuation(resumeInput.continuation);
-      const continuation = await input.runStateStore.consumeContinuation(resumeInput.continuation.continuationId);
-      if (!continuation) {
-        throw new Error(`continuation ${resumeInput.continuation.continuationId} not found`);
-      }
-
-      const suspension = await input.runStateStore.loadActiveSuspensionByRun(resumeInput.runId);
-      if (!suspension) {
-        throw new Error(`no suspension found for run ${resumeInput.runId}`);
-      }
-      if (
-        suspension.threadId !== resumeInput.threadId
-        || suspension.runId !== resumeInput.runId
-        || suspension.approvalRequestId !== continuation.approvalRequestId
-      ) {
-        throw new Error(`continuation ${continuation.continuationId} does not match run ${resumeInput.runId}`);
-      }
-      const transitionApplied = continuation.decision === "approved"
-        ? await input.runStateStore.resolveSuspension({
-            suspensionId: suspension.suspensionId,
-            continuationId: continuation.continuationId,
-          })
-        : await input.runStateStore.invalidateSuspension({
-            suspensionId: suspension.suspensionId,
-            reason: continuation.reason ?? "approval rejected",
-          });
-      if (!transitionApplied) {
-        throw new Error(`suspension ${suspension.suspensionId} is no longer active`);
-      }
-
-      const resumed = resolveSuspensionAfterApproval({
-        suspension,
-        continuation,
-        originalInput: state.input,
+      const applied = await input.runStateStore.applyApprovalContinuation({
+        continuation: resumeInput.continuation,
+        expectedStateVersion: RUN_LOOP_STATE_VERSION,
+        expectedEngineVersion: RUN_LOOP_ENGINE_VERSION,
       });
 
-      const resumedState: RunLoopState = {
-        ...state,
-        input: resumed.input,
-        nextStep: resumed.nextStep,
-        pendingApproval: undefined,
-        pauseSummary: undefined,
-        approvedApprovalRequestId: resumed.approvedApprovalRequestId,
-      };
-      await input.runStateStore.saveState(resumedState);
+      if (applied.disposition !== "resumed") {
+        return blockForResumeDisposition({
+          disposition: applied.disposition,
+          state: applied.state,
+          suspension: applied.suspension,
+        });
+      }
+
       emitLoopEvent({
         type: "loop.resumed",
-        state: resumedState,
-        continuationId: continuation.continuationId,
-        approvalRequestId: continuation.approvalRequestId,
+        state: applied.state,
+        continuationId: applied.continuation?.continuationId,
+        approvalRequestId: applied.continuation?.approvalRequestId,
         resumeDisposition: "resumed",
       });
 
-      return drive(resumedState);
+      return drive(applied.state);
     },
   };
 }

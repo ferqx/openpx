@@ -90,6 +90,146 @@ function createMemoryRunStateStore(): RunStateStorePort & {
       });
       return true;
     },
+    async applyApprovalContinuation({ continuation, expectedEngineVersion, expectedStateVersion }) {
+      const existingContinuation = continuations.get(continuation.continuationId);
+      const state = states.get(continuation.runId) ?? {
+        stateVersion: expectedStateVersion,
+        engineVersion: expectedEngineVersion,
+        threadId: continuation.threadId,
+        runId: continuation.runId,
+        taskId: continuation.taskId,
+        input: continuation.reason ?? "",
+        nextStep:
+          existingContinuation?.status === "consumed"
+            ? "done"
+            : "waiting_approval",
+        artifacts: [],
+        latestArtifacts: [],
+      };
+      if (
+        state.stateVersion !== expectedStateVersion
+        || state.engineVersion !== expectedEngineVersion
+      ) {
+        continuations.set(continuation.continuationId, {
+          ...continuation,
+          status: "invalidated",
+          invalidatedAt: new Date().toISOString(),
+          invalidationReason: "run-loop state version mismatch",
+        });
+        const activeSuspension = [...suspensions.values()].find(
+          (suspension) => suspension.runId === continuation.runId && suspension.status === "active",
+        );
+        if (activeSuspension) {
+          suspensions.set(activeSuspension.suspensionId, {
+            ...activeSuspension,
+            status: "invalidated",
+            invalidatedAt: new Date().toISOString(),
+            invalidationReason: "run-loop state version mismatch",
+          });
+        }
+        return {
+          disposition: "not_resumable" as const,
+          state,
+        };
+      }
+
+      if (existingContinuation?.status === "consumed") {
+        return {
+          disposition: "already_consumed" as const,
+          state,
+        };
+      }
+      if (existingContinuation?.status === "invalidated") {
+        return {
+          disposition: "invalidated" as const,
+          state,
+        };
+      }
+
+      continuations.set(continuation.continuationId, {
+        ...continuation,
+        status: "consumed",
+        consumedAt: new Date().toISOString(),
+      });
+
+      const activeSuspension = [...suspensions.values()].find(
+        (suspension) => suspension.runId === continuation.runId && suspension.status === "active",
+      );
+      if (!activeSuspension) {
+        return {
+          disposition: "already_resolved" as const,
+          state,
+        };
+      }
+
+      if (continuation.decision === "approved") {
+        suspensions.set(activeSuspension.suspensionId, {
+          ...activeSuspension,
+          status: "resolved",
+          resolvedAt: new Date().toISOString(),
+          resolvedByContinuationId: continuation.continuationId,
+        });
+        const resumedState: RunLoopState = {
+          ...state,
+          nextStep: activeSuspension.resumeStep,
+          pendingApproval: undefined,
+          pauseSummary: undefined,
+          approvedApprovalRequestId: continuation.approvalRequestId,
+        };
+        states.set(continuation.runId, resumedState);
+        return {
+          disposition: "resumed" as const,
+          state: resumedState,
+        };
+      }
+
+      suspensions.set(activeSuspension.suspensionId, {
+        ...activeSuspension,
+        status: "invalidated",
+        invalidatedAt: new Date().toISOString(),
+        invalidationReason: continuation.reason ?? "approval rejected",
+      });
+      const resumedState: RunLoopState = {
+        ...state,
+        input: continuation.reason ?? state.input,
+        nextStep: "plan",
+        pendingApproval: undefined,
+        pauseSummary: undefined,
+        approvedApprovalRequestId: undefined,
+      };
+      states.set(continuation.runId, resumedState);
+      return {
+        disposition: "resumed" as const,
+        state: resumedState,
+      };
+    },
+    async invalidateRunRecoveryArtifacts({ runId, reason }) {
+      let suspensionsCount = 0;
+      let continuationsCount = 0;
+      for (const [suspensionId, suspension] of suspensions.entries()) {
+        if (suspension.runId === runId && suspension.status === "active") {
+          suspensions.set(suspensionId, {
+            ...suspension,
+            status: "invalidated",
+            invalidatedAt: new Date().toISOString(),
+            invalidationReason: reason,
+          });
+          suspensionsCount += 1;
+        }
+      }
+      for (const [continuationId, continuation] of continuations.entries()) {
+        if (continuation.runId === runId && continuation.status === "created") {
+          continuations.set(continuationId, {
+            ...continuation,
+            status: "invalidated",
+            invalidatedAt: new Date().toISOString(),
+            invalidationReason: reason,
+          });
+          continuationsCount += 1;
+        }
+      }
+      return { suspensions: suspensionsCount, continuations: continuationsCount };
+    },
     async listSuspensionsByThread(threadId) {
       return [...suspensions.values()].filter((item) => item.threadId === threadId);
     },
@@ -288,6 +428,128 @@ describe("run-loop engine", () => {
     expect(resumed.status).toBe("completed");
     expect(resumed.executionSummary).toBe("Deleted approved.txt");
     expect(resumed.finalResponse).toBe("responded");
+    expect(executorCalls).toBe(2);
+  });
+
+  test("版本不兼容时返回 not_resumable，而不是抛出裸错", async () => {
+    const store = createMemoryRunStateStore();
+    store.states.set("run_version_mismatch", {
+      stateVersion: 99,
+      engineVersion: "run-loop-v99",
+      threadId: "thread_version_mismatch",
+      runId: "run_version_mismatch",
+      taskId: "task_version_mismatch",
+      input: "resume safely",
+      nextStep: "waiting_approval",
+      artifacts: [],
+      latestArtifacts: [],
+      pendingApproval: {
+        summary: "Needs approval",
+        approvalRequestId: "approval_version_mismatch",
+      },
+    });
+    store.suspensions.set("suspension_version_mismatch", {
+      suspensionId: "suspension_version_mismatch",
+      threadId: "thread_version_mismatch",
+      runId: "run_version_mismatch",
+      taskId: "task_version_mismatch",
+      reasonKind: "waiting_approval",
+      summary: "Needs approval",
+      approvalRequestId: "approval_version_mismatch",
+      resumeStep: "execute",
+      createdAt: new Date().toISOString(),
+      status: "active",
+    });
+
+    const engine = createRunLoopEngine({
+      runStateStore: store,
+      planner: async () => ({ nextStep: "respond" }),
+      executor: async () => ({ nextStep: "verify" }),
+      verifier: async () => ({ nextStep: "respond" }),
+      responder: async () => ({ nextStep: "done", finalResponse: "done" }),
+    });
+
+    const result = await engine.resume({
+      threadId: "thread_version_mismatch",
+      runId: "run_version_mismatch",
+      taskId: "task_version_mismatch",
+      continuation: {
+        continuationId: "continuation_version_mismatch",
+        threadId: "thread_version_mismatch",
+        runId: "run_version_mismatch",
+        taskId: "task_version_mismatch",
+        kind: "approval_resolution",
+        approvalRequestId: "approval_version_mismatch",
+        decision: "approved",
+        step: "execute",
+      },
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.resumeDisposition).toBe("not_resumable");
+  });
+
+  test("重复 continuation 返回 already_consumed，而不是再次推进执行", async () => {
+    const store = createMemoryRunStateStore();
+    let executorCalls = 0;
+    const engine = createRunLoopEngine({
+      runStateStore: store,
+      planner: async () => ({
+        nextStep: "execute",
+        workPackages: [{ id: "pkg_duplicate", objective: "duplicate", allowedTools: [], inputRefs: [], expectedArtifacts: [] }],
+      }),
+      executor: async (state) => {
+        executorCalls += 1;
+        if (!state.approvedApprovalRequestId) {
+          return {
+            nextStep: "waiting_approval",
+            pendingApproval: {
+              summary: "Approval required",
+              approvalRequestId: "approval_duplicate",
+            },
+          };
+        }
+        return {
+          nextStep: "respond",
+          executionSummary: "executed once",
+        };
+      },
+      verifier: async () => ({ nextStep: "respond", verificationReport: { summary: "verified", passed: true } }),
+      responder: async () => ({ nextStep: "done", finalResponse: "done" }),
+    });
+
+    await engine.start({
+      threadId: "thread_duplicate",
+      runId: "run_duplicate",
+      taskId: "task_duplicate",
+      input: "duplicate continuation",
+    });
+    const continuation: ContinuationEnvelope = {
+      continuationId: "continuation_duplicate",
+      threadId: "thread_duplicate",
+      runId: "run_duplicate",
+      taskId: "task_duplicate",
+      kind: "approval_resolution",
+      approvalRequestId: "approval_duplicate",
+      decision: "approved",
+      step: "execute",
+    };
+
+    const first = await engine.resume({
+      threadId: "thread_duplicate",
+      runId: "run_duplicate",
+      taskId: "task_duplicate",
+      continuation,
+    });
+    const second = await engine.resume({
+      threadId: "thread_duplicate",
+      runId: "run_duplicate",
+      taskId: "task_duplicate",
+      continuation,
+    });
+
+    expect(first.status).toBe("completed");
+    expect(second.resumeDisposition).toBe("already_consumed");
     expect(executorCalls).toBe(2);
   });
 });

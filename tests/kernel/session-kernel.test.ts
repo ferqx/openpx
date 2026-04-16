@@ -45,7 +45,7 @@ describe("SessionKernel", () => {
             const text =
               typeof input === "string"
                 ? input
-                : input.decision === "rejected"
+                : input.kind === "approval_resolution" && input.decision === "rejected"
                   ? input.reason ?? "approved"
                   : "approved";
             return {
@@ -120,7 +120,7 @@ describe("SessionKernel", () => {
             const text =
               typeof input === "string"
                 ? input
-                : input.decision === "rejected"
+                : input.kind === "approval_resolution" && input.decision === "rejected"
                   ? input.reason ?? "approved"
                   : "approved";
             return {

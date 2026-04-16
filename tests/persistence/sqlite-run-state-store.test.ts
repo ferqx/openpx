@@ -126,6 +126,7 @@ describe("sqlite run state store", () => {
         continuationId: "continuation_anonymous",
         threadId: "",
         runId: "",
+        taskId: "task_2",
         kind: "approval_resolution",
         approvalRequestId: "approval_2",
         decision: "rejected",
@@ -159,6 +160,33 @@ describe("sqlite run state store", () => {
     expect(invalidatedContinuation).toBe(true);
     expect(activeAfterInvalidate).toBeUndefined();
     expect(continuationAfterInvalidate?.status).toBe("invalidated");
+  });
+
+  test("把 continuation 的 taskId 与 approvalRequestId 作为一等列持久化", async () => {
+    const store = await createStore();
+    await store.saveContinuation({
+      continuationId: "continuation_columns",
+      threadId: "thread_columns",
+      runId: "run_columns",
+      taskId: "task_columns",
+      kind: "approval_resolution",
+      approvalRequestId: "approval_columns",
+      decision: "approved",
+      step: "execute",
+      status: "created",
+    });
+
+    const db = (store as unknown as { db: { query: <TRow, TArgs extends unknown[]>(sql: string) => { get: (...args: TArgs) => TRow } } }).db;
+    const row = db
+      .query<{ task_id: string | null; approval_request_id: string | null }, [string]>(
+        `SELECT task_id, approval_request_id
+         FROM run_continuations
+         WHERE continuation_id = ?`,
+      )
+      .get("continuation_columns");
+
+    expect(row.task_id).toBe("task_columns");
+    expect(row.approval_request_id).toBe("approval_columns");
   });
 
   test("删除 active state 时保留审计记录，并支持按保留期清理", async () => {

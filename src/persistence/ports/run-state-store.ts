@@ -1,6 +1,23 @@
-import type { ContinuationEnvelope } from "../../harness/core/run-loop/continuation";
+import type {
+  ApprovalResolutionContinuation,
+  ContinuationEnvelope,
+} from "../../harness/core/run-loop/continuation";
 import type { ApprovalSuspension } from "../../harness/core/run-loop/approval-suspension";
 import type { RunLoopState } from "../../harness/core/run-loop/step-types";
+
+export type RunLoopResumeDisposition =
+  | "resumed"
+  | "already_resolved"
+  | "already_consumed"
+  | "invalidated"
+  | "not_resumable";
+
+export type ApprovalContinuationTransactionResult = {
+  disposition: RunLoopResumeDisposition;
+  state: RunLoopState;
+  continuation?: ContinuationEnvelope;
+  suspension?: ApprovalSuspension;
+};
 
 /** run state store：持久化 run-loop 状态、挂起记录与 continuation。 */
 export type RunStateStorePort = {
@@ -16,6 +33,15 @@ export type RunStateStorePort = {
   resolveSuspension(input: { suspensionId: string; continuationId: string }): Promise<boolean>;
   invalidateSuspension(input: { suspensionId: string; reason: string }): Promise<boolean>;
   invalidateContinuation(input: { continuationId: string; reason: string }): Promise<boolean>;
+  applyApprovalContinuation(input: {
+    continuation: ApprovalResolutionContinuation;
+    expectedStateVersion: number;
+    expectedEngineVersion: string;
+  }): Promise<ApprovalContinuationTransactionResult>;
+  invalidateRunRecoveryArtifacts(input: {
+    runId: string;
+    reason: string;
+  }): Promise<{ suspensions: number; continuations: number }>;
   listSuspensionsByThread(threadId: string): Promise<ApprovalSuspension[]>;
   resetThreadState(threadId: string): Promise<void>;
   deleteActiveRunState(runId: string): Promise<void>;

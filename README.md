@@ -41,6 +41,7 @@ bun run typecheck
 ```bash
 bun test
 bun run typecheck
+bun run runtime:gc --help
 bun run src/app/main.ts --help
 bun run smoke:planner
 ```
@@ -49,6 +50,7 @@ bun run smoke:planner
 
 - `bun test` 通过
 - `bun run typecheck` 通过
+- `bun run runtime:gc --help` 打印清理命令帮助并退出
 - `bun run src/app/main.ts --help` 打印使用说明并退出，不启动 TUI
 - `bun run smoke:planner` 在配置了 `OPENAI_*` 环境变量时直接调用 planner 模型并打印真实摘要；预计会产生一次真实模型调用，本地使用通常在数秒到 1 分钟内完成
 
@@ -73,6 +75,14 @@ OPENPX_DATA_DIR=./.openpx/agent.sqlite bun run dev
 ```
 
 该路径同时用于应用 stores 与 run-loop 状态持久化。
+
+如需显式清理超出保留窗口的 run-loop 审计记录，可执行：
+
+```bash
+bun run runtime:gc
+```
+
+当前默认保留窗口为 7 天；启动 runtime 时也会做一次轻量 GC（垃圾回收）。
 
 ## Planner 模型配置
 
@@ -101,5 +111,6 @@ OPENAI_MODEL=kimi-k2.5
 - `plan / execute / verify / respond` 不承诺任意边界的自动精确续跑。只读步骤可安全重试，但不会被自动续跑。
 - 只要 execution ledger（执行账本）显示副作用结果不确定，系统就会把当前 run 明确转成 `human_recovery`。
 - `human_recovery` 不能自动退出，只能通过公开恢复动作解除：`restart_run`、`resubmit_intent`、`abandon_run`。
+- `cancel` 会中止当前 run，并失效该 run 关联的 active suspension、created continuation 与 pending approval；之后旧审批不能再复活已取消的 run。
 
 当前默认 TUI 仍以审批面板为主；恢复动作已经进入 harness protocol（协议层）与 runtime 命令面，便于 CLI、Web、IDE 等后续 surface 复用。

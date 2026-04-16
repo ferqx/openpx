@@ -9,6 +9,7 @@
     "eval:real": "bun run src/harness/eval/real/run-suite.ts",
     "eval:review": "bun run src/eval/run-review.ts",
     "eval:suite": "bun run src/eval/run-suite.ts",
+    "runtime:gc": "bun run src/app/runtime-gc.ts",
     "smoke:planner": "bun run src/app/smoke-planner.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",

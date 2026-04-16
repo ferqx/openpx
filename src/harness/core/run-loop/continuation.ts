@@ -2,23 +2,45 @@ import type { ContinuationKind, LoopStep } from "./step-types";
 
 export type ContinuationStatus = "created" | "consumed" | "invalidated";
 
-/** continuation envelope：暂停后继续执行的结构化信封。 */
-export type ContinuationEnvelope = {
-  continuationId: string;
-  threadId: string;
-  runId: string;
-  taskId?: string;
-  kind: ContinuationKind;
-  decision?: "approved" | "rejected";
-  approvalRequestId?: string;
-  reason?: string;
-  step?: LoopStep;
-  input?: string;
+type ContinuationAuditFields = {
   status?: ContinuationStatus;
   consumedAt?: string;
   invalidatedAt?: string;
   invalidationReason?: string;
 };
+
+type ContinuationBase = ContinuationAuditFields & {
+  continuationId: string;
+  threadId: string;
+  runId: string;
+  taskId?: string;
+  input?: string;
+};
+
+/** approval_resolution 必须带完整归属链，不能再构造匿名审批 continuation。 */
+export type ApprovalResolutionContinuation = ContinuationBase & {
+  kind: "approval_resolution";
+  taskId: string;
+  approvalRequestId: string;
+  decision: "approved" | "rejected";
+  reason?: string;
+  step?: LoopStep;
+};
+
+type GenericContinuation = ContinuationBase & {
+  kind: Exclude<ContinuationKind, "approval_resolution">;
+  reason?: string;
+  step?: LoopStep;
+  approvalRequestId?: string;
+};
+
+/** continuation envelope：暂停后继续执行的结构化信封。 */
+export type ContinuationEnvelope = ApprovalResolutionContinuation | GenericContinuation;
+
+/** 判断 continuation 是否属于审批恢复信封。 */
+export function isApprovalResolutionContinuation(value: ContinuationEnvelope): value is ApprovalResolutionContinuation {
+  return value.kind === "approval_resolution";
+}
 
 /** 生成 continuation id，默认优先使用 crypto.randomUUID。 */
 export function createContinuationId(): string {

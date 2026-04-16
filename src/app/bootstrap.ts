@@ -6,6 +6,7 @@ import { createTaskManager } from "../control/tasks/task-manager";
 import { createControlTask, type ControlTask } from "../control/tasks/task-types";
 import { createToolRegistry } from "../control/tools/tool-registry";
 import type { ContinuationEnvelope } from "../harness/core/run-loop/continuation";
+import { isApprovalResolutionContinuation } from "../harness/core/run-loop/continuation";
 import { createRunLoopEngine } from "../harness/core/run-loop/run-loop-engine";
 import type { RunLoopState } from "../harness/core/run-loop/step-types";
 import { createSessionKernel, type SessionControlPlaneResult } from "../harness/core/session/session-kernel";
@@ -56,6 +57,7 @@ import {
   finalizeRootTaskExecution,
   prepareRootTaskExecution,
 } from "./control-plane-run-lifecycle";
+import { calculateRunStateAuditCutoff } from "./runtime-gc";
 import {
   bridgeModelGatewayEvents,
   closeAppContextResources,
@@ -88,6 +90,8 @@ type ControlPlane = {
   ): void;
 };
 
+const LEGACY_CHECKPOINT_INVALIDATION_MIGRATION = "legacy_checkpoint_invalidation_v1";
+
 function createStores(path: string | ReturnType<typeof createSqlite>) {
   return {
     threadStore: new SqliteThreadStore(path),
@@ -100,6 +104,25 @@ function createStores(path: string | ReturnType<typeof createSqlite>) {
     executionLedger: new SqliteExecutionLedger(path),
     workerStore: new SqliteWorkerStore(path),
   };
+}
+
+function hasSystemMigration(sqlite: Database, migrationKey: string): boolean {
+  const row = sqlite
+    .query<{ count: number }, [string]>(
+      `SELECT COUNT(*) as count
+       FROM system_migrations
+       WHERE migration_key = ?`,
+    )
+    .get(migrationKey);
+  return (row?.count ?? 0) > 0;
+}
+
+function markSystemMigration(sqlite: Database, migrationKey: string): void {
+  sqlite.run(
+    `INSERT OR REPLACE INTO system_migrations (migration_key, applied_at)
+     VALUES (?, ?)`,
+    [migrationKey, new Date().toISOString()],
+  );
 }
 
 async function recoverUncertainExecutions(stores: AppStores, scope: { workspaceRoot: string; projectId: string }) {
@@ -189,6 +212,10 @@ async function invalidateLegacyCheckpointThreads(
   stores: AppStores,
   scope: { workspaceRoot: string; projectId: string },
 ) {
+  if (hasSystemMigration(sqlite, LEGACY_CHECKPOINT_INVALIDATION_MIGRATION)) {
+    return;
+  }
+
   type CheckpointThreadRow = { thread_id: string };
 
   let rows: CheckpointThreadRow[];
@@ -201,6 +228,7 @@ async function invalidateLegacyCheckpointThreads(
   }
 
   if (rows.length === 0) {
+    markSystemMigration(sqlite, LEGACY_CHECKPOINT_INVALIDATION_MIGRATION);
     return;
   }
 
@@ -278,6 +306,8 @@ async function invalidateLegacyCheckpointThreads(
     sqlite.run("DELETE FROM writes WHERE thread_id = ?", [row.thread_id]);
     sqlite.run("DELETE FROM checkpoints WHERE thread_id = ?", [row.thread_id]);
   }
+
+  markSystemMigration(sqlite, LEGACY_CHECKPOINT_INVALIDATION_MIGRATION);
 }
 
 function createPersistentApprovalService(stores: AppStores): ApprovalService {
@@ -409,6 +439,28 @@ async function createControlPlane(input: {
     return await saveRun(next);
   }
 
+  async function cancelPendingApprovalsForRun(threadId: string, runId: string): Promise<void> {
+    const pendingApprovals = await approvals.listPendingByThread(threadId);
+    await Promise.all(
+      pendingApprovals
+        .filter((approval) => approval.runId === runId)
+        .map((approval) => approvals.updateStatus(approval.approvalRequestId, "cancelled")),
+    );
+  }
+
+  async function resolveTaskForRun(threadId: string, run: Run): Promise<ControlTask | undefined> {
+    if (run.activeTaskId) {
+      const activeTask = await input.stores.taskStore.get(run.activeTaskId);
+      if (activeTask) {
+        return ensureControlTask(activeTask);
+      }
+    }
+
+    const tasks = await input.stores.taskStore.listByThread(threadId);
+    const lastTask = tasks.at(-1);
+    return lastTask ? ensureControlTask(lastTask) : undefined;
+  }
+
   async function buildCurrentControlPlaneResult(args: {
     threadId: string;
     run: Run;
@@ -486,15 +538,16 @@ async function createControlPlane(input: {
         activeRun &&
         ["created", "running", "waiting_approval", "blocked"].includes(activeRun.status)
       ) {
-        if (activeRun.status === "waiting_approval") {
-          const suspension = await input.stores.runStateStore.loadActiveSuspensionByRun(activeRun.runId);
-          if (suspension) {
-            await input.stores.runStateStore.invalidateSuspension({
-              suspensionId: suspension.suspensionId,
-              reason: "cancelled by user",
-            });
-          }
+        const currentTask = await resolveTaskForRun(threadId, activeRun);
+        if (currentTask && !["completed", "failed", "cancelled"].includes(currentTask.status)) {
+          await saveTaskStatus(input.stores, currentTask, "cancelled");
         }
+        await cancelPendingApprovalsForRun(threadId, activeRun.runId);
+        await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+          runId: activeRun.runId,
+          reason: "cancelled by user",
+        });
+        await input.stores.runStateStore.deleteActiveRunState(activeRun.runId);
         await updateRunStatus(activeRun, "interrupted", {
           endedAt: new Date().toISOString(),
           resultSummary: "Interrupted from TUI",
@@ -507,20 +560,17 @@ async function createControlPlane(input: {
     execution.controller.abort();
 
     const existingTask = await input.stores.taskStore.get(execution.taskId);
-    if (existingTask && existingTask.status === "running") {
+    if (existingTask && !["completed", "failed", "cancelled"].includes(existingTask.status)) {
       await saveTaskStatus(input.stores, ensureControlTask(existingTask), "cancelled");
     }
 
     if (activeRun && activeRun.status !== "interrupted") {
-      if (activeRun.status === "waiting_approval") {
-        const suspension = await input.stores.runStateStore.loadActiveSuspensionByRun(activeRun.runId);
-        if (suspension) {
-          await input.stores.runStateStore.invalidateSuspension({
-            suspensionId: suspension.suspensionId,
-            reason: "cancelled by user",
-          });
-        }
-      }
+      await cancelPendingApprovalsForRun(threadId, activeRun.runId);
+      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+        runId: activeRun.runId,
+        reason: "cancelled by user",
+      });
+      await input.stores.runStateStore.deleteActiveRunState(activeRun.runId);
       await updateRunStatus(activeRun, "interrupted", {
         endedAt: new Date().toISOString(),
         resultSummary: "Interrupted from TUI",
@@ -789,19 +839,24 @@ async function createControlPlane(input: {
       activeExecutions.set(threadId, { taskId: task.taskId, controller });
 
       try {
-        engineResult = isResume
-          ? await runLoopEngine.resume({
-              threadId,
-              runId: run.runId,
-              taskId: task.taskId,
-              continuation: inputValue as ContinuationEnvelope,
-            })
-          : await runLoopEngine.start({
-              threadId,
-              runId: run.runId,
-              taskId: task.taskId,
-              input: prepared.text,
-            });
+        if (typeof inputValue !== "string") {
+          if (!isApprovalResolutionContinuation(inputValue)) {
+            throw new Error(`unsupported continuation kind for run-loop resume: ${inputValue.kind}`);
+          }
+          engineResult = await runLoopEngine.resume({
+            threadId,
+            runId: run.runId,
+            taskId: task.taskId,
+            continuation: inputValue,
+          });
+        } else {
+          engineResult = await runLoopEngine.start({
+            threadId,
+            runId: run.runId,
+            taskId: task.taskId,
+            input: prepared.text,
+          });
+        }
       } catch (error: unknown) {
         if (isCancelledError(error)) {
           throw error;
@@ -841,8 +896,8 @@ async function createControlPlane(input: {
           saveTaskStatus: (task, status) => saveTaskStatus(input.stores, task, status),
           updateRunStatus,
           executeApprovedTool: (request) => toolRegistry.executeApproved(request),
-          hasSuspension: async (runId, threadId) =>
-            (await input.stores.runStateStore.listSuspensionsByThread(threadId)).some((item) => item.runId === runId),
+          hasSuspension: async (runId) =>
+            (await input.stores.runStateStore.loadActiveSuspensionByRun(runId)) !== undefined,
           buildCurrentResult: ({ threadId: targetThreadId, run, resumeDisposition, fallbackTaskSummary }) =>
             buildCurrentControlPlaneResult({
               threadId: targetThreadId,
@@ -870,8 +925,8 @@ async function createControlPlane(input: {
           saveTaskStatus: (task, status) => saveTaskStatus(input.stores, task, status),
           updateRunStatus,
           executeApprovedTool: (request) => toolRegistry.executeApproved(request),
-          hasSuspension: async (runId, threadId) =>
-            (await input.stores.runStateStore.listSuspensionsByThread(threadId)).some((item) => item.runId === runId),
+          hasSuspension: async (runId) =>
+            (await input.stores.runStateStore.loadActiveSuspensionByRun(runId)) !== undefined,
           buildCurrentResult: ({ threadId: targetThreadId, run, resumeDisposition, fallbackTaskSummary }) =>
             buildCurrentControlPlaneResult({
               threadId: targetThreadId,
@@ -887,7 +942,12 @@ async function createControlPlane(input: {
 
     async restartRun(threadId: string) {
       const { run, task } = await resolveBlockedRecoveryRun(threadId);
-      await input.stores.runStateStore.resetThreadState(threadId);
+      await cancelPendingApprovalsForRun(threadId, run.runId);
+      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+        runId: run.runId,
+        reason: "restart_run replaced this recovery chain",
+      });
+      await input.stores.runStateStore.deleteActiveRunState(run.runId);
       await saveTaskStatus(input.stores, task, "cancelled");
       await updateRunStatus(run, "interrupted", {
         activeTaskId: task.taskId,
@@ -901,7 +961,12 @@ async function createControlPlane(input: {
 
     async resubmitIntent(threadId: string, content: string) {
       const { run, task } = await resolveBlockedRecoveryRun(threadId);
-      await input.stores.runStateStore.resetThreadState(threadId);
+      await cancelPendingApprovalsForRun(threadId, run.runId);
+      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+        runId: run.runId,
+        reason: "resubmit_intent replaced this recovery chain",
+      });
+      await input.stores.runStateStore.deleteActiveRunState(run.runId);
       await saveTaskStatus(input.stores, task, "cancelled");
       await updateRunStatus(run, "interrupted", {
         activeTaskId: task.taskId,
@@ -915,7 +980,12 @@ async function createControlPlane(input: {
 
     async abandonRun(threadId: string) {
       const { run, task } = await resolveBlockedRecoveryRun(threadId);
-      await input.stores.runStateStore.resetThreadState(threadId);
+      await cancelPendingApprovalsForRun(threadId, run.runId);
+      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+        runId: run.runId,
+        reason: "abandon_run replaced this recovery chain",
+      });
+      await input.stores.runStateStore.deleteActiveRunState(run.runId);
       const cancelledTask = await saveTaskStatus(input.stores, task, "cancelled");
       const interruptedRun = await updateRunStatus(run, "interrupted", {
         activeTaskId: cancelledTask.taskId,
@@ -961,6 +1031,7 @@ export async function createAppContext(input: {
     workspaceRoot: config.workspaceRoot,
     projectId: config.projectId,
   });
+  await stores.runStateStore.deleteExpiredAuditRecords(calculateRunStateAuditCutoff());
   const modelGateway = resolveAppModelGateway({
     config,
     modelGateway: input.modelGateway,
