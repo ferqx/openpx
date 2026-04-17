@@ -160,6 +160,7 @@ export async function resolveApprovedRequest(
   }
 
   // 有 suspension 时，优先回到原 run-loop 恢复点，让 engine 自己继续处理后续状态。
+  await deps.approvals.updateStatus(approvalRequestId, "approved");
   await deps.updateRunStatus(run, "waiting_approval", {
     activeTaskId: approval.taskId,
     blockingReason: undefined,
@@ -200,6 +201,7 @@ export async function resolveRejectedRequest(
   const hasSuspension = run ? await deps.hasSuspension(run.runId, approval.threadId) : false;
 
   if (hasSuspension && run) {
+    await deps.approvals.updateStatus(approvalRequestId, "rejected");
     const capabilityMarker =
       approval.toolRequest?.toolName && approval.toolRequest?.action
         ? `${approval.toolRequest.toolName}.${approval.toolRequest.action}`

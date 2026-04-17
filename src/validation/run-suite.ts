@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   renderValidationEngineeringView,
   renderValidationProductGateView,
+  renderValidationScorecardView,
 } from "./reporting";
 import { runValidationSuite } from "./orchestrator";
 import {
@@ -177,6 +178,9 @@ async function defaultFindScenario(input: {
 function renderSummary(summary: ValidationSuiteSummary, view: ValidationView, json: boolean): string {
   if (json) {
     return JSON.stringify(summary);
+  }
+  if (view === "scorecard") {
+    return renderValidationScorecardView(summary);
   }
   return view === "product_gate"
     ? renderValidationProductGateView(summary)

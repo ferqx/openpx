@@ -74,3 +74,32 @@ export function renderValidationProductGateView(summary: ValidationSuiteSummary)
 
   return `${lines.join("\n")}\n`;
 }
+
+/** 渲染 suite confidence scorecard 视图 */
+export function renderValidationScorecardView(summary: ValidationSuiteSummary): string {
+  const scorecard = summary.scorecard;
+  const lines = [
+    "Validation confidence scorecard",
+    `suiteRun=${summary.validationSuiteRunId}`,
+    `status=${summary.status}`,
+    `blocked=${summary.releaseGate.blocked}`,
+  ];
+
+  if (!scorecard) {
+    lines.push("scorecard=missing");
+    return `${lines.join("\n")}\n`;
+  }
+
+  lines.push(`generatedAt=${scorecard.generatedAt}`);
+  lines.push(`overallStatus=${scorecard.overallStatus}`);
+  lines.push(`coreScenarioSuccessRate=${scorecard.runtimeCorrectness.coreScenarioSuccessRate.toFixed(2)}`);
+  lines.push(`approvalResumeSuccessRate=${scorecard.runtimeCorrectness.approvalResumeSuccessRate.toFixed(2)}`);
+  lines.push(`cancelCorrectnessRate=${scorecard.runtimeCorrectness.cancelCorrectnessRate.toFixed(2)}`);
+  lines.push(`humanRecoveryCorrectnessRate=${scorecard.runtimeCorrectness.humanRecoveryCorrectnessRate.toFixed(2)}`);
+  lines.push(`replayCoverage=${scorecard.observabilityCoverage.replayCoverage.toFixed(2)}`);
+  lines.push(`failureReportCoverage=${scorecard.observabilityCoverage.failureReportCoverage.toFixed(2)}`);
+  lines.push(`truthDiffCoverage=${scorecard.observabilityCoverage.truthDiffCoverage.toFixed(2)}`);
+  lines.push(`loopEventCoverage=${scorecard.observabilityCoverage.loopEventCoverage.toFixed(2)}`);
+
+  return `${lines.join("\n")}\n`;
+}

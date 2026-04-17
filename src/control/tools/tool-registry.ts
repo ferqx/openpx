@@ -140,6 +140,29 @@ export function createToolRegistry(input: {
     return isContained(workspaceRoot, targetPath);
   }
 
+  async function loadCompletedEffectfulOutcome(
+    request: ToolExecuteRequest,
+  ): Promise<ToolExecutionOutcome | undefined> {
+    const existing = await input.executionLedger.get(`${request.toolCallId}:exec`);
+    if (!existing || existing.status !== "completed") {
+      return undefined;
+    }
+
+    return {
+      kind: "executed",
+      decision: {
+        kind: "allow",
+        reason: "effectful tool call already completed",
+        risk: {
+          key: `${request.toolName}.idempotent_replay`,
+          level: "low",
+          reason: "completed execution ledger entry reused",
+        },
+      },
+      output: existing.resultJson ? JSON.parse(existing.resultJson) : { ok: true },
+    };
+  }
+
   return {
     getTool(toolName: string): ToolDefinition | undefined {
       return tools.get(toolName);
@@ -342,6 +365,11 @@ export function createToolRegistry(input: {
 
       let ledgerEntry: ExecutionLedgerEntry | undefined;
       if (tool.isEffectful) {
+        const completedOutcome = await loadCompletedEffectfulOutcome(normalizedRequest);
+        if (completedOutcome) {
+          return completedOutcome;
+        }
+
         ledgerEntry = {
           executionId: `${normalizedRequest.toolCallId}:exec`,
           threadId: normalizedRequest.threadId,

@@ -10,7 +10,8 @@
 4. [harness-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-code-map.md)
 5. [harness-protocol-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-protocol-code-map.md)
 6. [harness-feedback-loop.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-feedback-loop.md)
-7. [harness-surface-boundary.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-surface-boundary.md)
+7. [system-confidence.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/system-confidence.md)
+8. [harness-surface-boundary.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-surface-boundary.md)
 
 ## 每个文档回答什么
 
@@ -67,6 +68,15 @@
 - rule 怎么评
 - review item 怎么来
 - promotion guardrail 怎么判
+
+### `system-confidence.md`
+
+回答：
+
+- M2 的 confidence pipeline 如何组织
+- scenario backend 与 post-run analyzer 如何分工
+- replay / failure report / truth diff / scorecard 的作用是什么
+- validation gate 为什么是正式入口
 
 ### `harness-surface-boundary.md`
 

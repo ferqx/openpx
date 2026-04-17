@@ -1,13 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import {
+  validationArtifactPathsSchema,
+  validationAnalyzerVerdictSchema,
   validationEvidenceBundleSchema,
   validationPermissionModeSchema,
   validationScenarioFileSpecSchema,
   validationScenarioSpecSchema,
   validationSuiteSummarySchema,
   validationVerdictSchema,
+  validationViewSchema,
 } from "../../src/validation/validation-schema";
-import { renderValidationEngineeringView, renderValidationProductGateView } from "../../src/validation/reporting";
+import {
+  renderValidationEngineeringView,
+  renderValidationProductGateView,
+  renderValidationScorecardView,
+} from "../../src/validation/reporting";
 
 describe("validation schema", () => {
   test("parses guarded and full-access sandbox policies", () => {
@@ -55,6 +62,10 @@ describe("validation schema", () => {
 
     expect(guarded.sandboxPolicy.permissionMode).toBe("guarded");
     expect(fullAccess).toBe("full_access");
+  });
+
+  test("accepts scorecard as a stable validation view", () => {
+    expect(validationViewSchema.parse("scorecard")).toBe("scorecard");
   });
 
   test("parses scenario file specs with suite memberships and available permission modes", () => {
@@ -126,10 +137,21 @@ describe("validation schema", () => {
       },
       verificationArtifacts: {},
       verdictExplanation: "deterministic evidence",
+      postRunAnalyzers: [
+        validationAnalyzerVerdictSchema.parse({
+          analyzerId: "truth_diff",
+          status: "passed",
+          reason: "truth and projection are aligned",
+          evidenceRefs: ["artifact:/tmp/sandbox-a/truth-diff.json"],
+        }),
+      ],
       artifactPaths: {
         artifactDir: "/tmp/sandbox-a",
         evidenceJsonPath: "/tmp/sandbox-a/evidence.json",
         verdictJsonPath: "/tmp/sandbox-a/verdict.json",
+        replayJsonPath: "/tmp/sandbox-a/replay.json",
+        replayMarkdownPath: "/tmp/sandbox-a/replay.md",
+        truthDiffJsonPath: "/tmp/sandbox-a/truth-diff.json",
       },
     });
 
@@ -163,17 +185,49 @@ describe("validation schema", () => {
         testOutput: "17 pass",
       },
       verdictExplanation: "real evidence",
+      postRunAnalyzers: [
+        validationAnalyzerVerdictSchema.parse({
+          analyzerId: "failure_report",
+          status: "suspicious",
+          reason: "real trace needs manual inspection",
+          evidenceRefs: ["artifact:/tmp/sandbox-b/failure.json"],
+        }),
+      ],
       artifactPaths: {
         artifactDir: "/tmp/sandbox-b",
         evidenceJsonPath: "/tmp/sandbox-b/evidence.json",
         verdictJsonPath: "/tmp/sandbox-b/verdict.json",
         engineeringReportPath: "/tmp/sandbox-b/engineering.txt",
         productGateReportPath: "/tmp/sandbox-b/product-gate.txt",
+        replayJsonPath: "/tmp/sandbox-b/replay.json",
+        replayMarkdownPath: "/tmp/sandbox-b/replay.md",
+        failureJsonPath: "/tmp/sandbox-b/failure.json",
+        failureMarkdownPath: "/tmp/sandbox-b/failure.md",
+        truthDiffJsonPath: "/tmp/sandbox-b/truth-diff.json",
       },
     });
 
     expect(deterministic.backendRefs.kind).toBe("deterministic_eval");
     expect(real.backendRefs.kind).toBe("real_eval");
+  });
+
+  test("parses analyzer-rich artifact paths for replay/failure/scorecard outputs", () => {
+    const artifactPaths = validationArtifactPathsSchema.parse({
+      artifactDir: "/tmp/validation-suite",
+      summaryJsonPath: "/tmp/validation-suite/summary.json",
+      engineeringReportPath: "/tmp/validation-suite/engineering.txt",
+      productGateReportPath: "/tmp/validation-suite/product-gate.txt",
+      replayJsonPath: "/tmp/reports/replay/replay-run.json",
+      replayMarkdownPath: "/tmp/reports/replay/replay-run.md",
+      failureJsonPath: "/tmp/reports/failures/failure-run.json",
+      failureMarkdownPath: "/tmp/reports/failures/failure-run.md",
+      truthDiffJsonPath: "/tmp/reports/replay/truth-diff-run.json",
+      scorecardJsonPath: "/tmp/reports/scorecards/scorecard.json",
+      scorecardMarkdownPath: "/tmp/reports/scorecards/scorecard.md",
+    });
+
+    expect(artifactPaths.scorecardJsonPath).toContain("scorecard");
+    expect(artifactPaths.replayMarkdownPath).toContain("replay");
   });
 
   test("requires outcome, trajectory, and control verdict dimensions", () => {
@@ -225,14 +279,43 @@ describe("validation schema", () => {
       },
       reviewQueueCount: 1,
       repairRecommendations: [],
+      analyzerCoverage: {
+        replayCoverage: 1,
+        failureReportCoverage: 0.5,
+        truthDiffCoverage: 1,
+        loopEventCoverage: 0.75,
+      },
+      scorecard: {
+        generatedAt: "2026-04-16T00:00:00.000Z",
+        overallStatus: "failed",
+        runtimeCorrectness: {
+          coreScenarioSuccessRate: 0.5,
+          approvalResumeSuccessRate: 0.5,
+          cancelCorrectnessRate: 1,
+          humanRecoveryCorrectnessRate: 1,
+        },
+        observabilityCoverage: {
+          replayCoverage: 1,
+          failureReportCoverage: 0.5,
+          truthDiffCoverage: 1,
+          loopEventCoverage: 0.75,
+        },
+        gate: {
+          blocked: true,
+          blockingFamilies: ["approval_control"],
+        },
+      },
     });
 
     const engineering = renderValidationEngineeringView(summary);
     const product = renderValidationProductGateView(summary);
+    const scorecard = renderValidationScorecardView(summary);
 
     expect(engineering).toContain("Validation engineering view");
     expect(engineering).toContain("approval_control");
     expect(product).toContain("Validation product gate");
     expect(product).toContain("blocked=true");
+    expect(scorecard).toContain("Validation confidence scorecard");
+    expect(scorecard).toContain("coreScenarioSuccessRate");
   });
 });

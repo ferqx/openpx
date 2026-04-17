@@ -126,3 +126,43 @@ v1 合同：
 
 - hydrate 不是重新生成业务状态
 - hydrate 应与 replay / runtime truth 一致
+
+## 9. system confidence
+
+M2 阶段新增的 system confidence（系统置信度）不改变 runtime contract（运行时合同），
+而是把现有状态流转变成可验证、可复盘、可回归的证据。
+
+对应关系如下：
+
+### 正常流
+
+- `submit_input -> plan -> execute -> verify -> respond -> done`
+- 由 deterministic scenario matrix 持续验证
+- scorecard 中体现为 core scenario success rate
+
+### Approval / Resume flow
+
+- `waiting_approval -> approve -> resume -> verify -> done`
+- `waiting_approval -> reject -> replan`
+- duplicate / concurrent approval 通过 scenario 验证其幂等与 disposition 语义
+
+### Cancel flow
+
+- `running` / `waiting_approval` -> `cancel` -> `interrupted`
+- approval、suspension、continuation 的失效会进入 replay / failure report
+
+### Human recovery flow
+
+- uncertain execution / version mismatch / legacy checkpoint -> `human_recovery`
+- replay 和 failure report 负责解释为什么系统没有继续自动推进
+
+### Replay / Report 的作用
+
+- replay：重建时间线与 durable truth
+- failure report：提炼最小故障摘要与下一步动作
+- truth diff：判断是 runtime truth 错了，还是 projection 错了
+
+### Gate / Scorecard 的作用
+
+- validation gate：阻止语义退化进入 release path
+- confidence scorecard：记录当前 runtime correctness 与 observability coverage
