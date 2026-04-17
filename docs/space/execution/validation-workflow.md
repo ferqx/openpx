@@ -113,6 +113,27 @@ bun test tests/real-eval/runner.test.ts tests/validation/cli.test.ts
 
 根据改动面再补更细的测试切片。
 
+## 跨平台测试兼容
+
+OpenPX 的测试默认应假定会在 Windows、Linux、macOS 上运行。
+因此，测试夹具与验证脚本必须遵守下面这些兼容规则，而不能只对当前开发机成立：
+
+1. 路径必须通过 `path.join`、`path.resolve`、`os.tmpdir()` 构造，不能写死 `/tmp/...`、盘符路径或手写分隔符。
+2. 临时目录、临时数据库、artifact 目录清理不能直接依赖一次性 `fs.rm(...)` 成功；应优先使用仓库内统一的清理 helper，例如 `tests/helpers/fs-cleanup.ts` 里的 `removeWithRetry(...)`。
+3. SQLite、run-state、eval store、app context 这类会持有文件句柄的对象，测试结束前必须显式 `close()`；不能把“删除目录成功”当作资源已经释放的证明。
+4. Windows 上常见的 `EBUSY`、`EPERM` 以及 Linux / macOS 上可能出现的瞬时 `ENOTEMPTY`，应视为测试清理阶段的可重试错误，而不是立即判定为产品行为失败。
+5. 长耗时测试不能依赖默认超时；像 `eval suite`、`real-eval`、baseline 更新、live sample 这类链路，应在测试文件内显式提高超时预算，避免只在较慢平台上假失败。
+6. 基线、snapshot、comparable object 不能保留绝对路径、平台相关路径分隔符、运行时 ID、时间戳等不稳定字段；跨平台比较前必须先做 normalize。
+7. 测试不要依赖 bash、PowerShell、zsh 等单一 shell 方言；能用 Node/Bun API 完成的文件系统和进程操作，不应改写成平台特定命令。
+
+当前推荐做法：
+
+- 创建临时目录时统一使用 `os.tmpdir()` + `fs.mkdtemp(...)`
+- 清理临时目录时统一使用 `removeWithRetry(...)`
+- 打开过的 store / sqlite / app context 在测试内显式关闭
+- 长耗时测试文件单独设置更高的 `setDefaultTimeout(...)`
+- baseline 比较前统一做路径与运行时字段去噪
+
 ## 结果如何回流
 
 验证结果不只是“通过/失败”，还要回答下面的问题：

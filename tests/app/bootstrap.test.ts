@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+﻿import { describe, expect, test } from "bun:test";
 import { createAppContext } from "../../src/app/bootstrap";
 import { createThread } from "../../src/domain/thread";
 import { createApprovalRequest } from "../../src/domain/approval";
@@ -6,6 +6,7 @@ import { createRun, transitionRun } from "../../src/domain/run";
 import { createControlTask } from "../../src/control/tasks/task-types";
 import { createSqlite } from "../../src/persistence/sqlite/sqlite-client";
 import { migrateSqlite } from "../../src/persistence/sqlite/sqlite-migrator";
+import { removeWithRetry } from "../helpers/fs-cleanup";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -88,7 +89,7 @@ describe("createAppContext", () => {
 
     await closeAppContext(first);
     await closeAppContext(second);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
   test("persists a run lifecycle record when starting root work", async () => {
@@ -117,7 +118,7 @@ describe("createAppContext", () => {
     expect(runs[0]?.inputText).toBe("what is my name?");
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
   test("advances an existing run when an approval is approved", async () => {
@@ -206,7 +207,7 @@ describe("createAppContext", () => {
     expect(await Bun.file(filePath).text()).toBe("approved\n");
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
   test("resumes approved delete execution through the run-loop and returns tool metadata", async () => {
@@ -285,10 +286,10 @@ describe("createAppContext", () => {
     expect(await Bun.file(filePath).exists()).toBe(false);
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
-  test("重复 approve 返回 already_resolved，而不是再次推进执行", async () => {
+  test("?? approve ?? already_resolved??????????", async () => {
     const workspaceRoot = path.join(os.tmpdir(), `openpx-approve-idempotent-${Date.now()}`);
     const dataDir = path.join(workspaceRoot, "openpx.db");
     const filePath = path.join(workspaceRoot, "approved.txt");
@@ -352,10 +353,10 @@ describe("createAppContext", () => {
     expect(second.status).toBe("completed");
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
-  test("waiting_approval 下 cancel 会失效审批，后续 approve 不得复活 run", async () => {
+  test("waiting_approval ? cancel ???????? approve ???? run", async () => {
     const workspaceRoot = path.join(os.tmpdir(), `openpx-cancel-approval-${Date.now()}`);
     const dataDir = path.join(workspaceRoot, "openpx.db");
     const filePath = path.join(workspaceRoot, "approved.txt");
@@ -423,7 +424,7 @@ describe("createAppContext", () => {
     expect(await Bun.file(filePath).exists()).toBe(true);
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
   test("invalidates legacy checkpoint-backed threads on boot", async () => {
@@ -590,7 +591,7 @@ describe("createAppContext", () => {
     expect(migrationCount?.count).toBe(1);
 
     await closeAppContext(ctx2);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
   test("replans rejected delete capability without reusing the same marker", async () => {
@@ -694,10 +695,10 @@ describe("createAppContext", () => {
     expect(await Bun.file(filePath).exists()).toBe(true);
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
-  test("restart_run 为 human_recovery 创建新的 run，并清掉旧恢复锚点", async () => {
+  test("restart_run ? human_recovery ???? run?????????", async () => {
     const workspaceRoot = path.join(os.tmpdir(), `openpx-restart-run-${Date.now()}`);
     const dataDir = path.join(workspaceRoot, "openpx.db");
 
@@ -766,7 +767,8 @@ describe("createAppContext", () => {
     expect(oldState).toBeUndefined();
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
 });
+

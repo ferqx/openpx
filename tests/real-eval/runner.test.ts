@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +10,20 @@ import { REAL_EVAL_SUITE_ID, realEvalScenarios } from "../../src/harness/eval/re
 import { executeRealEvalSuiteCommand, runRealEvalSuite } from "../../src/harness/eval/real/suite-runner";
 import { SqliteEvalStore } from "../../src/persistence/sqlite/sqlite-eval-store";
 import { removeWithRetry } from "../helpers/fs-cleanup";
+
+setDefaultTimeout(20000);
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => removeWithRetry(dir, { recursive: true, force: true })));
+});
+
+async function createTempDir(prefix: string) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
 
 function createDeterministicModelGateway(): ModelGateway {
   let planCallCount = 0;
@@ -266,7 +280,7 @@ describe("real eval runner", () => {
   });
 
   test("runs a single real-eval scenario through the live sample runner", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-real-eval-suite-runner-one-"));
+    const rootDir = await createTempDir("openpx-real-eval-suite-runner-one-");
     const dataDir = path.join(rootDir, "openpx.db");
     const runtimeRootDir = path.join(rootDir, "runtime");
 
@@ -302,12 +316,10 @@ describe("real eval runner", () => {
     expect(Object.hasOwn(summary.scenarioSummaries[0] ?? {}, "baseline")).toBe(false);
     expect(await Bun.file(path.join(runtimeRootDir, "approval-gated-bugfix-loop", "artifacts", "result.json")).exists()).toBe(true);
     expect(await Bun.file(path.join(runtimeRootDir, "approval-gated-bugfix-loop", "artifacts", "trace.json")).exists()).toBe(true);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("executes a real sample, stores its trace artifact, and persists review records from evaluation", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-real-eval-suite-real-run-"));
+    const rootDir = await createTempDir("openpx-real-eval-suite-real-run-");
     const dataDir = path.join(rootDir, "openpx.db");
     const runtimeRootDir = path.join(rootDir, "runtime");
 
@@ -338,11 +350,10 @@ describe("real eval runner", () => {
     expect(reviewRecords.every((record) => record.metadataJson?.includes("\"lane\":\"real-eval\""))).toBe(true);
 
     await store.close();
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("default suite run executes the full V0 live scenario set", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-real-eval-suite-default-live-"));
+    const rootDir = await createTempDir("openpx-real-eval-suite-default-live-");
     const dataDir = path.join(rootDir, "openpx.db");
     const runtimeRootDir = path.join(rootDir, "runtime");
 
@@ -360,12 +371,10 @@ describe("real eval runner", () => {
       "artifact-current-package-loop",
       "interrupt-resume-work-loop",
     ]);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("runs a selected prompt variant and records the variant id in the summary", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-real-eval-suite-variant-"));
+    const rootDir = await createTempDir("openpx-real-eval-suite-variant-");
     const dataDir = path.join(rootDir, "openpx.db");
 
     const summary = await runRealEvalSuite({
@@ -380,12 +389,10 @@ describe("real eval runner", () => {
     expect(summary.scenarioSummaries).toHaveLength(1);
     expect(summary.scenarioSummaries[0]?.promptVariantId).toBe("polite");
     expect(summary.scenarioSummaries[0]?.capabilityFamily).toBe("approval_gated_delete");
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("runs all prompt variants for a family when explicitly requested", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-real-eval-suite-all-variants-"));
+    const rootDir = await createTempDir("openpx-real-eval-suite-all-variants-");
     const dataDir = path.join(rootDir, "openpx.db");
 
     const summary = await runRealEvalSuite({
@@ -404,12 +411,10 @@ describe("real eval runner", () => {
       "constraint",
     ]);
     expect(summary.scenarioSummaries.every((scenario) => scenario.capabilityFamily === "approval_gated_delete")).toBe(true);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("fails fast when a requested scenario is not in the provided suite subset", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-real-eval-suite-bounds-"));
+    const rootDir = await createTempDir("openpx-real-eval-suite-bounds-");
 
     await expect(
       runRealEvalSuite({
@@ -420,8 +425,6 @@ describe("real eval runner", () => {
         dataDir: path.join(rootDir, "openpx.db"),
       }),
     ).rejects.toThrow("Unknown real eval scenario in provided suite subset: reject-and-replan-task-loop");
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("prints usage for the command entrypoint help path", async () => {
@@ -445,7 +448,7 @@ describe("real eval runner", () => {
   });
 
   test("records sample execution failures with stage, message, and planned artifact paths", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-real-eval-fail-sample-"));
+    const rootDir = await createTempDir("openpx-real-eval-fail-sample-");
     const dataDir = path.join(rootDir, "openpx.db");
 
     const summary = await runRealEvalSuite({
@@ -477,12 +480,10 @@ describe("real eval runner", () => {
         evolutionTarget: "eval_harness",
       }),
     ]);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("records evaluation failures with stage, message, and persisted trace path", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-real-eval-fail-eval-"));
+    const rootDir = await createTempDir("openpx-real-eval-fail-eval-");
     const dataDir = path.join(rootDir, "openpx.db");
     const artifactsDir = path.join(rootDir, "approval-gated-bugfix-loop", "artifacts");
     const tracePath = path.join(artifactsDir, "trace.json");
@@ -519,12 +520,10 @@ describe("real eval runner", () => {
     expect(scenario?.evolutionTarget).toBe("eval_harness");
     expect(scenario?.artifactsDir).toBe(artifactsDir);
     expect(scenario?.tracePath).toBe(tracePath);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("records review queue persistence failures with stage, message, and trace path", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-real-eval-fail-review-"));
+    const rootDir = await createTempDir("openpx-real-eval-fail-review-");
     const dataDir = path.join(rootDir, "openpx.db");
     const artifactsDir = path.join(rootDir, "approval-gated-bugfix-loop", "artifacts");
     const tracePath = path.join(artifactsDir, "trace.json");
@@ -561,8 +560,6 @@ describe("real eval runner", () => {
     expect(scenario?.evolutionTarget).toBe("eval_harness");
     expect(scenario?.artifactsDir).toBe(artifactsDir);
     expect(scenario?.tracePath).toBe(tracePath);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("renders failure stage, message, and paths in the default CLI output", async () => {

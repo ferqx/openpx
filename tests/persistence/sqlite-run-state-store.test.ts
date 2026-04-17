@@ -3,17 +3,22 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SqliteRunStateStore } from "../../src/persistence/sqlite/sqlite-run-state-store";
+import { removeWithRetry } from "../helpers/fs-cleanup";
 
 const tempDirs: string[] = [];
+const stores: SqliteRunStateStore[] = [];
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(stores.splice(0).map((store) => store.close()));
+  await Promise.all(tempDirs.splice(0).map((dir) => removeWithRetry(dir, { recursive: true, force: true })));
 });
 
 async function createStore() {
   const dir = await mkdtemp(join(tmpdir(), "openpx-run-state-"));
   tempDirs.push(dir);
-  return new SqliteRunStateStore(join(dir, "openpx.db"));
+  const store = new SqliteRunStateStore(join(dir, "openpx.db"));
+  stores.push(store);
+  return store;
 }
 
 describe("sqlite run state store", () => {
