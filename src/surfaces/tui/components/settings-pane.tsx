@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { SessionStage } from "../runtime/runtime-session";
 import type { ResolvedSettingsConfig } from "../settings/config-resolver";
-import type {
-  SettingsConfig,
-  SettingsConfigKey,
-  SettingsConfigScope,
-  SettingsConfigSource,
+import {
+  SETTINGS_CONFIG_KEYS,
+  type PartialSettingsConfig,
+  type SettingsConfig,
+  type SettingsConfigKey,
+  type SettingsConfigScope,
+  type SettingsConfigSource,
 } from "../settings/config-types";
 
 /** settings pane 的 tab 类型 */
@@ -28,7 +30,14 @@ const SETTING_LABELS: Record<SettingsConfigKey, string> = {
 
 /** 格式化配置来源文案 */
 function formatSource(source: SettingsConfigSource): string {
-  return source === "project" ? "project" : source === "global" ? "global" : "default";
+  switch (source) {
+    case "user":
+    case "project":
+    case "project-local":
+      return source;
+    default:
+      return "default";
+  }
 }
 
 /** 循环切换 tab */
@@ -43,6 +52,30 @@ function renderTabLabel(tab: SettingsTab, activeTab: SettingsTab): string {
   return activeTab === tab ? `[${label}]` : label;
 }
 
+function resolveProjectLocalBaseConfig(input: {
+  user: SettingsConfig;
+  project: PartialSettingsConfig;
+}): SettingsConfig {
+  return {
+    ...input.user,
+    ...input.project,
+  };
+}
+
+function normalizeProjectLocalOverrides(input: {
+  base: SettingsConfig;
+  overrides: PartialSettingsConfig;
+}): PartialSettingsConfig {
+  const normalized: PartialSettingsConfig = {};
+  for (const key of SETTINGS_CONFIG_KEYS) {
+    const override = input.overrides[key];
+    if (override !== undefined && override !== input.base[key]) {
+      normalized[key] = override;
+    }
+  }
+  return normalized;
+}
+
 /** SettingsPane：状态、配置和帮助三合一的本地设置面板 */
 export function SettingsPane(input: {
   modelName?: string;
@@ -51,34 +84,26 @@ export function SettingsPane(input: {
   threadId?: string;
   stage?: SessionStage;
   config: ResolvedSettingsConfig;
-  onSave: (scope: SettingsConfigScope, config: SettingsConfig) => Promise<void> | void;
+  onSave: (scope: SettingsConfigScope, config: PartialSettingsConfig) => Promise<void> | void;
   onClose: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("config");
-  const [scope, setScope] = useState<SettingsConfigScope>("global");
+  const [scope, setScope] = useState<SettingsConfigScope>("user");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [draftGlobal, setDraftGlobal] = useState(input.config.global);
-  const [draftProject, setDraftProject] = useState<SettingsConfig>({
-    ...input.config.global,
-    ...input.config.project,
-  });
-  const scopeRef = useRef<SettingsConfigScope>("global");
-  const draftGlobalRef = useRef(draftGlobal);
-  const draftProjectRef = useRef(draftProject);
+  const [saveError, setSaveError] = useState<string | undefined>();
+  const [draftUser, setDraftUser] = useState(input.config.user);
+  const [draftProjectLocal, setDraftProjectLocal] = useState<PartialSettingsConfig>(input.config.projectLocal);
+  const scopeRef = useRef<SettingsConfigScope>("user");
+  const draftUserRef = useRef(draftUser);
+  const draftProjectLocalRef = useRef(draftProjectLocal);
 
   useEffect(() => {
-    setDraftGlobal(input.config.global);
-    setDraftProject({
-      ...input.config.global,
-      ...input.config.project,
-    });
-    draftGlobalRef.current = input.config.global;
-    draftProjectRef.current = {
-      ...input.config.global,
-      ...input.config.project,
-    };
+    setDraftUser(input.config.user);
+    setDraftProjectLocal(input.config.projectLocal);
+    draftUserRef.current = input.config.user;
+    draftProjectLocalRef.current = input.config.projectLocal;
   }, [input.config]);
 
   useEffect(() => {
@@ -101,6 +126,23 @@ export function SettingsPane(input: {
       setSelectedIndex(0);
     }
   }, [filteredKeys.length, selectedIndex]);
+
+  const projectLocalBase = useMemo(
+    () =>
+      resolveProjectLocalBaseConfig({
+        user: draftUser,
+        project: input.config.project,
+      }),
+    [draftUser, input.config.project],
+  );
+
+  const projectLocalEffective = useMemo<SettingsConfig>(
+    () => ({
+      ...projectLocalBase,
+      ...draftProjectLocal,
+    }),
+    [draftProjectLocal, projectLocalBase],
+  );
 
   useInput(async (keyValue, key) => {
     if (searchMode) {
@@ -146,14 +188,14 @@ export function SettingsPane(input: {
     }
 
     if (keyValue.toLowerCase() === "g") {
-      scopeRef.current = "global";
-      setScope("global");
+      scopeRef.current = "user";
+      setScope("user");
       return;
     }
 
     if (keyValue.toLowerCase() === "p") {
-      scopeRef.current = "project";
-      setScope("project");
+      scopeRef.current = "project-local";
+      setScope("project-local");
       return;
     }
 
@@ -173,44 +215,62 @@ export function SettingsPane(input: {
     }
 
     if (keyValue === " ") {
-      if (scopeRef.current === "global") {
+      setSaveError(undefined);
+      if (scopeRef.current === "user") {
         const next = {
-          ...draftGlobalRef.current,
-          [selectedKey]: !draftGlobalRef.current[selectedKey],
+          ...draftUserRef.current,
+          [selectedKey]: !draftUserRef.current[selectedKey],
         };
-        draftGlobalRef.current = next;
-        setDraftGlobal(next);
+        draftUserRef.current = next;
+        setDraftUser(next);
       } else {
-        const next = {
-          ...draftProjectRef.current,
-          [selectedKey]: !draftProjectRef.current[selectedKey],
+        const nextValue = !projectLocalEffective[selectedKey];
+        const next: PartialSettingsConfig = {
+          ...draftProjectLocalRef.current,
         };
-        draftProjectRef.current = next;
-        setDraftProject(next);
+        if (nextValue === projectLocalBase[selectedKey]) {
+          delete next[selectedKey];
+        } else {
+          next[selectedKey] = nextValue;
+        }
+        draftProjectLocalRef.current = next;
+        setDraftProjectLocal(next);
       }
       return;
     }
 
     if (key.return) {
       const nextScope = scopeRef.current;
-      await input.onSave(
-        nextScope,
-        nextScope === "global" ? draftGlobalRef.current : draftProjectRef.current,
-      );
+      const nextConfig = nextScope === "user"
+        ? draftUserRef.current
+        : normalizeProjectLocalOverrides({
+            base: projectLocalBase,
+            overrides: draftProjectLocalRef.current,
+          });
+      try {
+        setSaveError(undefined);
+        await input.onSave(
+          nextScope,
+          nextConfig,
+        );
+      } catch (error) {
+        setSaveError(error instanceof Error ? error.message : String(error));
+      }
     }
   });
 
   useEffect(() => {
-    draftGlobalRef.current = draftGlobal;
-  }, [draftGlobal]);
+    draftUserRef.current = draftUser;
+  }, [draftUser]);
 
   useEffect(() => {
-    draftProjectRef.current = draftProject;
-  }, [draftProject]);
+    draftProjectLocalRef.current = draftProjectLocal;
+  }, [draftProjectLocal]);
 
   const effectiveConfig = {
-    ...draftGlobal,
-    ...(scope === "project" ? draftProject : input.config.project),
+    ...draftUser,
+    ...input.config.project,
+    ...projectLocalEffective,
   };
 
   return (
@@ -232,27 +292,20 @@ export function SettingsPane(input: {
           <Text>Workspace: {input.workspaceRoot ?? "unknown"}</Text>
           <Text>Thread: {input.threadId ?? "new"}</Text>
           <Text>Stage: {input.stage ?? "idle"}</Text>
-          <Text>Active scope editor: {scope === "global" ? "Global" : "Project"}</Text>
+          <Text>Active scope editor: {scope === "user" ? "User" : "Project local"}</Text>
           <Text>Prompt suggestions: {String(input.config.effective.promptSuggestions)}</Text>
         </Box>
       ) : null}
 
       {activeTab === "config" ? (
         <Box flexDirection="column" marginTop={1}>
-          <Text>Scope: {scope === "global" ? "Global" : "Project"}</Text>
+          <Text>Scope: {scope === "user" ? "User" : "Project local"}</Text>
           <Text>Search: {searchQuery.length > 0 ? searchQuery : "Search settings..."}</Text>
           <Box flexDirection="column" marginTop={1}>
             {filteredKeys.map((key, index) => {
               const selected = index === selectedIndex;
-              const value = scope === "global" ? draftGlobal[key] : draftProject[key];
-              const source =
-                scope === "global"
-                  ? "global"
-                  : input.config.project[key] !== undefined
-                    ? "project"
-                    : input.config.global[key] !== undefined
-                      ? "global"
-                      : "default";
+              const value = scope === "user" ? draftUser[key] : projectLocalEffective[key];
+              const source = input.config.sources[key];
               return (
                 <Box key={key} gap={1}>
                   <Text>{selected ? "❯" : " "}</Text>
@@ -266,7 +319,8 @@ export function SettingsPane(input: {
           <Text color="gray" dimColor>
             Effective prompt suggestions: {String(effectiveConfig.promptSuggestions)}
           </Text>
-          <Text color="gray">Scope: {scope === "global" ? "Global" : "Project"} · g global · p project</Text>
+          {saveError ? <Text color="red">Save failed: {saveError}</Text> : null}
+          <Text color="gray">Scope: {scope === "user" ? "User" : "Project local"} · u user · p project-local</Text>
         </Box>
       ) : null}
 

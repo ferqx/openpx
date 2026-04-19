@@ -33,6 +33,39 @@ export type ThreadViewUpdatedKernelEvent = {
   payload: ProjectedSessionResult;
 };
 
+/** 人工恢复已解除事件。 */
+export type ThreadRecoveryResolvedKernelEvent = {
+  type: "thread.recovery_resolved";
+  payload: {
+    threadId: string;
+    action: "restart_run" | "resubmit_intent" | "abandon_run";
+  };
+};
+
+/** run-loop 生命周期事件。 */
+export type LoopKernelEvent = {
+  type:
+    | "loop.step_started"
+    | "loop.step_completed"
+    | "loop.step_failed"
+    | "loop.suspended"
+    | "loop.resumed"
+    | "loop.finished";
+  payload: {
+    threadId: string;
+    runId: string;
+    taskId: string;
+    step: "plan" | "execute" | "verify" | "respond" | "waiting_approval" | "done";
+    suspensionId?: string;
+    continuationId?: string;
+    approvalRequestId?: string;
+    resumeDisposition?: "resumed" | "already_resolved" | "already_consumed" | "invalidated" | "not_resumable";
+    failureReason?: string;
+    stateVersion?: number;
+    engineVersion?: string;
+  };
+};
+
 /** 任务失败事件。 */
 export type TaskFailedKernelEvent = {
   type: "task.failed";
@@ -69,6 +102,8 @@ export type KernelEvent =
   | ThreadStartedKernelEvent
   | ThreadInterruptedKernelEvent
   | ThreadViewUpdatedKernelEvent
+  | ThreadRecoveryResolvedKernelEvent
+  | LoopKernelEvent
   | TaskFailedKernelEvent
   | WorkerKernelEvent
   | ModelStatusKernelEvent

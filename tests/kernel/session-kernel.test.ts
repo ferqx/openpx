@@ -45,7 +45,7 @@ describe("SessionKernel", () => {
             const text =
               typeof input === "string"
                 ? input
-                : input.decision === "rejected"
+                : input.kind === "approval_resolution" && input.decision === "rejected"
                   ? input.reason ?? "approved"
                   : "approved";
             return {
@@ -57,6 +57,9 @@ describe("SessionKernel", () => {
         },
         async approveRequest() { throw new Error("not implemented"); },
         async rejectRequest() { throw new Error("not implemented"); },
+        async restartRun() { throw new Error("not implemented"); },
+        async resubmitIntent() { throw new Error("not implemented"); },
+        async abandonRun() { throw new Error("not implemented"); },
       },
       workspaceRoot: "/workspace",
       projectId: "project-1",
@@ -117,7 +120,7 @@ describe("SessionKernel", () => {
             const text =
               typeof input === "string"
                 ? input
-                : input.decision === "rejected"
+                : input.kind === "approval_resolution" && input.decision === "rejected"
                   ? input.reason ?? "approved"
                   : "approved";
             return {
@@ -129,6 +132,9 @@ describe("SessionKernel", () => {
         },
         async approveRequest() { throw new Error("not implemented"); },
         async rejectRequest() { throw new Error("not implemented"); },
+        async restartRun() { throw new Error("not implemented"); },
+        async resubmitIntent() { throw new Error("not implemented"); },
+        async abandonRun() { throw new Error("not implemented"); },
       },
       narrativeService,
       workspaceRoot: "/workspace",
@@ -186,6 +192,9 @@ describe("SessionKernel", () => {
         async startRootTask() { throw new Error("not implemented"); },
         async approveRequest() { throw new Error("not implemented"); },
         async rejectRequest() { throw new Error("not implemented"); },
+        async restartRun() { throw new Error("not implemented"); },
+        async resubmitIntent() { throw new Error("not implemented"); },
+        async abandonRun() { throw new Error("not implemented"); },
       },
       workspaceRoot: "/workspace",
       projectId: "project-1",
@@ -277,6 +286,9 @@ describe("SessionKernel", () => {
             summary: "Rejected",
           };
         },
+        async restartRun() { throw new Error("not implemented"); },
+        async resubmitIntent() { throw new Error("not implemented"); },
+        async abandonRun() { throw new Error("not implemented"); },
       },
       workspaceRoot: "/workspace",
       projectId: "project-1",
@@ -293,5 +305,67 @@ describe("SessionKernel", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(rejectExecuted).toBe(true);
+  });
+
+  test("submit_input persists the user message into session transcript before background completion", async () => {
+    const thread = createThread("thread-transcript", "/workspace", "project-1");
+
+    let savedThread = thread;
+    const kernel = createSessionKernel({
+      stores: {
+        threadStore: {
+          async getLatest() { return savedThread; },
+          async save(next) { savedThread = next; },
+          async get() { return savedThread; },
+          async listByScope() { return [savedThread]; },
+          async close() {},
+        },
+        taskStore: {
+          async save() {},
+          async get() { return undefined; },
+          async listByThread() { return []; },
+          async close() {},
+        },
+        runStore: {
+          async getLatestByThread() { return undefined; },
+        },
+        approvalStore: {
+          async listPendingByThread() { return []; },
+          async get() { return undefined; },
+        },
+        workerStore: {
+          async save() {},
+          async get() { return undefined; },
+          async listByThread() { return []; },
+          async listActiveByThread() { return []; },
+          async close() {},
+        },
+      },
+      controlPlane: {
+        async startRootTask(threadId, input) {
+          return {
+            status: "completed",
+            task: { taskId: "task-transcript", threadId, runId: "run-transcript", summary: String(input), status: "completed" },
+            approvals: [],
+            finalResponse: "done",
+          };
+        },
+        async approveRequest() { throw new Error("not implemented"); },
+        async rejectRequest() { throw new Error("not implemented"); },
+        async restartRun() { throw new Error("not implemented"); },
+        async resubmitIntent() { throw new Error("not implemented"); },
+        async abandonRun() { throw new Error("not implemented"); },
+      },
+      workspaceRoot: "/workspace",
+      projectId: "project-1",
+    });
+
+    const result = await kernel.handleCommand({
+      type: "submit_input",
+      payload: { text: "hello transcript" },
+    });
+
+    expect(result.messages?.some((message) => message.role === "user" && message.content === "hello transcript")).toBe(true);
+    expect(savedThread.recoveryFacts?.conversationHistory?.some((message) => message.role === "user" && message.content === "hello transcript")).toBe(true);
   });
 });

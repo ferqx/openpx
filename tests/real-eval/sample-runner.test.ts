@@ -97,8 +97,18 @@ function createDeterministicModelGateway(): ModelGateway {
     async verify() {
       return { summary: "verified", isValid: true };
     },
-    async respond() {
-      return { summary: "responded" };
+    async respond(input) {
+      const prompt = input.prompt.toLowerCase();
+      if (prompt.includes("continue safely without deleting files")) {
+        return { summary: "continue safely without deleting files" };
+      }
+      if (prompt.includes("artifact-current.ts")) {
+        return { summary: "artifact-current.ts belongs to the current package" };
+      }
+      if (prompt.includes("recovery task")) {
+        return { summary: "Recovered cleanly after restart" };
+      }
+      return { summary: "Deleted src/approval-target.ts" };
     },
     onStatusChange() {
       return () => undefined;
@@ -141,8 +151,12 @@ function createDelayedDeterministicModelGateway(delayMs: number): ModelGateway {
     async verify() {
       return { summary: "verified", isValid: true };
     },
-    async respond() {
-      return { summary: "responded" };
+    async respond(input) {
+      const prompt = input.prompt.toLowerCase();
+      if (prompt.includes("recovery task")) {
+        return { summary: "Recovered cleanly after restart" };
+      }
+      return { summary: "Deleted src/approval-target.ts" };
     },
     onStatusChange() {
       return () => undefined;

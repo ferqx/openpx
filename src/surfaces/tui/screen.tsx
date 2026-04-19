@@ -15,7 +15,7 @@ import type { WorkerSummary } from "./components/worker-panel";
 import type { UtilityPaneMode } from "./view-state";
 import type { SessionStage } from "./runtime/runtime-session";
 import type { ResolvedSettingsConfig } from "./settings/config-resolver";
-import type { SettingsConfig, SettingsConfigScope } from "./settings/config-types";
+import type { PartialSettingsConfig, SettingsConfigScope } from "./settings/config-types";
 
 /** Screen 会话区消息模型 */
 type Message = {
@@ -71,7 +71,7 @@ export type ScreenComposerView = {
   onSubmit?: (text: string) => Promise<void> | void;
   onCommandMenuOpenChange?: (isOpen: boolean) => void;
   onComposerEscape?: () => Promise<void> | void;
-  onSettingsSave?: (scope: SettingsConfigScope, config: SettingsConfig) => Promise<void> | void;
+  onSettingsSave?: (scope: SettingsConfigScope, config: PartialSettingsConfig) => Promise<void> | void;
   onSettingsClose?: () => void;
 };
 
@@ -84,7 +84,7 @@ type ScreenUtilityRegionProps = {
   workspaceRoot?: string;
   threadId?: string;
   stage?: SessionStage;
-  onSettingsSave?: (scope: SettingsConfigScope, config: SettingsConfig) => Promise<void> | void;
+  onSettingsSave?: (scope: SettingsConfigScope, config: PartialSettingsConfig) => Promise<void> | void;
   onSettingsClose?: () => void;
   utilitySession?: UtilityPaneSessionSnapshot;
   selectedSessionThreadId?: string;

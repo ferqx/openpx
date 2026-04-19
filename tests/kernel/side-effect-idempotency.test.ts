@@ -47,7 +47,7 @@ describe("Kernel Side-Effect Idempotency", () => {
 
     // 4. ASSERTIONS
     // - Ledger state must be preserved
-    expect(hydratedState.recoveryFacts.ledgerState?.pendingToolCallId).toBe(toolCallId);
+    expect(hydratedState.recoveryFacts?.ledgerState?.pendingToolCallId).toBe(toolCallId);
     
     // - System message should exist to guide the agent
     // Note: We might want to explicitly add a ledger status message in hydrateRootState

@@ -92,7 +92,10 @@ describe("Runtime session contract", () => {
       status: "blocked",
       stage: "blocked",
       threadId: "thread-1",
-      summary: "Completed repo scan and narrowed work to runtime recovery.",
+      finalResponse: "Completed repo scan and narrowed work to runtime recovery.",
+      executionSummary: undefined,
+      verificationSummary: undefined,
+      pauseSummary: "Manual recovery required from snapshot.",
       tasks: [
         {
           taskId: "task-1",
@@ -207,7 +210,7 @@ describe("Runtime session contract", () => {
       kind: "waiting_approval",
       message: "Need approval",
     });
-    expect(session.summary).toBe("Need approval");
+    expect(session.pauseSummary).toBe("Need approval");
   });
 
   test("formats thread list summaries from stable session views", () => {

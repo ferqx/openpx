@@ -1,23 +1,26 @@
-import { Command, interrupt } from "@langchain/langgraph";
 import { resolve } from "node:path";
+import type { Database } from "bun:sqlite";
 import { createApprovalService, type ApprovalService, type CreateApprovalInput } from "../control/policy/approval-service";
 import { createPolicyEngine } from "../control/policy/policy-engine";
 import { createTaskManager } from "../control/tasks/task-manager";
-import type { ControlTask } from "../control/tasks/task-types";
+import { createControlTask, type ControlTask } from "../control/tasks/task-types";
 import { createToolRegistry } from "../control/tools/tool-registry";
+import type { ContinuationEnvelope } from "../harness/core/run-loop/continuation";
+import { isApprovalResolutionContinuation } from "../harness/core/run-loop/continuation";
+import { createRunLoopEngine } from "../harness/core/run-loop/run-loop-engine";
+import type { RunLoopState } from "../harness/core/run-loop/step-types";
 import { createSessionKernel, type SessionControlPlaneResult } from "../harness/core/session/session-kernel";
-import { createSqliteCheckpointer } from "../persistence/sqlite/sqlite-checkpointer";
 import { createSqlite } from "../persistence/sqlite/sqlite-client";
 import { migrateSqlite } from "../persistence/sqlite/sqlite-migrator";
 import { SqliteApprovalStore } from "../persistence/sqlite/sqlite-approval-store";
 import { SqliteEventLog } from "../persistence/sqlite/sqlite-event-log";
 import { SqliteMemoryStore } from "../persistence/sqlite/sqlite-memory-store";
 import { SqliteRunStore } from "../persistence/sqlite/sqlite-run-store";
+import { SqliteRunStateStore } from "../persistence/sqlite/sqlite-run-state-store";
 import { SqliteTaskStore } from "../persistence/sqlite/sqlite-task-store";
 import { SqliteThreadStore } from "../persistence/sqlite/sqlite-thread-store";
 import { SqliteExecutionLedger } from "../persistence/sqlite/sqlite-execution-ledger";
 import { SqliteWorkerStore } from "../persistence/sqlite/sqlite-worker-store";
-import { createRootGraph } from "../runtime/graph/root/graph";
 import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
 import { resolveConfig } from "../shared/config";
 import { createThreadNarrativeService } from "../control/context/thread-narrative-service";
@@ -27,11 +30,10 @@ import { createPassiveWorkerRuntimeFactory } from "../control/workers/worker-run
 import { MemoryConsolidator } from "../control/context/memory-consolidator";
 import { transitionThread } from "../domain/thread";
 import { createEvent } from "../domain/event";
-import { compactThreadView } from "../control/context/thread-compaction-policy";
-import type { ResumeControl } from "../runtime/graph/root/resume-control";
 import { createRun, transitionRun, type Run } from "../domain/run";
 import { prefixedUuid } from "../shared/id-generators";
 import { normalizePlannerOutput } from "../runtime/planning/planner-normalization";
+import type { WorkPackage } from "../runtime/planning/work-package";
 import {
   buildApprovedExecutionArtifacts,
   buildExecutionArtifacts,
@@ -39,8 +41,8 @@ import {
   buildVerifierPrompt,
 } from "./worker-inputs";
 import {
-  buildResponderPrompt,
-  canResetThreadCheckpoint,
+  buildFinalResponderPrompt,
+  buildPlannerPrompt,
   ensureControlTask,
   isCancelledError,
   resolveApprovalToolRequest,
@@ -55,7 +57,7 @@ import {
   finalizeRootTaskExecution,
   prepareRootTaskExecution,
 } from "./control-plane-run-lifecycle";
-import { invokeRootGraph } from "./control-plane-graph-bridge";
+import { calculateRunStateAuditCutoff } from "./runtime-gc";
 import {
   bridgeModelGatewayEvents,
   closeAppContextResources,
@@ -67,11 +69,28 @@ import {
 type AppStores = ReturnType<typeof createStores>;
 
 type ControlPlane = {
-  startRootTask(threadId: string, input: string | ResumeControl): Promise<SessionControlPlaneResult>;
+  startRootTask(threadId: string, input: string | ContinuationEnvelope): Promise<SessionControlPlaneResult>;
   approveRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   rejectRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
+  restartRun(threadId: string): Promise<SessionControlPlaneResult>;
+  resubmitIntent(threadId: string, content: string): Promise<SessionControlPlaneResult>;
+  abandonRun(threadId: string): Promise<SessionControlPlaneResult>;
   cancelThread(threadId: string, reason?: string): Promise<boolean>;
+  attachKernelEventPublisher(
+    publisher: (event: {
+      type:
+        | "loop.step_started"
+        | "loop.step_completed"
+        | "loop.step_failed"
+        | "loop.suspended"
+        | "loop.resumed"
+        | "loop.finished";
+      payload: Record<string, unknown>;
+    }) => void,
+  ): void;
 };
+
+const LEGACY_CHECKPOINT_INVALIDATION_MIGRATION = "legacy_checkpoint_invalidation_v1";
 
 function createStores(path: string | ReturnType<typeof createSqlite>) {
   return {
@@ -81,9 +100,29 @@ function createStores(path: string | ReturnType<typeof createSqlite>) {
     approvalStore: new SqliteApprovalStore(path),
     eventLog: new SqliteEventLog(path),
     memoryStore: new SqliteMemoryStore(path),
+    runStateStore: new SqliteRunStateStore(path),
     executionLedger: new SqliteExecutionLedger(path),
     workerStore: new SqliteWorkerStore(path),
   };
+}
+
+function hasSystemMigration(sqlite: Database, migrationKey: string): boolean {
+  const row = sqlite
+    .query<{ count: number }, [string]>(
+      `SELECT COUNT(*) as count
+       FROM system_migrations
+       WHERE migration_key = ?`,
+    )
+    .get(migrationKey);
+  return (row?.count ?? 0) > 0;
+}
+
+function markSystemMigration(sqlite: Database, migrationKey: string): void {
+  sqlite.run(
+    `INSERT OR REPLACE INTO system_migrations (migration_key, applied_at)
+     VALUES (?, ?)`,
+    [migrationKey, new Date().toISOString()],
+  );
 }
 
 async function recoverUncertainExecutions(stores: AppStores, scope: { workspaceRoot: string; projectId: string }) {
@@ -168,6 +207,109 @@ async function recoverUncertainExecutions(stores: AppStores, scope: { workspaceR
   }
 }
 
+async function invalidateLegacyCheckpointThreads(
+  sqlite: Database,
+  stores: AppStores,
+  scope: { workspaceRoot: string; projectId: string },
+) {
+  if (hasSystemMigration(sqlite, LEGACY_CHECKPOINT_INVALIDATION_MIGRATION)) {
+    return;
+  }
+
+  type CheckpointThreadRow = { thread_id: string };
+
+  let rows: CheckpointThreadRow[];
+  try {
+    rows = sqlite
+      .query<CheckpointThreadRow, []>("SELECT DISTINCT thread_id FROM checkpoints")
+      .all();
+  } catch {
+    return;
+  }
+
+  if (rows.length === 0) {
+    markSystemMigration(sqlite, LEGACY_CHECKPOINT_INVALIDATION_MIGRATION);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const message = "Legacy graph checkpoint invalidated. Please resubmit your intent to continue safely.";
+
+  for (const row of rows) {
+    const thread = await stores.threadStore.get(row.thread_id);
+    if (thread) {
+      const latestRun = await stores.runStore.getLatestByThread(row.thread_id);
+      if (latestRun) {
+        await stores.runStore.save({
+          ...latestRun,
+          status: "blocked",
+          blockingReason: {
+            kind: "human_recovery",
+            message,
+          },
+          endedAt: undefined,
+        });
+      }
+
+      const tasks = await stores.taskStore.listByThread(row.thread_id);
+      const latestTask = tasks[tasks.length - 1];
+      if (latestTask) {
+        await stores.taskStore.save({
+          ...latestTask,
+          status: "blocked",
+          blockingReason: {
+            kind: "human_recovery",
+            message,
+          },
+        });
+      }
+
+      await stores.threadStore.save({
+        ...thread,
+        status: "active",
+        revision: (thread.revision ?? 1) + 1,
+        recoveryFacts: thread.recoveryFacts
+          ? {
+              ...thread.recoveryFacts,
+              status: "blocked",
+              updatedAt: now,
+              blocking: latestTask
+                ? {
+                    sourceTaskId: latestTask.taskId,
+                    kind: "human_recovery",
+                    message,
+                  }
+                : thread.recoveryFacts.blocking,
+            }
+          : thread.recoveryFacts,
+      });
+
+      await stores.eventLog.append(
+        createEvent({
+          eventId: `event_${crypto.randomUUID()}`,
+          threadId: row.thread_id,
+          taskId: latestTask?.taskId,
+          type: "thread.blocked",
+          payload: {
+            threadId: row.thread_id,
+            status: "blocked",
+            blockingReason: {
+              kind: "human_recovery",
+              message,
+            },
+          },
+          createdAt: now,
+        }),
+      );
+    }
+
+    sqlite.run("DELETE FROM writes WHERE thread_id = ?", [row.thread_id]);
+    sqlite.run("DELETE FROM checkpoints WHERE thread_id = ?", [row.thread_id]);
+  }
+
+  markSystemMigration(sqlite, LEGACY_CHECKPOINT_INVALIDATION_MIGRATION);
+}
+
 function createPersistentApprovalService(stores: AppStores): ApprovalService {
   const approvals = createApprovalService();
 
@@ -222,26 +364,66 @@ function parseDeleteRequest(input: string, workspaceRoot: string) {
   };
 }
 
+function resolveCurrentWorkPackage(state: {
+  workPackages?: WorkPackage[];
+  currentWorkPackageId?: string;
+}) {
+  const workPackages = state.workPackages ?? [];
+  const currentWorkPackageId = state.currentWorkPackageId ?? workPackages[0]?.id;
+  return workPackages.find((item) => item.id === currentWorkPackageId);
+}
+
+function resolveArtifactsForCurrentWorkPackage(state: {
+  currentWorkPackageId?: string;
+  artifacts?: RunLoopState["artifacts"];
+  latestArtifacts?: RunLoopState["latestArtifacts"];
+}) {
+  if (!state.currentWorkPackageId) {
+    return [];
+  }
+
+  return [...(state.artifacts ?? []), ...(state.latestArtifacts ?? [])].filter(
+    (artifact) => artifact.workPackageId === state.currentWorkPackageId,
+  );
+}
+
 async function createControlPlane(input: {
   config: ReturnType<typeof resolveConfig>;
   stores: AppStores;
-  checkpointer: ReturnType<typeof createSqliteCheckpointer>;
   modelGateway: ModelGateway;
 }): Promise<ControlPlane> {
   // control-plane 边界：approval、tool policy、task 生命周期、run 状态和
-  // LangGraph 执行都在这里汇合，然后才会被投影到 UI。
+  // run-loop 执行都在这里汇合，然后才会被投影到 UI。
   const taskManager = createTaskManager({
     taskStore: input.stores.taskStore,
     eventLog: input.stores.eventLog,
   });
   const approvals = createPersistentApprovalService(input.stores);
   const toolRegistry = createToolRegistry({
-    policy: createPolicyEngine({ workspaceRoot: input.config.workspaceRoot }),
+    policy: createPolicyEngine({
+      workspaceRoot: input.config.workspaceRoot,
+      permissionMode: input.config.permission.defaultMode,
+      additionalDirectories: input.config.permission.additionalDirectories,
+    }),
     approvals,
     executionLedger: input.stores.executionLedger,
   });
   const activeExecutions = new Map<string, { taskId: string; controller: AbortController }>();
   const getAbortSignal = (threadId?: string) => (threadId ? activeExecutions.get(threadId)?.controller.signal : undefined);
+  let kernelEventPublisher:
+    | ((
+        event: {
+          type:
+            | "loop.step_started"
+            | "loop.step_completed"
+            | "loop.step_failed"
+            | "loop.suspended"
+            | "loop.resumed"
+            | "loop.finished";
+          payload: Record<string, unknown>;
+        },
+      ) => void)
+    | undefined;
 
   async function saveRun(run: Run): Promise<Run> {
     await input.stores.runStore.save(run);
@@ -261,6 +443,97 @@ async function createControlPlane(input: {
     return await saveRun(next);
   }
 
+  async function cancelPendingApprovalsForRun(threadId: string, runId: string): Promise<void> {
+    const pendingApprovals = await approvals.listPendingByThread(threadId);
+    await Promise.all(
+      pendingApprovals
+        .filter((approval) => approval.runId === runId)
+        .map((approval) => approvals.updateStatus(approval.approvalRequestId, "cancelled")),
+    );
+  }
+
+  async function resolveTaskForRun(threadId: string, run: Run): Promise<ControlTask | undefined> {
+    if (run.activeTaskId) {
+      const activeTask = await input.stores.taskStore.get(run.activeTaskId);
+      if (activeTask) {
+        return ensureControlTask(activeTask);
+      }
+    }
+
+    const tasks = await input.stores.taskStore.listByThread(threadId);
+    const lastTask = tasks.at(-1);
+    return lastTask ? ensureControlTask(lastTask) : undefined;
+  }
+
+  async function buildCurrentControlPlaneResult(args: {
+    threadId: string;
+    run: Run;
+    resumeDisposition?: SessionControlPlaneResult["resumeDisposition"];
+    fallbackTaskSummary: string;
+  }): Promise<SessionControlPlaneResult> {
+    const tasks = await input.stores.taskStore.listByThread(args.threadId);
+    const currentTask = tasks.at(-1);
+    const fallbackBlockingReason =
+      args.run.blockingReason?.kind === "waiting_approval" || args.run.blockingReason?.kind === "human_recovery"
+        ? {
+            kind: args.run.blockingReason.kind,
+            message: args.run.blockingReason.message,
+          }
+        : undefined;
+    const task = currentTask
+      ? ensureControlTask(currentTask)
+      : createControlTask({
+          taskId: prefixedUuid("task"),
+          threadId: args.threadId,
+          runId: args.run.runId,
+          summary: args.fallbackTaskSummary,
+          status: args.run.status === "waiting_approval" ? "blocked" : args.run.status === "blocked" ? "blocked" : "completed",
+          blockingReason: fallbackBlockingReason,
+        });
+    const approvals = await input.stores.approvalStore.listPendingByThread(args.threadId);
+
+    return {
+      status:
+        args.run.status === "waiting_approval"
+          ? "waiting_approval"
+          : args.run.status === "blocked" || args.run.status === "interrupted"
+            ? "blocked"
+            : "completed",
+      task,
+      approvals,
+      resumeDisposition: args.resumeDisposition,
+      finalResponse: args.run.resultSummary,
+      executionSummary: args.run.resultSummary,
+      pauseSummary: args.run.blockingReason?.message,
+      recommendationReason:
+        args.run.blockingReason?.kind === "human_recovery"
+          ? args.run.blockingReason.message
+          : undefined,
+    };
+  }
+
+  async function resolveBlockedRecoveryRun(threadId: string): Promise<{
+    run: Run;
+    task: ControlTask;
+  }> {
+    const activeRun = await input.stores.runStore.getLatestByThread(threadId);
+    if (!activeRun) {
+      throw new Error(`no run found for thread ${threadId}`);
+    }
+    if (activeRun.blockingReason?.kind !== "human_recovery" && activeRun.status !== "blocked") {
+      throw new Error(`thread ${threadId} is not in human_recovery`);
+    }
+    const tasks = await input.stores.taskStore.listByThread(threadId);
+    const lastTask = tasks.at(-1);
+    if (!lastTask) {
+      throw new Error(`no task found for thread ${threadId}`);
+    }
+    return {
+      run: activeRun,
+      task: ensureControlTask(lastTask),
+    };
+  }
+
   async function cancelActiveThread(threadId: string): Promise<boolean> {
     const execution = activeExecutions.get(threadId);
     const activeRun = await input.stores.runStore.getLatestByThread(threadId);
@@ -269,6 +542,16 @@ async function createControlPlane(input: {
         activeRun &&
         ["created", "running", "waiting_approval", "blocked"].includes(activeRun.status)
       ) {
+        const currentTask = await resolveTaskForRun(threadId, activeRun);
+        if (currentTask && !["completed", "failed", "cancelled"].includes(currentTask.status)) {
+          await saveTaskStatus(input.stores, currentTask, "cancelled");
+        }
+        await cancelPendingApprovalsForRun(threadId, activeRun.runId);
+        await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+          runId: activeRun.runId,
+          reason: "cancelled by user",
+        });
+        await input.stores.runStateStore.deleteActiveRunState(activeRun.runId);
         await updateRunStatus(activeRun, "interrupted", {
           endedAt: new Date().toISOString(),
           resultSummary: "Interrupted from TUI",
@@ -281,11 +564,17 @@ async function createControlPlane(input: {
     execution.controller.abort();
 
     const existingTask = await input.stores.taskStore.get(execution.taskId);
-    if (existingTask && existingTask.status === "running") {
+    if (existingTask && !["completed", "failed", "cancelled"].includes(existingTask.status)) {
       await saveTaskStatus(input.stores, ensureControlTask(existingTask), "cancelled");
     }
 
     if (activeRun && activeRun.status !== "interrupted") {
+      await cancelPendingApprovalsForRun(threadId, activeRun.runId);
+      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+        runId: activeRun.runId,
+        reason: "cancelled by user",
+      });
+      await input.stores.runStateStore.deleteActiveRunState(activeRun.runId);
       await updateRunStatus(activeRun, "interrupted", {
         endedAt: new Date().toISOString(),
         resultSummary: "Interrupted from TUI",
@@ -304,33 +593,43 @@ async function createControlPlane(input: {
     return true;
   }
 
-  const rootGraph = await createRootGraph({
-    checkpointer: input.checkpointer,
-    compactionPolicy: { compact: compactThreadView },
-    getThreadView: async (threadId: string) => input.stores.threadStore.get(threadId),
-    planner: async ({ input: text, threadId, taskId }) => {
-      // Retrieve project memory for context
+  const runLoopEngine = createRunLoopEngine({
+    runStateStore: input.stores.runStateStore,
+    emitRuntimeEvent: (event) => {
+      kernelEventPublisher?.(event);
+    },
+    planner: async (state) => {
+      const text = state.input;
+      const threadId = state.threadId;
+      const taskId = state.taskId;
+      const threadView = threadId ? await input.stores.threadStore.get(threadId) : undefined;
       const memories = await input.stores.memoryStore.search("project", { limit: 5 });
-      const memoryContext = memories.length > 0 
-        ? `\nProject Memory:\n${memories.map(m => `- ${m.value}`).join("\n")}\n`
-        : "";
-      
-      const prompt = `${memoryContext}\nUser request: ${text}`;
+      const prompt = buildPlannerPrompt({
+        text,
+        threadView,
+        projectMemory: memories.map((memory) => memory.value),
+      });
       const result = await input.modelGateway.plan({ prompt, threadId, taskId, signal: getAbortSignal(threadId) });
       const normalized = normalizePlannerOutput({
         inputText: text,
         summary: result.summary,
         plannerResult: result.plannerResult,
       });
-      
+
       return {
-        summary: normalized.summary,
-        mode: "plan",
         plannerResult: normalized.plannerResult,
         workPackages: normalized.plannerResult.workPackages,
+        currentWorkPackageId: normalized.plannerResult.workPackages[0]?.id,
+        nextStep: normalized.plannerResult.workPackages.length > 0 ? "execute" : "respond",
       };
     },
-    verifier: async ({ input: text, threadId, taskId, currentWorkPackage, artifacts, plannerResult }) => {
+    verifier: async (state) => {
+      const text = state.input;
+      const threadId = state.threadId;
+      const taskId = state.taskId;
+      const currentWorkPackage = resolveCurrentWorkPackage(state);
+      const artifacts = resolveArtifactsForCurrentWorkPackage(state);
+      const plannerResult = state.plannerResult;
       const prompt = buildVerifierPrompt({
         input: text,
         currentWorkPackage,
@@ -339,33 +638,29 @@ async function createControlPlane(input: {
       });
       const result = await input.modelGateway.verify({ prompt, threadId, taskId, signal: getAbortSignal(threadId) });
       return {
-        summary: result.summary,
-        mode: "verify",
-        isValid: result.isValid,
-        feedback: result.summary, // Assuming summary contains feedback when invalid
+        verificationSummary: result.summary,
+        verificationReport: {
+          summary: result.summary,
+          passed: result.isValid,
+          feedback: result.summary,
+        },
       };
     },
-    executor: async ({
-      input: text,
-      threadId,
-      taskId,
-      currentWorkPackage,
-      plannerResult,
-      artifacts,
-      approvedApprovalRequestId,
-      configurable,
-    }) => {
+    executor: async (state) => {
+      const text = state.input;
+      const threadId = state.threadId;
+      const taskId = state.taskId;
+      const currentWorkPackage = resolveCurrentWorkPackage(state);
+      const plannerResult = state.plannerResult;
+      const artifacts = resolveArtifactsForCurrentWorkPackage(state);
+      const approvedApprovalRequestId = state.approvedApprovalRequestId;
       const executionInput = buildExecutionInput({
         input: text,
         currentWorkPackage,
         artifacts,
         plannerResult,
       });
-      const resumedApprovalRequestId =
-        typeof configurable?.approval_request_id === "string"
-        && configurable.approval_request_id !== approvedApprovalRequestId
-          ? configurable.approval_request_id
-          : undefined;
+      const resumedApprovalRequestId = approvedApprovalRequestId;
       if (resumedApprovalRequestId) {
         const approval = await approvals.get(resumedApprovalRequestId);
         const approvedToolRequest = resolveApprovalToolRequest(approval, input.config.workspaceRoot);
@@ -373,9 +668,9 @@ async function createControlPlane(input: {
           const approvedOutcome = await toolRegistry.executeApproved(approvedToolRequest);
           if (approvedOutcome.kind !== "executed") {
             return {
-              summary: `Unable to complete approved action: ${approvedOutcome.reason}`,
-              mode: "execute",
+              executionSummary: `Unable to complete approved action: ${approvedOutcome.reason}`,
               approvedApprovalRequestId: resumedApprovalRequestId,
+              nextStep: "respond" as const,
             };
           }
 
@@ -393,8 +688,7 @@ async function createControlPlane(input: {
             createdAt: new Date().toISOString(),
           });
           return {
-            summary: approvedSummary,
-            mode: "execute",
+            executionSummary: approvedSummary,
             approvedApprovalRequestId: resumedApprovalRequestId,
             latestArtifacts: buildApprovedExecutionArtifacts({
               workspaceRoot: input.config.workspaceRoot,
@@ -404,6 +698,7 @@ async function createControlPlane(input: {
             }),
             lastCompletedToolCallId: approvedToolRequest.toolCallId,
             lastCompletedToolName: approvedToolRequest.toolName,
+            nextStep: "verify" as const,
           };
         }
       }
@@ -415,13 +710,13 @@ async function createControlPlane(input: {
       if (!deleteRequest || !threadId || !taskId) {
         const summary = `Executed request: ${executionInput}`;
         return {
-          summary,
-          mode: "execute",
+          executionSummary: summary,
           approvedApprovalRequestId,
           latestArtifacts: buildExecutionArtifacts({
             summary: useLegacyObjectiveFallback ? `${summary} (legacy objective fallback)` : summary,
             currentWorkPackage,
           }),
+          nextStep: "verify" as const,
         };
       }
 
@@ -441,76 +736,16 @@ async function createControlPlane(input: {
 
       if (outcome.kind === "blocked") {
         const summary = `Approval required before deleting ${deleteRequest.relativePath}`;
-        const resolution = interrupt<{
-          kind: "approval-required";
-          mode: "execute";
-          summary: string;
-          approvalRequest: typeof outcome.approvalRequest;
-        }, string | ResumeControl>({
-          kind: "approval-required",
-          mode: "execute",
-          summary,
-          approvalRequest: outcome.approvalRequest,
-        });
-
-        if (
-          typeof resolution !== "string"
-          && resolution.kind === "approval_resolution"
-          && resolution.decision === "approved"
-          && resolution.approvalRequestId
-        ) {
-          const approval = await approvals.get(resolution.approvalRequestId);
-          const approvedToolRequest = resolveApprovalToolRequest(approval, input.config.workspaceRoot);
-          if (!approvedToolRequest) {
-              return {
-                summary,
-                mode: "execute",
-                approvedApprovalRequestId,
-              };
-            }
-
-          const approvedOutcome = await toolRegistry.executeApproved(approvedToolRequest);
-          if (approvedOutcome.kind !== "executed") {
-              return {
-                summary: `Unable to complete approved action: ${approvedOutcome.reason}`,
-                mode: "execute",
-                approvedApprovalRequestId,
-              };
-            }
-
-          const approvedSummary = summarizeApprovedAction(
-            approval?.summary ?? summary,
-            input.config.workspaceRoot,
-            approvedToolRequest.path,
-          );
-          await input.stores.eventLog.append({
-            eventId: `event_${crypto.randomUUID()}`,
-            threadId,
-            taskId,
-            type: "tool.executed",
-            payload: { summary: approvedSummary, output: approvedOutcome.output },
-            createdAt: new Date().toISOString(),
-          });
-            return {
-              summary: approvedSummary,
-              mode: "execute",
-              approvedApprovalRequestId,
-              latestArtifacts: buildApprovedExecutionArtifacts({
-                workspaceRoot: input.config.workspaceRoot,
-                toolRequest: approvedToolRequest,
-              summary: approvedSummary,
-              currentWorkPackage,
-            }),
-            lastCompletedToolCallId: approvedToolRequest.toolCallId,
-            lastCompletedToolName: approvedToolRequest.toolName,
-          };
-        }
         return {
-          summary,
-          mode: "execute",
+          executionSummary: summary,
           approvedApprovalRequestId,
           pendingToolCallId: `${taskId}:apply_patch`,
           pendingToolName: "apply_patch",
+          pendingApproval: {
+            summary,
+            approvalRequestId: outcome.approvalRequest.approvalRequestId,
+          },
+          nextStep: "waiting_approval" as const,
         };
       }
 
@@ -526,8 +761,7 @@ async function createControlPlane(input: {
           createdAt: new Date().toISOString(),
         });
         return {
-          summary,
-          mode: "execute",
+          executionSummary: summary,
           approvedApprovalRequestId,
           latestArtifacts: buildExecutionArtifacts({
             summary,
@@ -536,6 +770,7 @@ async function createControlPlane(input: {
           }),
           lastCompletedToolCallId: `${taskId}:apply_patch`,
           lastCompletedToolName: "apply_patch",
+          nextStep: "verify" as const,
         };
       }
 
@@ -549,14 +784,26 @@ async function createControlPlane(input: {
         createdAt: new Date().toISOString(),
       });
       return {
-        summary: errorSummary,
-        mode: "execute",
+        executionSummary: errorSummary,
         approvedApprovalRequestId,
+        nextStep: "respond" as const,
       };
     },
-    responder: async ({ input: text, threadId, taskId }) => {
+    responder: async (state) => {
+      const text = state.input;
+      const threadId = state.threadId;
+      const taskId = state.taskId;
+      const artifacts = [...(state.artifacts ?? []), ...(state.latestArtifacts ?? [])];
+      const plannerResult = state.plannerResult;
+      const verificationReport = state.verificationReport;
       const threadView = threadId ? await input.stores.threadStore.get(threadId) : undefined;
-      const prompt = buildResponderPrompt({ text, threadView });
+      const prompt = buildFinalResponderPrompt({
+        text,
+        threadView,
+        artifacts,
+        plannerResult,
+        verificationReport,
+      });
       const result = await input.modelGateway.respond({
         prompt,
         threadId,
@@ -564,14 +811,14 @@ async function createControlPlane(input: {
         signal: getAbortSignal(threadId),
       });
       return {
-        summary: result.summary,
-        mode: "respond",
+        finalResponse: result.summary,
+        nextStep: "done" as const,
       };
     },
   });
 
   const controlPlane: ControlPlane = {
-    async startRootTask(threadId: string, inputValue: string | ResumeControl) {
+    async startRootTask(threadId: string, inputValue: string | ContinuationEnvelope) {
       const thread = await input.stores.threadStore.get(threadId);
       if (!thread) {
         throw new Error(`thread ${threadId} not found`);
@@ -591,41 +838,29 @@ async function createControlPlane(input: {
       );
 
       const { isResume, run, task } = prepared;
-      let graphResult:
-        | Awaited<ReturnType<typeof rootGraph.invoke>>
-        | undefined;
+      let engineResult: Awaited<ReturnType<typeof runLoopEngine.start>>;
       const controller = new AbortController();
       activeExecutions.set(threadId, { taskId: task.taskId, controller });
 
       try {
-        graphResult = await invokeRootGraph(
-          {
-            invokeResume: (resumeControl) =>
-              rootGraph.invoke(new Command({ resume: resumeControl }), {
-                configurable: {
-                  thread_id: threadId,
-                  task_id: task.taskId,
-                  approval_request_id:
-                    resumeControl.kind === "approval_resolution" && resumeControl.decision === "approved"
-                      ? resumeControl.approvalRequestId
-                      : undefined,
-                  signal: controller.signal,
-                },
-              }),
-            invokeFresh: (text) =>
-              rootGraph.invoke(
-                { input: text },
-                {
-                  configurable: {
-                    thread_id: threadId,
-                    task_id: task.taskId,
-                    signal: controller.signal,
-                  },
-                },
-              ),
-          },
-          { inputValue, isResume },
-        );
+        if (typeof inputValue !== "string") {
+          if (!isApprovalResolutionContinuation(inputValue)) {
+            throw new Error(`unsupported continuation kind for run-loop resume: ${inputValue.kind}`);
+          }
+          engineResult = await runLoopEngine.resume({
+            threadId,
+            runId: run.runId,
+            taskId: task.taskId,
+            continuation: inputValue,
+          });
+        } else {
+          engineResult = await runLoopEngine.start({
+            threadId,
+            runId: run.runId,
+            taskId: task.taskId,
+            input: prepared.text,
+          });
+        }
       } catch (error: unknown) {
         if (isCancelledError(error)) {
           throw error;
@@ -647,7 +882,7 @@ async function createControlPlane(input: {
         threadId,
         run,
         task,
-        graphResult,
+        engineResult,
       );
     },
 
@@ -665,13 +900,15 @@ async function createControlPlane(input: {
           saveTaskStatus: (task, status) => saveTaskStatus(input.stores, task, status),
           updateRunStatus,
           executeApprovedTool: (request) => toolRegistry.executeApproved(request),
-          getCheckpoint: (threadId) =>
-            input.checkpointer.getTuple({
-              configurable: { thread_id: threadId },
+          hasSuspension: async (runId) =>
+            (await input.stores.runStateStore.loadActiveSuspensionByRun(runId)) !== undefined,
+          buildCurrentResult: ({ threadId: targetThreadId, run, resumeDisposition, fallbackTaskSummary }) =>
+            buildCurrentControlPlaneResult({
+              threadId: targetThreadId,
+              run,
+              resumeDisposition,
+              fallbackTaskSummary,
             }),
-          deleteCheckpoint: canResetThreadCheckpoint(input.checkpointer)
-            ? (threadId) => input.checkpointer.deleteThread(threadId)
-            : undefined,
           startRootTask: (threadId, resumeInput) => controlPlane.startRootTask(threadId, resumeInput),
         },
         approvalRequestId,
@@ -692,21 +929,87 @@ async function createControlPlane(input: {
           saveTaskStatus: (task, status) => saveTaskStatus(input.stores, task, status),
           updateRunStatus,
           executeApprovedTool: (request) => toolRegistry.executeApproved(request),
-          getCheckpoint: (threadId) =>
-            input.checkpointer.getTuple({
-              configurable: { thread_id: threadId },
+          hasSuspension: async (runId) =>
+            (await input.stores.runStateStore.loadActiveSuspensionByRun(runId)) !== undefined,
+          buildCurrentResult: ({ threadId: targetThreadId, run, resumeDisposition, fallbackTaskSummary }) =>
+            buildCurrentControlPlaneResult({
+              threadId: targetThreadId,
+              run,
+              resumeDisposition,
+              fallbackTaskSummary,
             }),
-          deleteCheckpoint: canResetThreadCheckpoint(input.checkpointer)
-            ? (threadId) => input.checkpointer.deleteThread(threadId)
-            : undefined,
           startRootTask: (threadId, resumeInput) => controlPlane.startRootTask(threadId, resumeInput),
         },
         approvalRequestId,
       );
     },
 
+    async restartRun(threadId: string) {
+      const { run, task } = await resolveBlockedRecoveryRun(threadId);
+      await cancelPendingApprovalsForRun(threadId, run.runId);
+      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+        runId: run.runId,
+        reason: "restart_run replaced this recovery chain",
+      });
+      await input.stores.runStateStore.deleteActiveRunState(run.runId);
+      await saveTaskStatus(input.stores, task, "cancelled");
+      await updateRunStatus(run, "interrupted", {
+        activeTaskId: task.taskId,
+        blockingReason: undefined,
+        endedAt: new Date().toISOString(),
+        resultSummary: "Manual recovery resolved by restart_run",
+      });
+
+      return controlPlane.startRootTask(threadId, run.inputText ?? task.summary);
+    },
+
+    async resubmitIntent(threadId: string, content: string) {
+      const { run, task } = await resolveBlockedRecoveryRun(threadId);
+      await cancelPendingApprovalsForRun(threadId, run.runId);
+      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+        runId: run.runId,
+        reason: "resubmit_intent replaced this recovery chain",
+      });
+      await input.stores.runStateStore.deleteActiveRunState(run.runId);
+      await saveTaskStatus(input.stores, task, "cancelled");
+      await updateRunStatus(run, "interrupted", {
+        activeTaskId: task.taskId,
+        blockingReason: undefined,
+        endedAt: new Date().toISOString(),
+        resultSummary: "Manual recovery resolved by resubmit_intent",
+      });
+
+      return controlPlane.startRootTask(threadId, content);
+    },
+
+    async abandonRun(threadId: string) {
+      const { run, task } = await resolveBlockedRecoveryRun(threadId);
+      await cancelPendingApprovalsForRun(threadId, run.runId);
+      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
+        runId: run.runId,
+        reason: "abandon_run replaced this recovery chain",
+      });
+      await input.stores.runStateStore.deleteActiveRunState(run.runId);
+      const cancelledTask = await saveTaskStatus(input.stores, task, "cancelled");
+      const interruptedRun = await updateRunStatus(run, "interrupted", {
+        activeTaskId: cancelledTask.taskId,
+        blockingReason: undefined,
+        endedAt: new Date().toISOString(),
+        resultSummary: "Manual recovery resolved by abandon_run",
+      });
+
+      return buildCurrentControlPlaneResult({
+        threadId,
+        run: interruptedRun,
+        fallbackTaskSummary: cancelledTask.summary,
+      });
+    },
+
     async cancelThread(threadId: string) {
       return cancelActiveThread(threadId);
+    },
+    attachKernelEventPublisher(publisher) {
+      kernelEventPublisher = publisher;
     },
   };
   return controlPlane;
@@ -720,15 +1023,22 @@ export async function createAppContext(input: {
 }) {
   // 单个 runtime scope 的装配根。推荐阅读顺序：
   // config -> sqlite stores -> recovery -> model gateway -> control plane -> kernel。
-  const config = resolveConfig(input);
-  const { sqlite, stores, checkpointer } = await createAppPersistenceLayer({
+  const config = resolveConfig({
+    ...input,
+    allowMissingModel: true,
+  });
+  const { sqlite, stores } = await createAppPersistenceLayer({
     config,
     openSqlite: createSqlite,
     migrate: migrateSqlite,
     createStores,
     recoverUncertainExecutions,
-    createCheckpointer: createSqliteCheckpointer,
   });
+  await invalidateLegacyCheckpointThreads(sqlite as Database, stores, {
+    workspaceRoot: config.workspaceRoot,
+    projectId: config.projectId,
+  });
+  await stores.runStateStore.deleteExpiredAuditRecords(calculateRunStateAuditCutoff());
   const modelGateway = resolveAppModelGateway({
     config,
     modelGateway: input.modelGateway,
@@ -743,7 +1053,6 @@ export async function createAppContext(input: {
   } = await createAppServiceLayer({
     config,
     stores,
-    checkpointer,
     modelGateway,
     createNarrativeService: (currentStores) =>
       createThreadNarrativeService({
@@ -775,7 +1084,6 @@ export async function createAppContext(input: {
   async function close() {
     await closeAppContextResources({
       stores,
-      checkpointer: checkpointer as { close?: () => Promise<void> },
       sqlite,
     });
   }

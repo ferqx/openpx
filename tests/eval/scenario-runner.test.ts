@@ -33,6 +33,12 @@ describe("eval scenario runner", () => {
     expect(suiteResult.results.map((result) => result.scenarioId)).toEqual(
       expect.arrayContaining([
         "approval-approved-restart-idempotent",
+        "multi-package-happy-path",
+        "duplicate-approve-safe",
+        "concurrent-approve-safe",
+        "cancel-waiting-approval-path",
+        "version-mismatch-human-recovery",
+        "legacy-checkpoint-human-recovery",
         "rejection-no-executor-shortcut",
         "double-blocked-recovery",
         "restart-resume-lineage-stable",
@@ -99,6 +105,33 @@ describe("eval scenario runner", () => {
     expect(reviewItems[0]?.scenarioId).toBe("capability-happy-path-broken-expectation");
 
     await store.close();
+    await removeWithRetry(rootDir, { recursive: true, force: true });
+  });
+
+  test("runs newly added system-confidence deterministic scenarios", async () => {
+    const scenarios = coreEvalScenarios.filter((item) =>
+      [
+        "multi-package-happy-path",
+        "duplicate-approve-safe",
+        "concurrent-approve-safe",
+        "cancel-waiting-approval-path",
+        "version-mismatch-human-recovery",
+        "legacy-checkpoint-human-recovery",
+      ].includes(item.id),
+    );
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-eval-confidence-"));
+    const dataDir = path.join(rootDir, "openpx.db");
+
+    const suiteResult = await runScenarioSuite({
+      suiteId: "core-eval-suite",
+      scenarios,
+      rootDir,
+      dataDir,
+    });
+
+    expect(suiteResult.results).toHaveLength(6);
+    expect(suiteResult.results.every((result) => result.status === "passed")).toBe(true);
+
     await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 });

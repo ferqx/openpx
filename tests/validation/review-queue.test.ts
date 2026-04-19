@@ -80,6 +80,7 @@ function createScenarioVerdictRecord(): ValidationScenarioVerdictRecord {
       },
       verificationArtifacts: {},
       verdictExplanation: "failed because approval path drifted",
+      postRunAnalyzers: [],
       artifactPaths: {
         artifactDir: "/tmp/sandbox-a",
         evidenceJsonPath: "/tmp/sandbox-a/evidence.json",

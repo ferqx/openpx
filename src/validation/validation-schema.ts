@@ -5,7 +5,7 @@ export const validationPermissionModeSchema = z.enum(["guarded", "full_access"])
 export type ValidationPermissionMode = z.infer<typeof validationPermissionModeSchema>;
 
 /** validation 输出视图类型 */
-export const validationViewSchema = z.enum(["engineering", "product_gate"]);
+export const validationViewSchema = z.enum(["engineering", "product_gate", "scorecard"]);
 export type ValidationView = z.infer<typeof validationViewSchema>;
 
 /** validation suite 标识 */
@@ -218,8 +218,24 @@ export const validationArtifactPathsSchema = z.object({
   summaryJsonPath: z.string().min(1).optional(),
   engineeringReportPath: z.string().min(1).optional(),
   productGateReportPath: z.string().min(1).optional(),
+  replayJsonPath: z.string().min(1).optional(),
+  replayMarkdownPath: z.string().min(1).optional(),
+  failureJsonPath: z.string().min(1).optional(),
+  failureMarkdownPath: z.string().min(1).optional(),
+  truthDiffJsonPath: z.string().min(1).optional(),
+  diagnosticsJsonPath: z.string().min(1).optional(),
+  scorecardJsonPath: z.string().min(1).optional(),
+  scorecardMarkdownPath: z.string().min(1).optional(),
 }).strict();
 export type ValidationArtifactPaths = z.infer<typeof validationArtifactPathsSchema>;
+
+export const validationAnalyzerVerdictSchema = z.object({
+  analyzerId: z.enum(["replay", "failure_report", "truth_diff", "retention_gc", "event_consistency"]),
+  status: validationRunStatusSchema,
+  reason: z.string().min(1),
+  evidenceRefs: z.array(z.string().min(1)).min(1),
+}).strict();
+export type ValidationAnalyzerVerdict = z.infer<typeof validationAnalyzerVerdictSchema>;
 
 export const validationEvidenceBundleSchema = z.object({
   validationSuiteRunId: z.string().min(1).optional(),
@@ -234,6 +250,7 @@ export const validationEvidenceBundleSchema = z.object({
   backendRefs: validationBackendRefsSchema,
   verificationArtifacts: validationVerificationArtifactsSchema,
   verdictExplanation: z.string().min(1),
+  postRunAnalyzers: z.array(validationAnalyzerVerdictSchema).default([]),
   artifactPaths: validationArtifactPathsSchema.optional(),
 }).strict();
 export type ValidationEvidenceBundle = z.infer<typeof validationEvidenceBundleSchema>;
@@ -296,6 +313,28 @@ export const validationScenarioVerdictRecordSchema = z.object({
 }).strict();
 export type ValidationScenarioVerdictRecord = z.infer<typeof validationScenarioVerdictRecordSchema>;
 
+export const validationAnalyzerCoverageSchema = z.object({
+  replayCoverage: z.number().min(0).max(1),
+  failureReportCoverage: z.number().min(0).max(1),
+  truthDiffCoverage: z.number().min(0).max(1),
+  loopEventCoverage: z.number().min(0).max(1),
+}).strict();
+export type ValidationAnalyzerCoverage = z.infer<typeof validationAnalyzerCoverageSchema>;
+
+export const validationScorecardSchema = z.object({
+  generatedAt: z.string().min(1),
+  overallStatus: validationRunStatusSchema,
+  runtimeCorrectness: z.object({
+    coreScenarioSuccessRate: z.number().min(0).max(1),
+    approvalResumeSuccessRate: z.number().min(0).max(1),
+    cancelCorrectnessRate: z.number().min(0).max(1),
+    humanRecoveryCorrectnessRate: z.number().min(0).max(1),
+  }).strict(),
+  observabilityCoverage: validationAnalyzerCoverageSchema,
+  gate: validationReleaseGateSchema,
+}).strict();
+export type ValidationScorecard = z.infer<typeof validationScorecardSchema>;
+
 export const validationSuiteSummarySchema = z.object({
   validationSuiteRunId: z.string().min(1),
   status: validationRunStatusSchema,
@@ -305,6 +344,8 @@ export const validationSuiteSummarySchema = z.object({
   releaseGate: validationReleaseGateSchema,
   reviewQueueCount: z.number().int().nonnegative(),
   repairRecommendations: z.array(validationRepairRecommendationSchema),
+  analyzerCoverage: validationAnalyzerCoverageSchema.optional(),
+  scorecard: validationScorecardSchema.optional(),
   artifactPaths: validationArtifactPathsSchema.optional(),
 }).strict();
 export type ValidationSuiteSummary = z.infer<typeof validationSuiteSummarySchema>;

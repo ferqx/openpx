@@ -97,7 +97,7 @@ describe("real-eval promotion summaries", () => {
       expect.arrayContaining([
         "approval.planner.quoted_path_patch_placeholder",
         "approval.planner.deletion_patch_wording",
-        "approval.runtime.graph_resume_after_approval",
+        "approval.runtime.run_loop_resume_after_approval",
         "approval.runtime.recommendation_bypass_for_scoped_delete",
       ]),
     );

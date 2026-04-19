@@ -47,7 +47,7 @@ describe("applySessionControlPlaneResult", () => {
             status: "pending",
           },
         ],
-        summary: "Need approval",
+        pauseSummary: "Need approval",
         pendingToolCallId: "tool-apply",
         pendingToolName: "apply_patch",
       },
@@ -59,7 +59,7 @@ describe("applySessionControlPlaneResult", () => {
 
     expect(savedThreads).toHaveLength(1);
     expect(nextThread.recoveryFacts?.blocking?.kind).toBe("waiting_approval");
-    expect(nextThread.recoveryFacts?.latestDurableAnswer?.summary).toBe("Need approval");
+    expect(nextThread.recoveryFacts?.latestDurableAnswer).toBeUndefined();
     expect(nextThread.recoveryFacts?.conversationHistory?.at(-1)?.content).toBe("Need approval");
     expect(narrativeService.processTaskUpdate).toHaveBeenCalled();
   });

@@ -1,14 +1,14 @@
-import { interrupt } from "@langchain/langgraph";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createAppContext } from "../app/bootstrap";
 import { createApprovalRequest } from "../domain/approval";
 import { createRun, transitionRun } from "../domain/run";
 import { createThread } from "../domain/thread";
-import { createSqliteCheckpointer } from "../persistence/sqlite/sqlite-checkpointer";
-import { createRootGraph } from "../runtime/graph/root/graph";
+import { createApprovalSuspension } from "../harness/core/run-loop/approval-suspension";
 import type { ModelGateway } from "../infra/model-gateway";
 import type { EvalScenario } from "./eval-schema";
+import { createSqlite } from "../persistence/sqlite/sqlite-client";
+import { migrateSqlite } from "../persistence/sqlite/sqlite-migrator";
 
 /** 核心 deterministic eval suite 标识 */
 export const CORE_EVAL_SUITE_ID = "core-eval-suite";
@@ -28,7 +28,7 @@ function createHappyPathGateway(): ModelGateway {
       return { summary: "verified", isValid: true };
     },
     async respond() {
-      return { summary: "responded" };
+      return { summary: "plan" };
     },
     onStatusChange() {
       return createNoopHandlers();
@@ -66,7 +66,7 @@ function createApprovalGateway(): ModelGateway {
       return { summary: "verified", isValid: true };
     },
     async respond() {
-      return { summary: "responded" };
+      return { summary: "Deleted approved.txt" };
     },
     onStatusChange() {
       return createNoopHandlers();
@@ -87,7 +87,52 @@ function createRejectionGateway(): ModelGateway {
       return { summary: "verified", isValid: true };
     },
     async respond() {
-      return { summary: "responded" };
+      return { summary: "continue safely without deleting files" };
+    },
+    onStatusChange() {
+      return createNoopHandlers();
+    },
+    onEvent() {
+      return createNoopHandlers();
+    },
+  };
+}
+
+/** 多 work package 场景专用 gateway */
+function createMultiPackageGateway(): ModelGateway {
+  return {
+    async plan() {
+      return {
+        summary: "plan two work packages",
+        plannerResult: {
+          workPackages: [
+            {
+              id: "pkg_one",
+              objective: "summarize package one",
+              allowedTools: ["read_file"],
+              inputRefs: ["thread:goal"],
+              expectedArtifacts: ["summary:pkg_one"],
+            },
+            {
+              id: "pkg_two",
+              objective: "summarize package two",
+              allowedTools: ["read_file"],
+              inputRefs: ["thread:goal"],
+              expectedArtifacts: ["summary:pkg_two"],
+            },
+          ],
+          acceptanceCriteria: ["both work packages are completed"],
+          riskFlags: [],
+          approvalRequiredActions: [],
+          verificationScope: ["planner state"],
+        },
+      };
+    },
+    async verify() {
+      return { summary: "verified", isValid: true };
+    },
+    async respond() {
+      return { summary: "Completed multi-package cleanup" };
     },
     onStatusChange() {
       return createNoopHandlers();
@@ -134,10 +179,44 @@ export const coreEvalScenarios: EvalScenario[] = [
     },
   },
   {
+    id: "multi-package-happy-path",
+    version: 1,
+    family: "happy-path",
+    summary: "multi work package task completes through the full run-loop",
+    setup: "planner emits two non-approval work packages",
+    steps: ["create thread", "start root task", "complete both work packages", "collect runtime state"],
+    expectedControlSemantics: {
+      requiresApproval: false,
+      expectedDecision: "none",
+      expectedGraphResume: false,
+      expectedRecoveryMode: "none",
+    },
+    expectedOutcome: {
+      terminalRunStatus: "completed",
+      terminalTaskStatus: "completed",
+      expectedSummaryIncludes: ["Completed multi-package cleanup"],
+      expectedApprovalCount: 0,
+      expectedPendingApprovalCount: 0,
+      expectedToolCallCount: 0,
+    },
+    createModelGateway() {
+      return createMultiPackageGateway();
+    },
+    async run({ ctx, workspaceRoot }) {
+      const thread = createThread("thread_multi_package_path", workspaceRoot, ctx.config.projectId);
+      await ctx.stores.threadStore.save(thread);
+      const result = await ctx.controlPlane.startRootTask(thread.threadId, "complete multi package cleanup");
+      return {
+        threadId: thread.threadId,
+        finalResult: result,
+      };
+    },
+  },
+  {
     id: "approval-required-then-approved",
     version: 1,
     family: "approval-required",
-    summary: "approval-required task resumes through the graph after approval",
+    summary: "approval-required task resumes through the run-loop after approval",
     setup: "workspace contains approved.txt and planner emits a delete work package",
     steps: ["create thread", "start root task", "pause on approval", "approve request"],
     expectedControlSemantics: {
@@ -180,12 +259,12 @@ export const coreEvalScenarios: EvalScenario[] = [
     },
   },
   {
-    id: "rejection-then-graph-replan",
+    id: "rejection-then-run-loop-replan",
     version: 1,
     family: "reject-and-replan",
     summary: "rejected approval routes back through planning with a deterministic reason",
-    setup: "checkpoint-backed run is waiting on a delete approval",
-    steps: ["seed checkpoint", "seed waiting approval", "reject request", "collect replanned run"],
+    setup: "run-loop state is waiting on a delete approval",
+    steps: ["seed run-loop suspension", "seed waiting approval", "reject request", "collect replanned run"],
     expectedControlSemantics: {
       requiresApproval: true,
       expectedDecision: "rejected",
@@ -208,38 +287,13 @@ export const coreEvalScenarios: EvalScenario[] = [
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, "export const legacyDelete = true;\n");
 
-      const checkpointSaver = createSqliteCheckpointer(dataDir);
-      const checkpointGraph = await createRootGraph({
-        checkpointer: checkpointSaver,
-        planner: async () => ({ summary: "planned", mode: "plan" }),
-        executor: async () => {
-          interrupt({
-            kind: "approval-required",
-            mode: "execute",
-            summary: "Approval required before deleting src/legacy-delete.ts",
-          });
-          return { summary: "unreachable", mode: "execute" };
-        },
-        verifier: async () => ({ summary: "verified", mode: "verify", isValid: true }),
-      });
-
-      await checkpointGraph.invoke(
-        {
-          input: "continue",
-          workPackages: [
-            {
-              id: "pkg_delete",
-              objective: "delete src/legacy-delete.ts",
-              allowedTools: ["apply_patch"],
-              inputRefs: ["thread:goal", "file:src/legacy-delete.ts"],
-              expectedArtifacts: ["patch:src/legacy-delete.ts"],
-            },
-          ],
-          currentWorkPackageId: "pkg_delete",
-        },
-        { configurable: { thread_id: "thread_reject_path", task_id: "task_reject_path" } },
-      );
-      await (checkpointSaver as { close?: () => Promise<void> }).close?.();
+      const deletePackage = {
+        id: "pkg_delete",
+        objective: "delete src/legacy-delete.ts",
+        allowedTools: ["apply_patch"],
+        inputRefs: ["thread:goal", "file:src/legacy-delete.ts"],
+        expectedArtifacts: ["patch:src/legacy-delete.ts"],
+      };
 
       const thread = createThread("thread_reject_path", workspaceRoot, ctx.config.projectId);
       await ctx.stores.threadStore.save(thread);
@@ -296,6 +350,33 @@ export const coreEvalScenarios: EvalScenario[] = [
           },
           summary: "apply_patch delete_file src/legacy-delete.ts",
           risk: "apply_patch.delete_file",
+        }),
+      );
+      await ctx.stores.runStateStore.saveState({
+        stateVersion: 1,
+        engineVersion: "run-loop-v1",
+        threadId: thread.threadId,
+        runId: run.runId,
+        taskId: "task_reject_path",
+        input: "reject patch",
+        nextStep: "waiting_approval",
+        currentWorkPackageId: "pkg_delete",
+        workPackages: [deletePackage],
+        artifacts: [],
+        latestArtifacts: [],
+        pendingApproval: {
+          summary: "Approval required before deleting src/legacy-delete.ts",
+          approvalRequestId: "approval_reject_path",
+        },
+      });
+      await ctx.stores.runStateStore.saveSuspension(
+        createApprovalSuspension({
+          threadId: thread.threadId,
+          runId: run.runId,
+          taskId: "task_reject_path",
+          step: "execute",
+          summary: "Approval required before deleting src/legacy-delete.ts",
+          approvalRequestId: "approval_reject_path",
         }),
       );
 
@@ -446,12 +527,124 @@ export const coreEvalScenarios: EvalScenario[] = [
     },
   },
   {
+    id: "duplicate-approve-safe",
+    version: 1,
+    family: "approval-required",
+    summary: "duplicate approve converges to one completed run without duplicate side effects",
+    setup: "approval-required delete is approved twice sequentially",
+    steps: ["create thread", "pause on approval", "approve request twice", "collect runtime state"],
+    expectedControlSemantics: {
+      requiresApproval: true,
+      expectedDecision: "approved",
+      expectedGraphResume: true,
+      expectedRecoveryMode: "none",
+    },
+    expectedOutcome: {
+      terminalRunStatus: "completed",
+      terminalTaskStatus: "completed",
+      expectedSummaryIncludes: ["Deleted approved.txt"],
+      expectedApprovalCount: 1,
+      expectedPendingApprovalCount: 0,
+      expectedToolCallCount: 1,
+    },
+    createModelGateway() {
+      return createApprovalGateway();
+    },
+    async run({ ctx, workspaceRoot }) {
+      const filePath = path.join(workspaceRoot, "approved.txt");
+      await fs.mkdir(workspaceRoot, { recursive: true });
+      await fs.writeFile(filePath, "approved\n");
+
+      const thread = createThread("thread_duplicate_approve_path", workspaceRoot, ctx.config.projectId);
+      await ctx.stores.threadStore.save(thread);
+
+      const blocked = await ctx.controlPlane.startRootTask(thread.threadId, "clean up approved artifact");
+      const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+      if (!approvalRequestId) {
+        throw new Error("approval request was not created for duplicate approve scenario");
+      }
+
+      const first = await ctx.controlPlane.approveRequest(approvalRequestId);
+      const second = await ctx.controlPlane.approveRequest(approvalRequestId);
+      const ledgerEntries = await ctx.stores.executionLedger.listByThread(thread.threadId);
+      if (second.resumeDisposition !== "already_resolved") {
+        throw new Error("duplicate approve did not converge to already_resolved");
+      }
+      if (ledgerEntries.filter((entry) => entry.status === "completed").length !== 1) {
+        throw new Error("duplicate approve executed side effects more than once");
+      }
+
+      return {
+        threadId: thread.threadId,
+        initialResult: blocked,
+        finalResult: first,
+      };
+    },
+  },
+  {
+    id: "concurrent-approve-safe",
+    version: 1,
+    family: "approval-required",
+    summary: "concurrent approve requests converge without duplicating side effects",
+    setup: "approval-required delete is approved simultaneously from two surfaces",
+    steps: ["create thread", "pause on approval", "approve request concurrently", "collect runtime state"],
+    expectedControlSemantics: {
+      requiresApproval: true,
+      expectedDecision: "approved",
+      expectedGraphResume: true,
+      expectedRecoveryMode: "none",
+    },
+    expectedOutcome: {
+      terminalRunStatus: "completed",
+      terminalTaskStatus: "completed",
+      expectedSummaryIncludes: ["Deleted approved.txt"],
+      expectedApprovalCount: 1,
+      expectedPendingApprovalCount: 0,
+      expectedToolCallCount: 1,
+    },
+    createModelGateway() {
+      return createApprovalGateway();
+    },
+    async run({ ctx, workspaceRoot }) {
+      const filePath = path.join(workspaceRoot, "approved.txt");
+      await fs.mkdir(workspaceRoot, { recursive: true });
+      await fs.writeFile(filePath, "approved\n");
+
+      const thread = createThread("thread_concurrent_approve_path", workspaceRoot, ctx.config.projectId);
+      await ctx.stores.threadStore.save(thread);
+
+      const blocked = await ctx.controlPlane.startRootTask(thread.threadId, "clean up approved artifact");
+      const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+      if (!approvalRequestId) {
+        throw new Error("approval request was not created for concurrent approve scenario");
+      }
+
+      const results = await Promise.all([
+        ctx.controlPlane.approveRequest(approvalRequestId),
+        ctx.controlPlane.approveRequest(approvalRequestId),
+      ]);
+      const ledgerEntries = await ctx.stores.executionLedger.listByThread(thread.threadId);
+      if (ledgerEntries.filter((entry) => entry.status === "completed").length !== 1) {
+        throw new Error("concurrent approve executed side effects more than once");
+      }
+      if (!results.some((result) => result.resumeDisposition === "already_resolved" || result.status === "completed")) {
+        throw new Error("concurrent approve did not return stable converge semantics");
+      }
+
+      return {
+        threadId: thread.threadId,
+        initialResult: blocked,
+        finalResult: results[0],
+      };
+    },
+  },
+  {
     id: "rejection-no-executor-shortcut",
     version: 1,
     family: "reject-and-replan",
     summary: "rejected approvals reroute through planning without executor side effects",
-    setup: "checkpoint-backed rejection flow includes a planned ledger entry but must not produce executed side effects",
-    steps: ["seed checkpoint", "seed waiting approval", "seed planned ledger", "reject request", "collect replanned run"],
+    setup: "run-loop rejection flow includes a planned ledger entry but must not produce executed side effects",
+    steps: ["seed run-loop suspension", "seed waiting approval", "seed planned ledger", "reject request", "collect replanned run"],
     expectedControlSemantics: {
       requiresApproval: true,
       expectedDecision: "rejected",
@@ -474,38 +667,13 @@ export const coreEvalScenarios: EvalScenario[] = [
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, "export const shortcutRisk = true;\n");
 
-      const checkpointSaver = createSqliteCheckpointer(dataDir);
-      const checkpointGraph = await createRootGraph({
-        checkpointer: checkpointSaver,
-        planner: async () => ({ summary: "planned", mode: "plan" }),
-        executor: async () => {
-          interrupt({
-            kind: "approval-required",
-            mode: "execute",
-            summary: "Approval required before deleting src/shortcut-risk.ts",
-          });
-          return { summary: "unreachable", mode: "execute" };
-        },
-        verifier: async () => ({ summary: "verified", mode: "verify", isValid: true }),
-      });
-
-      await checkpointGraph.invoke(
-        {
-          input: "continue",
-          workPackages: [
-            {
-              id: "pkg_delete",
-              objective: "delete src/shortcut-risk.ts",
-              allowedTools: ["apply_patch"],
-              inputRefs: ["thread:goal", "file:src/shortcut-risk.ts"],
-              expectedArtifacts: ["patch:src/shortcut-risk.ts"],
-            },
-          ],
-          currentWorkPackageId: "pkg_delete",
-        },
-        { configurable: { thread_id: "thread_reject_shortcut_path", task_id: "task_reject_shortcut" } },
-      );
-      await (checkpointSaver as { close?: () => Promise<void> }).close?.();
+      const deletePackage = {
+        id: "pkg_delete",
+        objective: "delete src/shortcut-risk.ts",
+        allowedTools: ["apply_patch"],
+        inputRefs: ["thread:goal", "file:src/shortcut-risk.ts"],
+        expectedArtifacts: ["patch:src/shortcut-risk.ts"],
+      };
 
       const thread = createThread("thread_reject_shortcut_path", workspaceRoot, ctx.config.projectId);
       await ctx.stores.threadStore.save(thread);
@@ -562,6 +730,33 @@ export const coreEvalScenarios: EvalScenario[] = [
           },
           summary: "apply_patch delete_file src/shortcut-risk.ts",
           risk: "apply_patch.delete_file",
+        }),
+      );
+      await ctx.stores.runStateStore.saveState({
+        stateVersion: 1,
+        engineVersion: "run-loop-v1",
+        threadId: thread.threadId,
+        runId: run.runId,
+        taskId: "task_reject_shortcut",
+        input: "reject patch",
+        nextStep: "waiting_approval",
+        currentWorkPackageId: "pkg_delete",
+        workPackages: [deletePackage],
+        artifacts: [],
+        latestArtifacts: [],
+        pendingApproval: {
+          summary: "Approval required before deleting src/shortcut-risk.ts",
+          approvalRequestId: "approval_reject_shortcut",
+        },
+      });
+      await ctx.stores.runStateStore.saveSuspension(
+        createApprovalSuspension({
+          threadId: thread.threadId,
+          runId: run.runId,
+          taskId: "task_reject_shortcut",
+          step: "execute",
+          summary: "Approval required before deleting src/shortcut-risk.ts",
+          approvalRequestId: "approval_reject_shortcut",
         }),
       );
       await ctx.stores.executionLedger.save({
@@ -717,6 +912,192 @@ export const coreEvalScenarios: EvalScenario[] = [
     },
   },
   {
+    id: "cancel-waiting-approval-path",
+    version: 1,
+    family: "recovery-path",
+    summary: "cancel while waiting approval interrupts the run and invalidates old approval recovery",
+    setup: "approval-required delete is cancelled before approval is resolved",
+    steps: ["create thread", "pause on approval", "cancel run", "attempt stale approve", "collect runtime state"],
+    expectedControlSemantics: {
+      requiresApproval: true,
+      expectedDecision: "none",
+      expectedGraphResume: false,
+      expectedRecoveryMode: "none",
+    },
+    expectedOutcome: {
+      terminalRunStatus: "interrupted",
+      terminalTaskStatus: "cancelled",
+      expectedSummaryIncludes: ["Interrupted from TUI"],
+      expectedApprovalCount: 1,
+      expectedPendingApprovalCount: 0,
+      expectedToolCallCount: 0,
+    },
+    createModelGateway() {
+      return createApprovalGateway();
+    },
+    async run({ ctx, workspaceRoot }) {
+      const filePath = path.join(workspaceRoot, "approved.txt");
+      await fs.mkdir(workspaceRoot, { recursive: true });
+      await fs.writeFile(filePath, "approved\n");
+
+      const thread = createThread("thread_cancel_approval_path", workspaceRoot, ctx.config.projectId);
+      await ctx.stores.threadStore.save(thread);
+
+      const blocked = await ctx.controlPlane.startRootTask(thread.threadId, "clean up approved artifact");
+      const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+      if (!approvalRequestId) {
+        throw new Error("approval request was not created for cancel waiting approval scenario");
+      }
+
+      const cancelled = await ctx.controlPlane.cancelThread(thread.threadId);
+      const afterApprove = await ctx.controlPlane.approveRequest(approvalRequestId);
+      if (!cancelled) {
+        throw new Error("cancelThread returned false for waiting approval scenario");
+      }
+      if (afterApprove.resumeDisposition !== "invalidated") {
+        throw new Error("cancelled approval was still resumable");
+      }
+
+      return {
+        threadId: thread.threadId,
+        initialResult: blocked,
+        finalResult: afterApprove,
+      };
+    },
+  },
+  {
+    id: "version-mismatch-human-recovery",
+    version: 1,
+    family: "recovery-path",
+    summary: "state version mismatch downgrades approval resume into human recovery",
+    setup: "run-loop state carries an incompatible engine/state version at approval resume time",
+    steps: ["seed waiting approval run", "seed mismatched run-loop state", "approve request", "collect blocked recovery state"],
+    expectedControlSemantics: {
+      requiresApproval: true,
+      expectedDecision: "approved",
+      expectedGraphResume: false,
+      expectedRecoveryMode: "human_recovery",
+    },
+    expectedOutcome: {
+      terminalRunStatus: "blocked",
+      terminalTaskStatus: "blocked",
+      expectedSummaryIncludes: [],
+      expectedApprovalCount: 1,
+      expectedPendingApprovalCount: 0,
+      expectedToolCallCount: 0,
+    },
+    createModelGateway() {
+      return createApprovalGateway();
+    },
+    async run({ ctx, workspaceRoot }) {
+      const filePath = path.join(workspaceRoot, "src", "version-mismatch.ts");
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, "export const versionMismatch = true;\n");
+
+      const thread = createThread("thread_version_mismatch_path", workspaceRoot, ctx.config.projectId);
+      await ctx.stores.threadStore.save(thread);
+
+      const run = transitionRun(
+        transitionRun(
+          createRun({
+            runId: "run_version_mismatch",
+            threadId: thread.threadId,
+            trigger: "approval_resume",
+            inputText: "resume mismatched run-loop state",
+          }),
+          "running",
+        ),
+        "waiting_approval",
+      );
+
+      await ctx.stores.runStore.save({
+        ...run,
+        activeTaskId: "task_version_mismatch",
+        blockingReason: {
+          kind: "waiting_approval",
+          message: "apply_patch delete_file src/version-mismatch.ts",
+        },
+      });
+      await ctx.stores.taskStore.save({
+        taskId: "task_version_mismatch",
+        threadId: thread.threadId,
+        runId: run.runId,
+        summary: "Delete mismatched file after approval",
+        status: "blocked",
+        blockingReason: {
+          kind: "waiting_approval",
+          message: "apply_patch delete_file src/version-mismatch.ts",
+        },
+      });
+      await ctx.stores.approvalStore.save(
+        createApprovalRequest({
+          approvalRequestId: "approval_version_mismatch",
+          threadId: thread.threadId,
+          runId: run.runId,
+          taskId: "task_version_mismatch",
+          toolCallId: "task_version_mismatch:apply_patch",
+          toolRequest: {
+            toolCallId: "task_version_mismatch:apply_patch",
+            threadId: thread.threadId,
+            runId: run.runId,
+            taskId: "task_version_mismatch",
+            toolName: "apply_patch",
+            args: {},
+            action: "delete_file",
+            path: filePath,
+            changedFiles: 1,
+          },
+          summary: "apply_patch delete_file src/version-mismatch.ts",
+          risk: "apply_patch.delete_file",
+        }),
+      );
+      await ctx.stores.runStateStore.saveState({
+        stateVersion: 99,
+        engineVersion: "run-loop-v99",
+        threadId: thread.threadId,
+        runId: run.runId,
+        taskId: "task_version_mismatch",
+        input: "resume mismatched run-loop state",
+        nextStep: "waiting_approval",
+        currentWorkPackageId: "pkg_delete",
+        workPackages: [
+          {
+            id: "pkg_delete",
+            objective: "delete src/version-mismatch.ts",
+            allowedTools: ["apply_patch"],
+            inputRefs: ["thread:goal"],
+            expectedArtifacts: ["patch:src/version-mismatch.ts"],
+          },
+        ],
+        artifacts: [],
+        latestArtifacts: [],
+        pendingApproval: {
+          summary: "Approval required before deleting src/version-mismatch.ts",
+          approvalRequestId: "approval_version_mismatch",
+        },
+      });
+      await ctx.stores.runStateStore.saveSuspension(
+        createApprovalSuspension({
+          threadId: thread.threadId,
+          runId: run.runId,
+          taskId: "task_version_mismatch",
+          step: "execute",
+          summary: "Approval required before deleting src/version-mismatch.ts",
+          approvalRequestId: "approval_version_mismatch",
+        }),
+      );
+
+      const result = await ctx.controlPlane.approveRequest("approval_version_mismatch");
+      if (result.resumeDisposition !== "not_resumable") {
+        throw new Error("version mismatch resume did not return not_resumable");
+      }
+      return {
+        threadId: thread.threadId,
+        finalResult: result,
+      };
+    },
+  },
+  {
     id: "restart-resume-lineage-stable",
     version: 1,
     family: "recovery-path",
@@ -785,6 +1166,115 @@ export const coreEvalScenarios: EvalScenario[] = [
 
       return {
         threadId: thread.threadId,
+      };
+    },
+  },
+  {
+    id: "legacy-checkpoint-human-recovery",
+    version: 1,
+    family: "recovery-path",
+    summary: "legacy checkpoint invalidation blocks the run into human recovery on the next boot",
+    setup: "legacy graph checkpoint rows exist for a waiting-approval run before runtime boot",
+    steps: ["seed run/task/checkpoint", "restart app context", "collect blocked recovery state"],
+    expectedControlSemantics: {
+      requiresApproval: false,
+      expectedDecision: "none",
+      expectedGraphResume: false,
+      expectedRecoveryMode: "human_recovery",
+    },
+    expectedOutcome: {
+      terminalRunStatus: "blocked",
+      terminalTaskStatus: "blocked",
+      expectedSummaryIncludes: [],
+      expectedApprovalCount: 0,
+      expectedPendingApprovalCount: 0,
+      expectedToolCallCount: 0,
+    },
+    createModelGateway() {
+      return createHappyPathGateway();
+    },
+    async run({ ctx, workspaceRoot, dataDir }) {
+      const filePath = path.join(workspaceRoot, "src", "legacy-delete.ts");
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, "export const legacyDelete = true;\n");
+
+      const thread = createThread("thread_legacy_checkpoint_path", workspaceRoot, ctx.config.projectId);
+      await ctx.stores.threadStore.save(thread);
+      const run = transitionRun(
+        transitionRun(
+          createRun({
+            runId: "run_legacy_checkpoint",
+            threadId: thread.threadId,
+            trigger: "approval_resume",
+            inputText: "legacy checkpoint run",
+          }),
+          "running",
+        ),
+        "waiting_approval",
+      );
+      await ctx.stores.runStore.save({
+        ...run,
+        activeTaskId: "task_legacy_checkpoint",
+        blockingReason: {
+          kind: "waiting_approval",
+          message: "legacy checkpoint blocked state",
+        },
+      });
+      await ctx.stores.taskStore.save({
+        taskId: "task_legacy_checkpoint",
+        threadId: thread.threadId,
+        runId: run.runId,
+        summary: "Delete legacy file",
+        status: "blocked",
+        blockingReason: {
+          kind: "waiting_approval",
+          message: "legacy checkpoint blocked state",
+        },
+      });
+
+      const seedDb = createSqlite(dataDir);
+      migrateSqlite(seedDb);
+      seedDb.run(`
+        CREATE TABLE IF NOT EXISTS checkpoints (
+          thread_id TEXT NOT NULL,
+          checkpoint_ns TEXT NOT NULL DEFAULT '',
+          checkpoint_id TEXT NOT NULL,
+          parent_checkpoint_id TEXT,
+          type TEXT,
+          checkpoint BLOB,
+          metadata BLOB,
+          PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
+        )
+      `);
+      seedDb.run(`
+        CREATE TABLE IF NOT EXISTS writes (
+          thread_id TEXT NOT NULL,
+          checkpoint_ns TEXT NOT NULL DEFAULT '',
+          checkpoint_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          idx INTEGER NOT NULL,
+          channel TEXT NOT NULL,
+          type TEXT,
+          value BLOB,
+          PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+        )
+      `);
+      seedDb.run(
+        `INSERT INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata)
+         VALUES (?, '', ?, NULL, 'json', x'7B7D', x'7B7D')`,
+        [thread.threadId, "checkpoint_legacy_1"],
+      );
+      seedDb.close();
+
+      const recoveredContext = await createAppContext({
+        workspaceRoot,
+        dataDir,
+        modelGateway: createHappyPathGateway(),
+      });
+
+      return {
+        threadId: thread.threadId,
+        postRunContext: recoveredContext,
       };
     },
   },

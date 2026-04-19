@@ -31,6 +31,13 @@ TUI 只是默认 surface（交互表面），而不是产品主轴本身。
 
 `package.json -> src/app/main.ts -> src/runtime/service/runtime-daemon.ts -> src/harness/server/harness-session-registry.ts -> harness core / protocol / app server -> surfaces`
 
+在当前 harness-first 语义下，最终回答与中间阶段摘要必须分层：
+
+- responder 负责生成最终回答（final response）
+- planner / executor / verifier / approval / recovery 只产生各自阶段数据
+- durable answer 只回写 final response
+- pause、verification、execution 摘要只属于控制面与 surface 投影视图
+
 这条主轴的含义是：
 
 - `main.ts`
@@ -79,10 +86,47 @@ TUI 只是默认 surface（交互表面），而不是产品主轴本身。
   控制面（control plane），负责审批、工具策略、任务生命周期与 worker 协调
 - `src/domain/`
   核心实体与生命周期规则
+- `src/infra/`
+  外部模型与 provider 接入支撑。当前收敛方向是 OpenAI-compatible facade + provider profile + policy（策略）层，而不是 provider-native adapter zoo
+- `src/config/`
+  正式配置子系统，负责多层 JSONC 读取、merge、校验、标准化与 capability 目录发现
 - `src/persistence/`
   SQLite 与持久化端口实现
 - `src/shared/`
-  配置、ID 生成器与小型共享原语
+  runtime-facing 配置适配器、ID 生成器与小型共享原语
+
+### 模型层边界
+
+当前模型层的正式目标不是“支持尽可能多的原生协议”，而是：
+
+- 让 `ModelGateway` 成为 OpenAI-compatible facade（兼容 OpenAI Chat 的门面层）
+- 让 provider 差异收敛到 profile / policy / transport
+- 让 run-loop、control plane 和 surface 不直接接触 provider SDK 细节
+
+在这个边界下：
+
+- provider profile 描述 `baseURL`、`apiKey`、默认模型、小模型与能力差异
+- transport client 只负责 OpenAI Chat Completions 调用、streaming、timeout / abort
+- telemetry / fallback / retry / timeout 都走正式控制面，而不是散落在 surface 或 run-loop 里
+
+### 配置系统边界
+
+OpenPX v1 的正式配置边界是：
+
+- `src/config/*`
+  多层 JSONC 配置系统，负责路径发现、merge、schema、校验和目录索引
+- `src/shared/config.ts`
+  runtime-facing 适配层，把 `ResolvedOpenPXConfig` 投影成当前 `AppConfig`
+
+当前三层路径固定为：
+
+- user：
+  Linux / macOS：`~/.openpx/openpx.jsonc`
+  Windows：`%USERPROFILE%\\.openpx\\openpx.jsonc`
+- `<workspaceRoot>/.openpx/openpx.jsonc`
+- `<workspaceRoot>/.openpx/settings.local.jsonc`
+
+TUI settings 已经硬迁移到主配置里的 `ui.tui`，不再维护独立的 `.openpx/config.json` 体系。
 
 ### 次要工具通道
 

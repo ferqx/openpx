@@ -1,12 +1,12 @@
-import { describe, expect, test } from "bun:test";
-import { interrupt } from "@langchain/langgraph";
+﻿import { describe, expect, test } from "bun:test";
 import { createAppContext } from "../../src/app/bootstrap";
 import { createThread } from "../../src/domain/thread";
 import { createApprovalRequest } from "../../src/domain/approval";
 import { createRun, transitionRun } from "../../src/domain/run";
 import { createControlTask } from "../../src/control/tasks/task-types";
-import { createSqliteCheckpointer } from "../../src/persistence/sqlite/sqlite-checkpointer";
-import { createRootGraph } from "../../src/runtime/graph/root/graph";
+import { createSqlite } from "../../src/persistence/sqlite/sqlite-client";
+import { migrateSqlite } from "../../src/persistence/sqlite/sqlite-migrator";
+import { removeWithRetry } from "../helpers/fs-cleanup";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -47,7 +47,7 @@ describe("createAppContext", () => {
     });
 
     expect(ctx.config.workspaceRoot).toBe(path.resolve("/tmp/demo-workspace"));
-    expect(ctx.config.checkpointConnString).toBe(":memory:");
+    expect(ctx.config.dataDir).toBe(":memory:");
     expect(ctx.config.model).toBeDefined();
     expect(typeof ctx.kernel.handleCommand).toBe("function");
 
@@ -89,7 +89,7 @@ describe("createAppContext", () => {
 
     await closeAppContext(first);
     await closeAppContext(second);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
   test("persists a run lifecycle record when starting root work", async () => {
@@ -118,7 +118,7 @@ describe("createAppContext", () => {
     expect(runs[0]?.inputText).toBe("what is my name?");
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
   test("advances an existing run when an approval is approved", async () => {
@@ -199,17 +199,18 @@ describe("createAppContext", () => {
     expect(updatedRun?.runId).toBe(run.runId);
     expect(updatedRun?.status).toBe("completed");
     expect(updatedRun?.activeTaskId).toBe("task-approve");
-    expect(result.summary).toBe("apply_patch create_file approved.txt");
+    expect(result.finalResponse).toBe("apply_patch create_file approved.txt");
+    expect(result.executionSummary).toBe("apply_patch create_file approved.txt");
     expect(ledgerEntries).toHaveLength(1);
     expect(ledgerEntries[0]?.runId).toBe(run.runId);
     expect(ledgerEntries[0]?.toolName).toBe("apply_patch");
     expect(await Bun.file(filePath).text()).toBe("approved\n");
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
-  test("resumes approved delete execution through the graph and returns tool metadata", async () => {
+  test("resumes approved delete execution through the run-loop and returns tool metadata", async () => {
     const workspaceRoot = path.join(os.tmpdir(), `openpx-approve-resume-${Date.now()}`);
     const dataDir = path.join(workspaceRoot, "openpx.db");
     const filePath = path.join(workspaceRoot, "approved.txt");
@@ -266,7 +267,7 @@ describe("createAppContext", () => {
     const interruptedRun = await ctx.stores.runStore.getLatestByThread(thread.threadId);
 
     expect(blocked.status).toBe("waiting_approval");
-    expect(blocked.summary).toContain("Approval required before deleting approved.txt");
+    expect(blocked.pauseSummary).toContain("Approval required before deleting approved.txt");
     expect(approvalRequestId).toBeDefined();
     expect(interruptedRun?.status).toBe("waiting_approval");
 
@@ -275,7 +276,8 @@ describe("createAppContext", () => {
     const ledgerEntries = await ctx.stores.executionLedger.listByThread(thread.threadId);
 
     expect(resumed.status).toBe("completed");
-    expect(resumed.summary).toBe("Deleted approved.txt");
+    expect(resumed.finalResponse).toBe("responded");
+    expect(resumed.executionSummary).toBe("Deleted approved.txt");
     expect(resumed.lastCompletedToolCallId).toBe(`${blocked.task.taskId}:apply_patch`);
     expect(resumed.lastCompletedToolName).toBe("apply_patch");
     expect(resumed.approvals).toHaveLength(0);
@@ -284,53 +286,37 @@ describe("createAppContext", () => {
     expect(await Bun.file(filePath).exists()).toBe(false);
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
-  test("routes graph-backed rejections back through planning with a synthesized reason", async () => {
-    const workspaceRoot = path.join(os.tmpdir(), `openpx-reject-run-${Date.now()}`);
+  test("?? approve ?? already_resolved??????????", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-approve-idempotent-${Date.now()}`);
     const dataDir = path.join(workspaceRoot, "openpx.db");
-    const filePath = path.join(workspaceRoot, "src", "legacy-delete.ts");
+    const filePath = path.join(workspaceRoot, "approved.txt");
 
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, "export const legacyDelete = true;\n");
-
-    const checkpointSaver = createSqliteCheckpointer(dataDir);
-    const checkpointGraph = await createRootGraph({
-      checkpointer: checkpointSaver,
-      planner: async () => ({ summary: "planned", mode: "plan" }),
-      executor: async () => {
-        interrupt({
-          kind: "approval-required",
-          mode: "execute",
-          summary: "Approval required before deleting src/legacy-delete.ts",
-        });
-        return { summary: "unreachable", mode: "execute" };
-      },
-      verifier: async () => ({ summary: "verified", mode: "verify", isValid: true }),
-    });
-
-    await checkpointGraph.invoke(
-      {
-        input: "continue",
-        workPackages: [
-          {
-            id: "pkg_delete",
-            objective: "delete src/legacy-delete.ts",
-            allowedTools: ["apply_patch"],
-            inputRefs: ["thread:goal", "file:src/legacy-delete.ts"],
-            expectedArtifacts: ["patch:src/legacy-delete.ts"],
-          },
-        ],
-        currentWorkPackageId: "pkg_delete",
-      },
-      { configurable: { thread_id: "thread-reject", task_id: "task-reject" } },
-    );
-    await (checkpointSaver as { close?: () => Promise<void> }).close?.();
+    await fs.mkdir(workspaceRoot, { recursive: true });
+    await fs.writeFile(filePath, "approved\n");
 
     const modelGateway = {
-      async plan(input: { prompt: string }) {
-        return { summary: input.prompt };
+      async plan() {
+        return {
+          summary: "plan delete",
+          plannerResult: {
+            workPackages: [
+              {
+                id: "pkg_delete",
+                objective: "delete approved.txt",
+                allowedTools: ["apply_patch"],
+                inputRefs: ["thread:goal", "file:approved.txt"],
+                expectedArtifacts: ["patch:approved.txt"],
+              },
+            ],
+            acceptanceCriteria: ["approved.txt is removed"],
+            riskFlags: [],
+            approvalRequiredActions: ["apply_patch.delete_file"],
+            verificationScope: ["workspace file state"],
+          },
+        };
       },
       async verify() {
         return { summary: "verified", isValid: true };
@@ -352,8 +338,136 @@ describe("createAppContext", () => {
       modelGateway,
     });
 
-    const thread = createThread("thread-reject", workspaceRoot, ctx.config.projectId);
+    const thread = createThread("thread-approve-idempotent", workspaceRoot, ctx.config.projectId);
     await ctx.stores.threadStore.save(thread);
+
+    const blocked = await ctx.controlPlane.startRootTask(thread.threadId, "clean up approved artifact");
+    const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+    expect(approvalRequestId).toBeDefined();
+
+    const first = await ctx.controlPlane.approveRequest(approvalRequestId!);
+    const second = await ctx.controlPlane.approveRequest(approvalRequestId!);
+
+    expect(first.status).toBe("completed");
+    expect(second.resumeDisposition).toBe("already_resolved");
+    expect(second.status).toBe("completed");
+
+    await closeAppContext(ctx);
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
+  });
+
+  test("waiting_approval ? cancel ???????? approve ???? run", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-cancel-approval-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+    const filePath = path.join(workspaceRoot, "approved.txt");
+
+    await fs.mkdir(workspaceRoot, { recursive: true });
+    await fs.writeFile(filePath, "approved\n");
+
+    const modelGateway = {
+      async plan() {
+        return {
+          summary: "plan delete",
+          plannerResult: {
+            workPackages: [
+              {
+                id: "pkg_delete",
+                objective: "delete approved.txt",
+                allowedTools: ["apply_patch"],
+                inputRefs: ["thread:goal", "file:approved.txt"],
+                expectedArtifacts: ["patch:approved.txt"],
+              },
+            ],
+            acceptanceCriteria: ["approved.txt is removed"],
+            riskFlags: [],
+            approvalRequiredActions: ["apply_patch.delete_file"],
+            verificationScope: ["workspace file state"],
+          },
+        };
+      },
+      async verify() {
+        return { summary: "verified", isValid: true };
+      },
+      async respond() {
+        return { summary: "responded" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway,
+    });
+
+    const thread = createThread("thread-cancel-approval", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+
+    const blocked = await ctx.controlPlane.startRootTask(thread.threadId, "clean up approved artifact");
+    const approvalRequestId = blocked.approvals[0]?.approvalRequestId;
+    expect(approvalRequestId).toBeDefined();
+
+    const cancelled = await ctx.controlPlane.cancelThread(thread.threadId);
+    const approval = await ctx.stores.approvalStore.get(approvalRequestId!);
+    const afterApprove = await ctx.controlPlane.approveRequest(approvalRequestId!);
+    const latestRun = await ctx.stores.runStore.getLatestByThread(thread.threadId);
+
+    expect(cancelled).toBe(true);
+    expect(approval?.status).toBe("cancelled");
+    expect(afterApprove.resumeDisposition).toBe("invalidated");
+    expect(latestRun?.status).toBe("interrupted");
+    expect(await Bun.file(filePath).exists()).toBe(true);
+
+    await closeAppContext(ctx);
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
+  });
+
+  test("invalidates legacy checkpoint-backed threads on boot", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-reject-run-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+    const filePath = path.join(workspaceRoot, "src", "legacy-delete.ts");
+
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, "export const legacyDelete = true;\n");
+
+    const seedDb = createSqlite(dataDir);
+    migrateSqlite(seedDb);
+    seedDb.run(`
+      CREATE TABLE IF NOT EXISTS checkpoints (
+        thread_id TEXT NOT NULL,
+        checkpoint_ns TEXT NOT NULL DEFAULT '',
+        checkpoint_id TEXT NOT NULL,
+        parent_checkpoint_id TEXT,
+        type TEXT,
+        checkpoint BLOB,
+        metadata BLOB,
+        PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
+      )
+    `);
+    seedDb.run(`
+      CREATE TABLE IF NOT EXISTS writes (
+        thread_id TEXT NOT NULL,
+        checkpoint_ns TEXT NOT NULL DEFAULT '',
+        checkpoint_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        idx INTEGER NOT NULL,
+        channel TEXT NOT NULL,
+        type TEXT,
+        value BLOB,
+        PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+      )
+    `);
+    const thread = createThread("thread-reject", workspaceRoot, "openpx");
+    seedDb.run(
+      `INSERT INTO threads (thread_id, workspace_root, project_id, revision, status, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [thread.threadId, workspaceRoot, "openpx", 1, "active", new Date().toISOString()],
+    );
     const run = transitionRun(
       transitionRun(
         createRun({
@@ -366,58 +480,118 @@ describe("createAppContext", () => {
       ),
       "waiting_approval",
     );
-    await ctx.stores.runStore.save({
-      ...run,
-      activeTaskId: "task-reject",
-      blockingReason: {
-        kind: "waiting_approval",
-        message: "apply_patch delete_file src/legacy-delete.ts",
-      },
-    });
-    await ctx.stores.taskStore.save({
-      taskId: "task-reject",
-      threadId: thread.threadId,
-      runId: run.runId,
-      summary: "Delete legacy file",
-      status: "blocked",
-      blockingReason: {
-        kind: "waiting_approval",
-        message: "apply_patch delete_file src/legacy-delete.ts",
-      },
-    });
-    await ctx.stores.approvalStore.save(
-      createApprovalRequest({
-        approvalRequestId: "approval-reject",
-        threadId: thread.threadId,
-        runId: run.runId,
-        taskId: "task-reject",
-        toolCallId: "task-reject:apply_patch",
-        toolRequest: {
-          toolCallId: "task-reject:apply_patch",
-          threadId: thread.threadId,
-          runId: run.runId,
-          taskId: "task-reject",
-          toolName: "apply_patch",
-          args: {},
-          action: "delete_file",
-          path: filePath,
-          changedFiles: 1,
-        },
-        summary: "apply_patch delete_file src/legacy-delete.ts",
-        risk: "apply_patch.delete_file",
-      }),
+    seedDb.run(
+      `INSERT INTO runs (run_id, thread_id, status, trigger, input_text, active_task_id, started_at, blocking_reason_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        run.runId,
+        thread.threadId,
+        run.status,
+        run.trigger,
+        run.inputText ?? null,
+        "task-reject",
+        run.startedAt,
+        JSON.stringify({
+          kind: "waiting_approval",
+          message: "apply_patch delete_file src/legacy-delete.ts",
+        }),
+      ],
     );
+    seedDb.run(
+      `INSERT INTO tasks (task_id, thread_id, run_id, summary, status, blocking_reason_json)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        "task-reject",
+        thread.threadId,
+        run.runId,
+        "Delete legacy file",
+        "blocked",
+        JSON.stringify({
+          kind: "waiting_approval",
+          message: "apply_patch delete_file src/legacy-delete.ts",
+        }),
+      ],
+    );
+    seedDb.run(
+      `INSERT INTO approvals (approval_request_id, thread_id, run_id, task_id, tool_call_id, request_json, summary, risk, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "approval-reject",
+        thread.threadId,
+        run.runId,
+        "task-reject",
+        "task-reject:apply_patch",
+        JSON.stringify(
+          createApprovalRequest({
+            approvalRequestId: "approval-reject",
+            threadId: thread.threadId,
+            runId: run.runId,
+            taskId: "task-reject",
+            toolCallId: "task-reject:apply_patch",
+            toolRequest: {
+              toolCallId: "task-reject:apply_patch",
+              threadId: thread.threadId,
+              runId: run.runId,
+              taskId: "task-reject",
+              toolName: "apply_patch",
+              args: {},
+              action: "delete_file",
+              path: filePath,
+              changedFiles: 1,
+            },
+            summary: "apply_patch delete_file src/legacy-delete.ts",
+            risk: "apply_patch.delete_file",
+          }).toolRequest,
+        ),
+        "apply_patch delete_file src/legacy-delete.ts",
+        "apply_patch.delete_file",
+        "pending",
+      ],
+    );
+    seedDb.run(
+      `INSERT INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata)
+       VALUES (?, '', ?, NULL, 'json', x'7B7D', x'7B7D')`,
+      [thread.threadId, "checkpoint_1"],
+    );
+    seedDb.close();
 
-    const result = await ctx.controlPlane.rejectRequest("approval-reject");
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway: createTestModelGateway(),
+    });
 
-    expect(result.status).toBe("completed");
-    expect(result.summary).toContain("continue safely without deleting files");
-    expect(result.summary).not.toContain("rejected for proposal");
-    expect(result.approvals).toHaveLength(0);
-    expect(await Bun.file(filePath).exists()).toBe(true);
+    const latestRun = await ctx.stores.runStore.getLatestByThread(thread.threadId);
+    const tasks = await ctx.stores.taskStore.listByThread(thread.threadId);
+    const remainingCheckpoints = createSqlite(dataDir)
+      .query<{ count: number }, [string]>("SELECT COUNT(*) as count FROM checkpoints WHERE thread_id = ?")
+      .get(thread.threadId);
+    const migrationRow = createSqlite(dataDir)
+      .query<{ applied_at: string }, [string]>("SELECT applied_at FROM system_migrations WHERE migration_key = ?")
+      .get("legacy_checkpoint_invalidation_v1");
+
+    expect(latestRun?.status).toBe("blocked");
+    expect(latestRun?.blockingReason?.kind).toBe("human_recovery");
+    expect(tasks.at(-1)?.status).toBe("blocked");
+    expect(tasks.at(-1)?.blockingReason?.kind).toBe("human_recovery");
+    expect(remainingCheckpoints?.count).toBe(0);
+    expect(migrationRow?.applied_at).toBeDefined();
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+
+    const ctx2 = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway: createTestModelGateway(),
+    });
+    const migrationCount = createSqlite(dataDir)
+      .query<{ count: number }, [string]>("SELECT COUNT(*) as count FROM system_migrations WHERE migration_key = ?")
+      .get("legacy_checkpoint_invalidation_v1");
+
+    expect(migrationCount?.count).toBe(1);
+
+    await closeAppContext(ctx2);
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
   test("replans rejected delete capability without reusing the same marker", async () => {
@@ -515,12 +689,86 @@ describe("createAppContext", () => {
     const result = await ctx.controlPlane.rejectRequest(approvalRequestId!);
 
     expect(result.status).toBe("completed");
-    expect(result.summary).toContain("continue safely without deleting files");
-    expect(result.summary).not.toContain("rejected for proposal");
+    expect(result.finalResponse).toBe("responded");
+    expect(result.executionSummary).toContain("continue safely without deleting files");
+    expect(result.executionSummary).not.toContain("rejected for proposal");
     expect(await Bun.file(filePath).exists()).toBe(true);
 
     await closeAppContext(ctx);
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
+  });
+
+  test("restart_run ? human_recovery ???? run?????????", async () => {
+    const workspaceRoot = path.join(os.tmpdir(), `openpx-restart-run-${Date.now()}`);
+    const dataDir = path.join(workspaceRoot, "openpx.db");
+
+    await fs.mkdir(workspaceRoot, { recursive: true });
+
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir,
+      modelGateway: createTestModelGateway(),
+    });
+
+    const thread = createThread("thread-restart", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+    const run = transitionRun(
+      transitionRun(
+        createRun({
+          runId: "run-restart",
+          threadId: thread.threadId,
+          trigger: "system_resume",
+          inputText: "retry previous intent",
+        }),
+        "running",
+      ),
+      "blocked",
+    );
+    await ctx.stores.runStore.save({
+      ...run,
+      activeTaskId: "task-restart",
+      blockingReason: {
+        kind: "human_recovery",
+        message: "Manual recovery required.",
+      },
+    });
+    await ctx.stores.taskStore.save({
+      taskId: "task-restart",
+      threadId: thread.threadId,
+      runId: run.runId,
+      summary: "Recover blocked run",
+      status: "blocked",
+      blockingReason: {
+        kind: "human_recovery",
+        message: "Manual recovery required.",
+      },
+    });
+    await ctx.stores.runStateStore.saveState({
+      stateVersion: 1,
+      engineVersion: "run-loop-v1",
+      threadId: thread.threadId,
+      runId: run.runId,
+      taskId: "task-restart",
+      input: "retry previous intent",
+      nextStep: "execute",
+      artifacts: [],
+      latestArtifacts: [],
+    });
+
+    const restarted = await ctx.controlPlane.restartRun(thread.threadId);
+    const runs = await ctx.stores.runStore.listByThread(thread.threadId);
+    const oldState = await ctx.stores.runStateStore.loadByRun(run.runId);
+
+    expect(restarted.status).toBe("completed");
+    expect(runs).toHaveLength(2);
+    expect(runs[0]?.runId).toBe(run.runId);
+    expect(runs[0]?.status).toBe("interrupted");
+    expect(runs[1]?.runId).not.toBe(run.runId);
+    expect(oldState).toBeUndefined();
+
+    await closeAppContext(ctx);
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
 });
+

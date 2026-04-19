@@ -69,8 +69,11 @@ describe("Remote Kernel", () => {
       status: "blocked",
       stage: "blocked",
       threadId: "thread-1",
-      summary: "Manual recovery required from snapshot.",
-          tasks: [
+      finalResponse: undefined,
+      executionSummary: undefined,
+      verificationSummary: undefined,
+      pauseSummary: "Manual recovery required from snapshot.",
+      tasks: [
             {
               taskId: "task-1",
               threadId: "thread-1",
@@ -170,8 +173,8 @@ describe("Remote Kernel", () => {
       status: "completed",
       threadId: "thread-2",
     });
-    expect((result as { summary: string }).summary).toContain("thread-2 (active) [active] approval:1 Current active thread summary.");
-    expect((result as { summary: string }).summary).toContain(
+    expect((result as { finalResponse: string }).finalResponse).toContain("thread-2 (active) [active] approval:1 Current active thread summary.");
+    expect((result as { finalResponse: string }).finalResponse).toContain(
       "thread-1 [completed] human_recovery Completed repo scan and isolated runtime recovery work.",
     );
   });

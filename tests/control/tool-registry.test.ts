@@ -6,6 +6,7 @@ import { createApprovalService } from "../../src/control/policy/approval-service
 import { createPolicyEngine } from "../../src/control/policy/policy-engine";
 import { applyPatchExecutor } from "../../src/control/tools/executors/apply-patch";
 import { createToolRegistry } from "../../src/control/tools/tool-registry";
+import type { ExecutionLedgerEntry } from "../../src/persistence/ports/execution-ledger-port";
 
 const tempDirs: string[] = [];
 
@@ -298,6 +299,49 @@ describe("ToolRegistry", () => {
       status: "planned",
     });
     expect(await Bun.file(join(workspaceRoot, "created-by-exec.txt")).exists()).toBe(false);
+  });
+
+  test("executeApproved is idempotent for completed effectful tool calls", async () => {
+    const workspaceRoot = await createWorkspace();
+    const filePath = join(workspaceRoot, "src", "approval-target.ts");
+    await mkdir(dirname(filePath), { recursive: true });
+    await Bun.write(filePath, "delete once\n");
+
+    const policy = createPolicyEngine({ workspaceRoot });
+    const approvals = createApprovalService();
+    const ledgerEntries = new Map<string, ExecutionLedgerEntry>();
+    const executionLedger = {
+      async save(entry: ExecutionLedgerEntry) {
+        ledgerEntries.set(entry.executionId, entry);
+      },
+      async get(executionId: string) {
+        return ledgerEntries.get(executionId);
+      },
+      async listByThread() { return [...ledgerEntries.values()] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
+    const registry = createToolRegistry({ policy, approvals, executionLedger });
+
+    const request = {
+      toolCallId: "tool_approved_delete",
+      threadId: "thread_approved_delete",
+      runId: "run_approved_delete",
+      taskId: "task_approved_delete",
+      toolName: "apply_patch",
+      action: "delete_file" as const,
+      path: filePath,
+      changedFiles: 1,
+      args: {},
+    };
+
+    const first = await registry.executeApproved(request);
+    const second = await registry.executeApproved(request);
+
+    expect(first.kind).toBe("executed");
+    expect(second.kind).toBe("executed");
+    expect(await Bun.file(filePath).exists()).toBe(false);
+    expect([...ledgerEntries.values()].filter((entry) => entry.status === "completed")).toHaveLength(1);
   });
 });
 

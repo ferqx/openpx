@@ -23,7 +23,7 @@ import {
   type SettingsConfigStore,
 } from "./settings/config-store";
 import type { ResolvedSettingsConfig } from "./settings/config-resolver";
-import type { SettingsConfig, SettingsConfigScope } from "./settings/config-types";
+import type { PartialSettingsConfig, SettingsConfigScope } from "./settings/config-types";
 import type { UtilityPaneSessionSnapshot } from "./components/utility-pane";
 import {
   isThreadPanelToggle,
@@ -59,6 +59,7 @@ import {
   type ConversationDisplayState,
   type ThinkingState,
 } from "./app-state-support";
+import { getPrimaryModelName, resolveConfig } from "../../shared/config";
 
 type Message = TuiMessage;
 
@@ -218,7 +219,6 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     return (
       input.settingsStore ??
       createSettingsConfigStore({
-        homeDir: process.env.HOME ?? process.cwd(),
         workspaceRoot: session?.workspaceRoot ?? process.cwd(),
       })
     );
@@ -230,12 +230,12 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     setLaunchState((current) => ({ ...current, activeUtilityPane: "settings" }));
   }, [resolveSettingsStore]);
 
-  const saveSettings = useCallback(async (scope: SettingsConfigScope, config: SettingsConfig) => {
+  const saveSettings = useCallback(async (scope: SettingsConfigScope, config: PartialSettingsConfig) => {
     const store = resolveSettingsStore();
-    if (scope === "global") {
-      await store.writeGlobal(config);
+    if (scope === "user") {
+      await store.writeUser(config);
     } else {
-      await store.writeProject(config);
+      await store.writeProjectLocal(config);
     }
 
     const resolved = await store.readResolved();
@@ -605,7 +605,10 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     session?.messages,
     session?.narrativeSummary,
     session?.tasks,
-    session?.summary,
+    session?.finalResponse,
+    session?.pauseSummary,
+    session?.verificationSummary,
+    session?.executionSummary,
     session?.workers,
   ]);
 
@@ -623,17 +626,39 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     utilitySessionSnapshot,
   ]);
 
+  const chromeModelConfig = useMemo(() => {
+    const workspaceRoot = session?.workspaceRoot ?? process.cwd();
+    const dataDir = process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ".openpx";
+    try {
+      const resolved = resolveConfig({
+        workspaceRoot,
+        dataDir,
+        projectId: session?.projectId,
+      });
+      return {
+        modelName: getPrimaryModelName(resolved.model),
+        thinkingLevel: resolved.model.thinking ?? "default",
+      } as const;
+    } catch {
+      return {
+        modelName: "unconfigured",
+        thinkingLevel: "default",
+      } as const;
+    }
+  }, [session?.projectId, session?.workspaceRoot]);
+
   const chromeView = useMemo<ScreenChromeView>(() => {
     return buildChromeView({
       session,
       runtimeStatus,
       stage,
       showThreadPanel,
-      modelName: process.env.OPENAI_MODEL ?? "unknown",
-      thinkingLevel: process.env.OPENPX_THINKING ?? "default",
+      modelName: chromeModelConfig.modelName,
+      thinkingLevel: chromeModelConfig.thinkingLevel,
       exitConfirmText: isExitConfirming ? "Press Ctrl+C again to exit" : undefined,
     });
   }, [
+    chromeModelConfig,
     runtimeStatus,
     session?.blockingReason,
     session?.projectId,

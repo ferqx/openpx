@@ -87,7 +87,7 @@ const approvedScenario: EvalScenario = {
   id: "approval-approved",
   version: 1,
   family: "approval-required",
-  summary: "approval resumes and completes through the graph",
+  summary: "approval resumes and completes through the run-loop",
   setup: "seed approved file and planner result",
   steps: ["start root task", "pause on approval", "approve request"],
   expectedControlSemantics: {
@@ -147,7 +147,7 @@ describe("evaluateOutcome / evaluateTrajectory", () => {
     expect(trajectory.some((result) => result.status === "failed")).toBe(true);
     expect(reviewItems).toHaveLength(2);
     expect(reviewItems.map((item) => item.sourceId)).toEqual(
-      expect.arrayContaining(["trajectory.graph_resume", "trajectory.duplicate_side_effect"]),
+      expect.arrayContaining(["trajectory.run_loop_resume", "trajectory.duplicate_side_effect"]),
     );
   });
 

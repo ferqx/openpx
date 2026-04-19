@@ -5,7 +5,7 @@ import { SettingsPane } from "../../src/surfaces/tui/components/settings-pane";
 import type { ResolvedSettingsConfig } from "../../src/surfaces/tui/settings/config-resolver";
 
 const resolvedConfig: ResolvedSettingsConfig = {
-  global: {
+  user: {
     autoCompact: true,
     showTips: true,
     reduceMotion: false,
@@ -17,6 +17,7 @@ const resolvedConfig: ResolvedSettingsConfig = {
     terminalProgressBar: true,
   },
   project: {},
+  projectLocal: {},
   effective: {
     autoCompact: true,
     showTips: true,
@@ -44,13 +45,15 @@ const resolvedConfig: ResolvedSettingsConfig = {
 const tick = (delayMs = 0) => new Promise((resolve) => setTimeout(resolve, delayMs));
 
 describe("SettingsPane", () => {
-  test("toggles and saves global config from keyboard input", async () => {
+  test("toggles and saves user config from keyboard input", async () => {
+    let savedScope: string | undefined;
     let saved: Record<string, boolean> | undefined;
     const { lastFrame, stdin } = render(
       <SettingsPane
         config={resolvedConfig}
         onClose={() => undefined}
-        onSave={async (_scope, config) => {
+        onSave={async (scope, config) => {
+          savedScope = scope;
           saved = config;
         }}
       />,
@@ -63,12 +66,13 @@ describe("SettingsPane", () => {
     await tick();
 
     expect(lastFrame()).toContain("Auto-compact");
+    expect(savedScope).toBe("user");
     expect(saved?.autoCompact).toBe(false);
   });
 
-  test("switches to project scope and saves project overrides", async () => {
+  test("switches to project-local scope and saves project-local overrides", async () => {
     let savedScope: string | undefined;
-    let saved: Record<string, boolean> | undefined;
+    let saved: Partial<Record<string, boolean>> | undefined;
     const { lastFrame, stdin } = render(
       <SettingsPane
         config={resolvedConfig}
@@ -88,9 +92,11 @@ describe("SettingsPane", () => {
     stdin.write("\r");
     await tick();
 
-    expect(lastFrame()).toContain("Scope: Project");
-    expect(savedScope).toBe("project");
-    expect(saved?.autoCompact).toBe(false);
+    expect(lastFrame()).toContain("Scope: Project local");
+    expect(savedScope).toBe("project-local");
+    expect(saved).toEqual({
+      autoCompact: false,
+    });
   });
 
   test("shows runtime status facts and usage help across tabs", async () => {

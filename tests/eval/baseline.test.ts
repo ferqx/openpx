@@ -117,9 +117,9 @@ function createScenarioResult(overrides: Partial<EvalScenarioResult> = {}): Eval
     ],
     trajectoryResults: [
       {
-        id: "trajectory.graph_resume",
+        id: "trajectory.run_loop_resume",
         status: "passed",
-        message: "graph resume matched expected behavior",
+        message: "run-loop resume matched expected behavior",
         objectRefs: {
           threadId: "thread_live",
           runIds: ["run_live"],
@@ -226,9 +226,9 @@ describe("eval baseline", () => {
         ],
         trajectoryResults: [
           {
-            id: "trajectory.graph_resume",
+            id: "trajectory.run_loop_resume",
             status: "passed",
-            message: "graph resume matched expected behavior",
+            message: "run-loop resume matched expected behavior",
             objectRefs: {
               threadId: "thread_other",
               runIds: ["run_other"],

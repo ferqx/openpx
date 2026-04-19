@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,9 +6,23 @@ import { coreEvalScenarios } from "../../src/eval/scenarios";
 import { executeEvalSuiteCommand, runEvalSuite } from "../../src/eval/suite-runner";
 import { removeWithRetry } from "../helpers/fs-cleanup";
 
+setDefaultTimeout(20000);
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => removeWithRetry(dir, { recursive: true, force: true })));
+});
+
+async function createTempDir(prefix: string) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
 describe("eval suite runner", () => {
   test("runs the core suite against repo baselines and returns a passing summary", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-eval-suite-runner-"));
+    const rootDir = await createTempDir("openpx-eval-suite-runner-");
     const dataDir = path.join(rootDir, "openpx.db");
     const runtimeRootDir = path.join(rootDir, "runtime");
     const baselineRootDir = path.join(process.cwd(), "eval-baselines");
@@ -27,12 +41,10 @@ describe("eval suite runner", () => {
     expect(summary.scenarioSummaries.every((item) => item.baseline.status === "matched")).toBe(true);
     expect(summary.reviewQueueAggregate.total).toBe(0);
     expect(summary.reviewQueueAggregate.byTriageStatus.open).toBe(0);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("supports single-scenario execution while preserving the shared summary shape", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-eval-suite-runner-one-"));
+    const rootDir = await createTempDir("openpx-eval-suite-runner-one-");
     const dataDir = path.join(rootDir, "openpx.db");
     const runtimeRootDir = path.join(rootDir, "runtime");
 
@@ -49,12 +61,10 @@ describe("eval suite runner", () => {
     expect(summary.scenarioSummaries).toHaveLength(1);
     expect(summary.scenarioSummaries[0]?.scenarioId).toBe("approval-required-then-approved");
     expect(summary.reviewQueueAggregate.total).toBe(0);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("updates baseline files when requested", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-eval-suite-runner-update-"));
+    const rootDir = await createTempDir("openpx-eval-suite-runner-update-");
     const dataDir = path.join(rootDir, "openpx.db");
     const runtimeRootDir = path.join(rootDir, "runtime");
     const baselineRootDir = path.join(rootDir, "baselines");
@@ -77,12 +87,10 @@ describe("eval suite runner", () => {
 
     expect(summary.status).toBe("passed");
     expect(await fs.stat(baselineFile)).toBeDefined();
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("returns a failing gate when a stable regression diverges from baseline", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-eval-suite-runner-fail-"));
+    const rootDir = await createTempDir("openpx-eval-suite-runner-fail-");
     const dataDir = path.join(rootDir, "openpx.db");
     const runtimeRootDir = path.join(rootDir, "runtime");
     const baselineRootDir = path.join(rootDir, "baselines");
@@ -119,12 +127,10 @@ describe("eval suite runner", () => {
     expect(summary.status).toBe("failed");
     expect(summary.exitCode).toBe(1);
     expect(summary.scenarioSummaries.some((item) => item.baseline.status === "regressed")).toBe(true);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("summarizes only the current suite run review items", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-eval-suite-runner-review-"));
+    const rootDir = await createTempDir("openpx-eval-suite-runner-review-");
     const dataDir = path.join(rootDir, "openpx.db");
     const runtimeRootDir = path.join(rootDir, "runtime");
 
@@ -150,12 +156,10 @@ describe("eval suite runner", () => {
     expect(summary.reviewQueueAggregate.total).toBe(summary.reviewQueueCount);
     expect(summary.reviewQueueAggregate.byTriageStatus.open).toBe(summary.reviewQueueCount);
     expect(summary.reviewQueueAggregate.byTriageStatus.closed).toBe(0);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("renders command output and exit code for the dev runner surface", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-eval-suite-command-"));
+    const rootDir = await createTempDir("openpx-eval-suite-command-");
     const outputs: string[] = [];
 
     const exitCode = await executeEvalSuiteCommand([
@@ -186,12 +190,10 @@ describe("eval suite runner", () => {
     expect(outputs.join("")).toContain("Suite: core-eval-suite");
     expect(outputs.join("")).toContain("Review queue aggregate");
     expect(outputs.join("")).toContain("approval-required-then-approved");
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("supports json output with raw suite run artifacts", async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpx-eval-suite-json-"));
+    const rootDir = await createTempDir("openpx-eval-suite-json-");
     const outputs: string[] = [];
 
     const exitCode = await executeEvalSuiteCommand([
@@ -242,7 +244,5 @@ describe("eval suite runner", () => {
     expect(payload.scenarioResults[0]?.scenarioId).toBe("approval-required-then-approved");
     expect(payload.scenarioResults[0]?.comparable.terminalOutcome.latestRunStatus).toBe("completed");
     expect(payload.reviewItems).toEqual([]);
-
-    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 });

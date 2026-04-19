@@ -31,21 +31,15 @@ describe("Memory Retrieval", () => {
     }));
 
     // 2. Trigger planning
-    const waitForUpdate = new Promise<void>((resolve) => {
-      const unsubscribe = context.kernel.events.subscribe((event) => {
-        if (event.type === "thread.view_updated") {
-          unsubscribe();
-          resolve();
-        }
-      });
-    });
-
     await context.kernel.handleCommand({
       type: "submit_input",
       payload: { text: "plan start new feature" },
     });
 
-    await waitForUpdate;
+    const startedAt = Date.now();
+    while (capturedPrompt.length === 0 && Date.now() - startedAt < 3000) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
 
     // 3. Verify prompt contains memory
     expect(capturedPrompt).toContain("Project Memory:");

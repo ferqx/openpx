@@ -214,6 +214,25 @@ describe("runtime protocol schemas", () => {
 
     expect(
       runtimeEventSchema.safeParse({
+        type: "model.telemetry",
+        payload: {
+          providerId: "openai",
+          baseURL: "https://api.openai.com/v1",
+          model: "gpt-5.4",
+          operation: "plan",
+          inputTokens: 10,
+          outputTokens: 20,
+          waitDuration: 30,
+          genDuration: 40,
+          totalDuration: 70,
+          status: "completed",
+          fallbackCount: 0,
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      runtimeEventSchema.safeParse({
         type: "thread.view_updated",
         payload: {
           threadId: "thread-1",

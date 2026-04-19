@@ -13,6 +13,7 @@ import {
 import { runScenario } from "../../src/eval/scenario-runner";
 import { coreEvalScenarios } from "../../src/eval/scenarios";
 import { SqliteEvalStore } from "../../src/persistence/sqlite/sqlite-eval-store";
+import { removeWithRetry } from "../helpers/fs-cleanup";
 
 describe("eval review queue", () => {
   test("renders open items and supports closing them through the local review command", async () => {
@@ -117,7 +118,7 @@ describe("eval review queue", () => {
     expect(filteredOutputs.join("")).toContain("closed");
 
     await store.close();
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("defaults review command data into an isolated internal eval directory", async () => {
@@ -126,7 +127,7 @@ describe("eval review queue", () => {
 
     expect(resolved).toBe(path.join(workspaceRoot, ".openpx", "eval", "eval.sqlite"));
 
-    await fs.rm(workspaceRoot, { recursive: true, force: true });
+    await removeWithRetry(workspaceRoot, { recursive: true, force: true });
   });
 
   test("requires follow-up references for scenario, rule, and doc closures", () => {
@@ -331,7 +332,7 @@ describe("eval review queue", () => {
     expect(outputs.join("")).not.toContain("review_stats_1");
 
     await store.close();
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("supports json output with aggregate and filtered review items", async () => {
@@ -403,7 +404,7 @@ describe("eval review queue", () => {
     });
 
     await store.close();
-    await fs.rm(rootDir, { recursive: true, force: true });
+    await removeWithRetry(rootDir, { recursive: true, force: true });
   });
 
   test("preserves metadata when queue rows are updated through normal triage operations", async () => {
@@ -438,7 +439,7 @@ describe("eval review queue", () => {
           runId: "run_meta_1",
           failureClass: "graph_bypass_after_approval",
           impactedObject: "run:run_meta_1",
-          nextSuggestedAction: "resume via graph",
+          nextSuggestedAction: "resume via run-loop",
           status: "failed",
         }),
       },

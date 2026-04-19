@@ -49,17 +49,27 @@ export async function applySessionControlPlaneResult(input: {
     view = projector.project(view, { kind: "approval", approval });
   }
 
-  view = projector.project(view, {
-    kind: "transcript_message",
-    messageId: prefixedUuid("msg"),
-    role: "assistant",
-    content: input.result.summary,
-  });
-  view = projector.project(view, {
-    kind: "answer",
-    answerId: prefixedUuid("ans"),
-    summary: input.result.summary,
-  });
+  const assistantMessage =
+    input.result.status === "completed"
+      ? input.result.finalResponse
+      : input.result.pauseSummary ?? input.result.verificationSummary ?? input.result.executionSummary;
+
+  if (assistantMessage) {
+    view = projector.project(view, {
+      kind: "transcript_message",
+      messageId: prefixedUuid("msg"),
+      role: "assistant",
+      content: assistantMessage,
+    });
+  }
+
+  if (input.result.status === "completed" && input.result.finalResponse) {
+    view = projector.project(view, {
+      kind: "answer",
+      answerId: prefixedUuid("ans"),
+      summary: input.result.finalResponse,
+    });
+  }
 
   if (input.result.lastCompletedToolCallId) {
     view = projector.project(view, {

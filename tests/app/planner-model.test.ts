@@ -90,7 +90,8 @@ describe("planner model integration", () => {
     const result = await ctx.controlPlane.startRootTask(thread.threadId, "make startup copy nicer");
 
     expect(result.status).toBe("completed");
-    expect(result.summary).toBe("Executed request: Update startup message copy");
+    expect(result.finalResponse).toBe("responded");
+    expect(result.executionSummary).toBe("Executed request: Update startup message copy");
   });
 
   test("normalizes approval-gated delete intent when planner returns only a plain summary", async () => {

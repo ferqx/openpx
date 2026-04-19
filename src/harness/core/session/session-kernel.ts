@@ -19,17 +19,18 @@ import type { Run } from "../../../domain/run";
 import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
 import type { ThreadNarrativeService } from "../../../control/context/thread-narrative-service";
+import type { ContinuationEnvelope } from "../run-loop/continuation";
 import type { EventLogPort } from "../../../persistence/ports/event-log-port";
 import type { TaskStorePort } from "../../../persistence/ports/task-store-port";
 import type { ThreadStorePort } from "../../../persistence/ports/thread-store-port";
 import type { WorkerStorePort } from "../../../persistence/ports/worker-store-port";
-import type { ResumeControl } from "../../../runtime/graph/root/resume-control";
 import { prefixedUuid } from "../../../shared/id-generators";
 import { createEventBus, type KernelEvent } from "../events/event-bus";
 import { createInterruptService } from "../events/interrupt-service";
 import { runSessionInBackground } from "../run/session-background-runner";
 import { applySessionControlPlaneResult } from "../run/session-result-applicator";
 import { createThreadService } from "../thread/thread-service";
+import { createThreadStateProjector } from "../../../control/context/thread-state-projector";
 import {
   resolveApprovalCommandContext,
   resolveSubmitCommandContext,
@@ -65,19 +66,44 @@ export type RejectRequestCommand = {
   };
 };
 
-export type SessionCommand = SubmitInputCommand | ApproveRequestCommand | RejectRequestCommand;
+export type RecoveryCommand =
+  | {
+      type: "restart_run";
+      payload: {
+        threadId: string;
+      };
+    }
+  | {
+      type: "resubmit_intent";
+      payload: {
+        threadId: string;
+        content: string;
+      };
+    }
+  | {
+      type: "abandon_run";
+      payload: {
+        threadId: string;
+      };
+    };
 
 export type SessionControlPlaneResult = {
   status: "completed" | "waiting_approval" | "blocked";
   task: Task;
   approvals: ApprovalRequest[];
-  summary: string;
+  resumeDisposition?: "resumed" | "already_resolved" | "already_consumed" | "invalidated" | "not_resumable";
+  finalResponse?: string;
+  executionSummary?: string;
+  verificationSummary?: string;
+  pauseSummary?: string;
   recommendationReason?: string;
   lastCompletedToolCallId?: string;
   lastCompletedToolName?: string;
   pendingToolCallId?: string;
   pendingToolName?: string;
 };
+
+export type SessionCommand = SubmitInputCommand | ApproveRequestCommand | RejectRequestCommand | RecoveryCommand;
 
 export type SessionCommandResult = ProjectedSessionResult;
 
@@ -103,9 +129,12 @@ export function createSessionKernel(deps: {
     eventLog?: EventLogPort;
   };
   controlPlane: {
-    startRootTask: (threadId: string, input: string | ResumeControl) => Promise<SessionControlPlaneResult>;
+    startRootTask: (threadId: string, input: string | ContinuationEnvelope) => Promise<SessionControlPlaneResult>;
     approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
+    restartRun: (threadId: string) => Promise<SessionControlPlaneResult>;
+    resubmitIntent: (threadId: string, content: string) => Promise<SessionControlPlaneResult>;
+    abandonRun: (threadId: string) => Promise<SessionControlPlaneResult>;
   };
   narrativeService?: ThreadNarrativeService;
   workspaceRoot?: string;
@@ -193,15 +222,47 @@ export function createSessionKernel(deps: {
   function startBackgroundControlAction(input: {
     threadId: string;
     execute: () => Promise<SessionControlPlaneResult>;
+    onFinalized?: () => Promise<void>;
   }) {
     void runSessionInBackground({
       threadId: input.threadId,
       execute: input.execute,
       finalize: async (result) => {
         await finalize(input.threadId, result);
+        await input.onFinalized?.();
       },
       publishFailure: publishTaskFailure,
     });
+  }
+
+  async function appendUserTranscriptMessage(input: {
+    thread: Thread;
+    content: string;
+  }): Promise<Thread> {
+    const projector = createThreadStateProjector();
+    const nextView = projector.project(
+      {
+        recoveryFacts: input.thread.recoveryFacts,
+        narrativeState: input.thread.narrativeState,
+        workingSetWindow: input.thread.workingSetWindow,
+      },
+      {
+        kind: "transcript_message",
+        messageId: prefixedUuid("msg"),
+        role: "user",
+        content: input.content,
+      },
+    );
+
+    const nextThread: Thread = {
+      ...input.thread,
+      recoveryFacts: nextView.recoveryFacts,
+      narrativeState: nextView.narrativeState,
+      workingSetWindow: nextView.workingSetWindow,
+      revision: nextView.recoveryFacts?.revision ?? input.thread.revision,
+    };
+    await deps.stores.threadStore.save(nextThread);
+    return nextThread;
   }
 
   async function buildSessionResult(input: {
@@ -209,7 +270,11 @@ export function createSessionKernel(deps: {
     status: ProjectedSessionResult["status"];
     tasks: Task[];
     approvals: ApprovalRequest[];
-    summary?: string;
+    finalResponse?: string;
+    resumeDisposition?: ProjectedSessionResult["resumeDisposition"];
+    executionSummary?: string;
+    verificationSummary?: string;
+    pauseSummary?: string;
     recommendationReason?: string;
     threadList?: SessionThreadSummary[];
   }): Promise<SessionCommandResult> {
@@ -226,7 +291,19 @@ export function createSessionKernel(deps: {
       answers: stableArtifacts.answers,
       messages: stableArtifacts.messages,
       workers: stableArtifacts.workers,
-      summary: input.summary,
+      finalResponse: input.finalResponse,
+      resumeDisposition: input.resumeDisposition,
+      executionSummary: input.executionSummary,
+      verificationSummary: input.verificationSummary,
+      pauseSummary: input.pauseSummary,
+      latestExecutionStatus:
+        input.status === "completed"
+          ? "completed"
+          : input.status === "waiting_approval"
+            ? "waiting_approval"
+            : input.status === "blocked"
+              ? "blocked"
+              : "running",
       recommendationReason: input.recommendationReason,
       workspaceRoot: deps.workspaceRoot,
       projectId: deps.projectId,
@@ -250,7 +327,11 @@ export function createSessionKernel(deps: {
       status: result.status,
       tasks: [result.task],
       approvals: result.approvals,
-      summary: result.summary,
+      finalResponse: result.finalResponse,
+      resumeDisposition: result.resumeDisposition,
+      executionSummary: result.executionSummary,
+      verificationSummary: result.verificationSummary,
+      pauseSummary: result.pauseSummary,
       recommendationReason: result.recommendationReason,
       threadList,
     });
@@ -311,14 +392,19 @@ export function createSessionKernel(deps: {
           });
         }
 
+        const threadWithUserMessage = await appendUserTranscriptMessage({
+          thread,
+          content: command.payload.text,
+        });
+
         startBackgroundControlAction({
-          threadId: thread.threadId,
-          execute: () => deps.controlPlane.startRootTask(thread.threadId, command.payload.text),
+          threadId: threadWithUserMessage.threadId,
+          execute: () => deps.controlPlane.startRootTask(threadWithUserMessage.threadId, command.payload.text),
         });
 
         const threadList = await getThreadSummaries();
         return buildSessionResult({
-          thread,
+          thread: threadWithUserMessage,
           status: deriveProjectedExecutionStatus(submitContext.latestRun, thread.status),
           tasks: submitContext.tasks,
           approvals: submitContext.approvals,
@@ -372,6 +458,60 @@ export function createSessionKernel(deps: {
           status: deriveProjectedExecutionStatus(approvalContext.latestRun, approvalContext.thread.status),
           tasks: approvalContext.tasks,
           approvals: approvalContext.approvals,
+          threadList,
+        });
+      }
+
+      if (
+        command.type === "restart_run"
+        || command.type === "resubmit_intent"
+        || command.type === "abandon_run"
+      ) {
+        const thread = await deps.stores.threadStore.get(command.payload.threadId);
+        if (!thread) {
+          throw new Error(`thread ${command.payload.threadId} not found`);
+        }
+        const latestRun = await deps.stores.runStore.getLatestByThread(thread.threadId);
+        const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
+        const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
+
+        startBackgroundControlAction({
+          threadId: thread.threadId,
+          execute: () => {
+            if (command.type === "restart_run") {
+              return deps.controlPlane.restartRun(thread.threadId);
+            }
+            if (command.type === "resubmit_intent") {
+              return deps.controlPlane.resubmitIntent(thread.threadId, command.payload.content);
+            }
+            return deps.controlPlane.abandonRun(thread.threadId);
+          },
+          onFinalized: () =>
+            (async () => {
+              events.publish({
+                type: "thread.recovery_resolved",
+                payload: {
+                  threadId: thread.threadId,
+                  action: command.type,
+                },
+              });
+              await appendRuntimeEvent({
+                threadId: thread.threadId,
+                type: "thread.recovery_resolved",
+                payload: {
+                  threadId: thread.threadId,
+                  action: command.type,
+                },
+              });
+            })(),
+        });
+
+        const threadList = await getThreadSummaries();
+        return buildSessionResult({
+          thread,
+          status: deriveProjectedExecutionStatus(latestRun, thread.status),
+          tasks,
+          approvals,
           threadList,
         });
       }

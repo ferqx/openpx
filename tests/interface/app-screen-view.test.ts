@@ -10,7 +10,7 @@ describe("app screen view builders", () => {
   test("builds conversation and utility slices from app state", () => {
     const session = {
       status: "completed" as const,
-      summary: "Awaiting answer",
+      finalResponse: "Awaiting answer",
       threadId: "thread-1",
       workspaceRoot: "/tmp/workspace",
       projectId: "project-1",
@@ -66,7 +66,7 @@ describe("app screen view builders", () => {
     const chromeView = buildChromeView({
       session: {
         status: "blocked",
-        summary: "blocked",
+        pauseSummary: "blocked",
         threadId: "thread-1",
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",

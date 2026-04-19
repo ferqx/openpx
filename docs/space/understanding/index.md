@@ -6,11 +6,13 @@
 
 1. [runtime-spine.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/runtime-spine.md)
 2. [core-concepts.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/core-concepts.md)
-3. [state-flows.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/state-flows.md)
-4. [harness-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-code-map.md)
-5. [harness-protocol-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-protocol-code-map.md)
-6. [harness-feedback-loop.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-feedback-loop.md)
-7. [harness-surface-boundary.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-surface-boundary.md)
+3. [config-system.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/config-system.md)
+4. [state-flows.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/state-flows.md)
+5. [harness-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-code-map.md)
+6. [harness-protocol-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-protocol-code-map.md)
+7. [harness-feedback-loop.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-feedback-loop.md)
+8. [system-confidence.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/system-confidence.md)
+9. [harness-surface-boundary.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-surface-boundary.md)
 
 ## 每个文档回答什么
 
@@ -38,6 +40,15 @@
 - approve resume
 - reject replan
 - interrupt / hydrate
+
+### `config-system.md`
+
+回答：
+
+- 配置文件放在哪里
+- 哪一层覆盖哪一层
+- `provider / runtime / permission / ui.tui` 如何进入当前运行链路
+- capability 目录和主配置文件如何分工
 
 ### `harness-code-map.md`
 
@@ -67,6 +78,15 @@
 - rule 怎么评
 - review item 怎么来
 - promotion guardrail 怎么判
+
+### `system-confidence.md`
+
+回答：
+
+- M2 的 confidence pipeline 如何组织
+- scenario backend 与 post-run analyzer 如何分工
+- replay / failure report / truth diff / scorecard 的作用是什么
+- validation gate 为什么是正式入口
 
 ### `harness-surface-boundary.md`
 

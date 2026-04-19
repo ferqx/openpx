@@ -3,14 +3,13 @@ import type { Run } from "../domain/run";
 import type { ApprovalService } from "../control/policy/approval-service";
 import type { ControlTask } from "../control/tasks/task-types";
 import type { ToolExecuteRequest, ToolExecutionOutcome } from "../control/tools/tool-types";
+import { buildApprovalContinuation } from "../harness/core/run-loop/approval-suspension";
 import type { SessionControlPlaneResult } from "../harness/core/session/session-kernel";
-import type { ResumeControl } from "../runtime/graph/root/resume-control";
 import {
   buildRejectedApprovalReason,
   deriveCapabilityMarkerFromApprovalSummary,
 } from "../runtime/planning/planner-normalization";
 import {
-  canResetThreadCheckpoint,
   ensureControlTask,
   resolveApprovalToolRequest,
   summarizeApprovedAction,
@@ -26,12 +25,17 @@ type ApprovalResolutionDeps = {
   saveTaskStatus: (task: ControlTask, status: ControlTask["status"]) => Promise<ControlTask>;
   updateRunStatus: (run: Run, status: Run["status"], patch?: Partial<Run>) => Promise<Run>;
   executeApprovedTool: (request: ToolExecuteRequest) => Promise<ToolExecutionOutcome>;
-  getCheckpoint: (threadId: string) => Promise<unknown>;
-  deleteCheckpoint?: (threadId: string) => Promise<void>;
-  startRootTask: (threadId: string, input: string | ResumeControl) => Promise<SessionControlPlaneResult>;
+  hasSuspension: (runId: string, threadId: string) => Promise<boolean>;
+  buildCurrentResult: (input: {
+    threadId: string;
+    run: Run;
+    resumeDisposition: SessionControlPlaneResult["resumeDisposition"];
+    fallbackTaskSummary: string;
+  }) => Promise<SessionControlPlaneResult>;
+  startRootTask: (threadId: string, input: string | import("../harness/core/run-loop/continuation").ContinuationEnvelope) => Promise<SessionControlPlaneResult>;
 };
 
-/** checkpoint 已缺失时，用审批记录兜底构造最小 task 视图 */
+/** suspension 已缺失时，用审批记录兜底构造最小 task 视图 */
 function buildFallbackTask(approval: ApprovalRequest): ControlTask {
   return {
     taskId: approval.taskId,
@@ -40,6 +44,19 @@ function buildFallbackTask(approval: ApprovalRequest): ControlTask {
     summary: approval.summary,
     status: "blocked",
   };
+}
+
+function resolveDispositionForNonPendingApproval(input: {
+  approval: ApprovalRequest;
+  run?: Run;
+}): SessionControlPlaneResult["resumeDisposition"] {
+  if (input.approval.status === "cancelled") {
+    return "invalidated";
+  }
+  if (input.run?.blockingReason?.kind === "human_recovery") {
+    return "not_resumable";
+  }
+  return "already_resolved";
 }
 
 export async function resolveApprovedRequest(
@@ -52,17 +69,34 @@ export async function resolveApprovedRequest(
   }
 
   const run = approval.runId ? await deps.getRun(approval.runId) : undefined;
+  if (approval.status !== "pending" && run) {
+    return deps.buildCurrentResult({
+      threadId: approval.threadId,
+      run,
+      resumeDisposition: resolveDispositionForNonPendingApproval({ approval, run }),
+      fallbackTaskSummary: approval.summary,
+    });
+  }
   const toolRequest = resolveApprovalToolRequest(approval, deps.workspaceRoot);
   if (!toolRequest) {
     throw new Error(`approval request ${approvalRequestId} cannot be resumed without a stored tool request`);
   }
 
-  await deps.approvals.updateStatus(approvalRequestId, "approved");
-  const checkpoint = await deps.getCheckpoint(approval.threadId);
+  const hasSuspension = run ? await deps.hasSuspension(run.runId, approval.threadId) : false;
 
-  // 没有 checkpoint 时，说明无法回到 graph 中点继续执行；
+  if (run && !hasSuspension && (run.status === "interrupted" || run.blockingReason?.kind === "human_recovery" || run.status === "blocked")) {
+    return deps.buildCurrentResult({
+      threadId: approval.threadId,
+      run,
+      resumeDisposition: run.status === "interrupted" ? "invalidated" : run.blockingReason?.kind === "human_recovery" ? "not_resumable" : "already_resolved",
+      fallbackTaskSummary: approval.summary,
+    });
+  }
+
+  // 没有 suspension 时，说明无法回到 run-loop 中点继续执行；
   // 此时退化为“直接执行已批准工具，然后手动收尾 run/task 状态”。
-  if (!checkpoint || !run) {
+  if (!hasSuspension || !run) {
+    await deps.approvals.updateStatus(approvalRequestId, "approved");
     const currentTask = (await deps.getTask(approval.taskId)) ?? buildFallbackTask(approval);
     const runningTask = await deps.saveTaskStatus(ensureControlTask(currentTask), "running");
     if (run) {
@@ -97,7 +131,11 @@ export async function resolveApprovedRequest(
         status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
         task: completedTask,
         approvals: pendingApprovals,
-        summary: summarizeApprovedAction(approval.summary, deps.workspaceRoot, toolRequest.path),
+        finalResponse: pendingApprovals.length > 0
+          ? undefined
+          : summarizeApprovedAction(approval.summary, deps.workspaceRoot, toolRequest.path),
+        executionSummary: summarizeApprovedAction(approval.summary, deps.workspaceRoot, toolRequest.path),
+        pauseSummary: pendingApprovals.length > 0 ? "Additional approvals are still pending." : undefined,
       };
     }
 
@@ -113,22 +151,33 @@ export async function resolveApprovedRequest(
       status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
       task: failedTask,
       approvals: pendingApprovals,
-      summary: `Unable to complete approved action: ${outcome.reason}`,
+      finalResponse: pendingApprovals.length > 0
+        ? undefined
+        : `Unable to complete approved action: ${outcome.reason}`,
+      executionSummary: `Unable to complete approved action: ${outcome.reason}`,
+      pauseSummary: pendingApprovals.length > 0 ? "Additional approvals are still pending." : undefined,
     };
   }
 
-  // 有 checkpoint 时，优先回到原 graph 恢复点，让 graph 自己继续处理后续状态。
+  // 有 suspension 时，优先回到原 run-loop 恢复点，让 engine 自己继续处理后续状态。
+  await deps.approvals.updateStatus(approvalRequestId, "approved");
   await deps.updateRunStatus(run, "waiting_approval", {
     activeTaskId: approval.taskId,
     blockingReason: undefined,
     endedAt: undefined,
   });
 
-  return deps.startRootTask(approval.threadId, {
-    kind: "approval_resolution",
-    decision: "approved",
-    approvalRequestId,
-  });
+  return deps.startRootTask(
+    approval.threadId,
+    buildApprovalContinuation({
+      threadId: approval.threadId,
+      runId: run.runId,
+      taskId: approval.taskId,
+      approvalRequestId,
+      decision: "approved",
+      step: "execute",
+    }),
+  );
 }
 
 export async function resolveRejectedRequest(
@@ -141,25 +190,18 @@ export async function resolveRejectedRequest(
   }
 
   const run = approval.runId ? await deps.getRun(approval.runId) : undefined;
-  await deps.approvals.updateStatus(approvalRequestId, "rejected");
-  const checkpoint = run ? await deps.getCheckpoint(approval.threadId) : undefined;
-
-  if (checkpoint && run) {
-    const currentTask = (await deps.getTask(approval.taskId)) ?? buildFallbackTask(approval);
-    const cancelledTask = await deps.saveTaskStatus(ensureControlTask(currentTask), "cancelled");
-    await deps.updateRunStatus(run, "completed", {
-      activeTaskId: cancelledTask.taskId,
-      resultSummary: `Rejected ${approval.summary}`,
-      blockingReason: undefined,
-      endedAt: new Date().toISOString(),
+  if (approval.status !== "pending" && run) {
+    return deps.buildCurrentResult({
+      threadId: approval.threadId,
+      run,
+      resumeDisposition: resolveDispositionForNonPendingApproval({ approval, run }),
+      fallbackTaskSummary: approval.summary,
     });
+  }
+  const hasSuspension = run ? await deps.hasSuspension(run.runId, approval.threadId) : false;
 
-    if (deps.deleteCheckpoint && canResetThreadCheckpoint({ deleteThread: deps.deleteCheckpoint })) {
-      await deps.deleteCheckpoint(approval.threadId);
-    }
-
-    // 拒绝审批后重新发起一轮 root task，让 planner/responders 能基于
-    // “什么能力被拒绝了”重新选择策略，而不是简单停在 cancelled。
+  if (hasSuspension && run) {
+    await deps.approvals.updateStatus(approvalRequestId, "rejected");
     const capabilityMarker =
       approval.toolRequest?.toolName && approval.toolRequest?.action
         ? `${approval.toolRequest.toolName}.${approval.toolRequest.action}`
@@ -167,10 +209,28 @@ export async function resolveRejectedRequest(
 
     return deps.startRootTask(
       approval.threadId,
-      buildRejectedApprovalReason(approval.summary, capabilityMarker),
+      buildApprovalContinuation({
+        threadId: approval.threadId,
+        runId: run.runId,
+        taskId: approval.taskId,
+        approvalRequestId,
+        decision: "rejected",
+        reason: buildRejectedApprovalReason(approval.summary, capabilityMarker),
+        step: "plan",
+      }),
     );
   }
 
+  if (run && !hasSuspension && (run.status === "interrupted" || run.blockingReason?.kind === "human_recovery" || run.status === "blocked")) {
+    return deps.buildCurrentResult({
+      threadId: approval.threadId,
+      run,
+      resumeDisposition: run.status === "interrupted" ? "invalidated" : run.blockingReason?.kind === "human_recovery" ? "not_resumable" : "already_resolved",
+      fallbackTaskSummary: approval.summary,
+    });
+  }
+
+  await deps.approvals.updateStatus(approvalRequestId, "rejected");
   const currentTask = (await deps.getTask(approval.taskId)) ?? buildFallbackTask(approval);
   const cancelledTask = await deps.saveTaskStatus(ensureControlTask(currentTask), "cancelled");
   const pendingApprovals = await deps.listPendingApprovals(approval.threadId);
@@ -194,6 +254,7 @@ export async function resolveRejectedRequest(
     status: pendingApprovals.length > 0 ? "waiting_approval" : "completed",
     task: cancelledTask,
     approvals: pendingApprovals,
-    summary: `Rejected ${approval.summary}`,
+    finalResponse: pendingApprovals.length > 0 ? undefined : `Rejected ${approval.summary}`,
+    pauseSummary: pendingApprovals.length > 0 ? "Additional approvals are still pending." : undefined,
   };
 }

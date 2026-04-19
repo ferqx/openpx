@@ -56,7 +56,7 @@ const RULE_METADATA: Record<string, RealRuleDescriptor> = {
     failureClass: "approval_control_failure",
     rootCauseLayer: "approval_runtime",
     severity: "high",
-    nextSuggestedAction: "Resume the run through the graph and verify the approved task reaches completed/completed.",
+    nextSuggestedAction: "Resume the run through the run-loop and verify the approved task reaches completed/completed.",
     impactedObject: (trace) => `run:${trace.runId}`,
     invariantId: HARNESS_INVARIANTS.APPROVAL_MUST_RETURN_THROUGH_GRAPH.id,
   },
@@ -96,7 +96,7 @@ const RULE_METADATA: Record<string, RealRuleDescriptor> = {
     failureClass: "approval_control_failure",
     rootCauseLayer: "approval_runtime",
     severity: "high",
-    nextSuggestedAction: "Restore graph-backed resume after approval before executing side effects.",
+    nextSuggestedAction: "Restore run-loop resume after approval before executing side effects.",
     impactedObject: (trace) => `run:${trace.runId}`,
     invariantId: HARNESS_INVARIANTS.APPROVAL_MUST_RETURN_THROUGH_GRAPH.id,
   },
@@ -343,7 +343,7 @@ function evaluateApprovalTrajectory(trace: RealRunTrace): EvalRuleResult {
     "trajectory.no_graph_bypass_after_approval",
     passed ? "passed" : "failed",
     passed
-      ? "Approval resumed through the graph before executing side effects."
+      ? "Approval resumed through the run-loop before executing side effects."
       : "Approval appears to have bypassed the graph before side effects executed.",
     trace,
   );

@@ -4,6 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { evalComparableRunSchema, type EvalScenarioResult } from "../../src/eval/eval-schema";
 import { realRunTraceSchema, type RealRunTrace } from "../../src/harness/eval/real/real-eval-schema";
+import { RealSampleExecutionError } from "../../src/harness/eval/real/sample-runner";
+import { coreEvalScenarios } from "../../src/eval/scenarios";
+import { runScenario } from "../../src/eval/scenario-runner";
 import { runValidationSuite } from "../../src/validation/orchestrator";
 import type {
   ValidationScenarioSpec,
@@ -395,6 +398,42 @@ describe("validation orchestrator", () => {
     expect(verdict?.verdict.status).toBe("passed");
   });
 
+  test("normalizes real-eval sample execution errors into failed validation verdicts", async () => {
+    const repoRoot = await createFixtureRepo("real-failure");
+    const outputRoot = await createTempDir("openpx-validation-real-failure-output-");
+    const dataDir = path.join(outputRoot, "validation.sqlite");
+
+    const summary = await runValidationSuite({
+      scenarios: [createRealSpec(repoRoot)],
+      rootDir: outputRoot,
+      dataDir,
+      familyThresholds: {
+        approval_control: 0.7,
+      },
+      executeRealScenario: async () => {
+        throw new RealSampleExecutionError("approval-gated real sample never reached approval", {
+          plannerEvidence: {
+            summary: "model produced a non-approval filesystem plan",
+            approvalRequiredActions: [],
+          },
+          approvalPathEvidence: {
+            approvalRequestObserved: false,
+            terminalMode: "running",
+          },
+        });
+      },
+    });
+
+    const verdict = summary.scenarioVerdicts[0];
+    expect(summary.status).toBe("failed");
+    expect(verdict?.evidence.backendRefs.kind).toBe("real_eval");
+    expect(verdict?.evidence.approvalEvents).toEqual([]);
+    expect(verdict?.verdict.status).toBe("failed");
+    expect(verdict?.verdict.dimensions.control.status).toBe("failed");
+    expect(verdict?.evidence.postRunAnalyzers.some((item) => item.analyzerId === "failure_report")).toBe(true);
+    expect(await Bun.file(verdict?.evidence.artifactPaths?.failureJsonPath ?? "").exists()).toBe(true);
+  });
+
   test("distinguishes guarded and full-access control evidence for the same task family", async () => {
     const guardedRepo = await createFixtureRepo("guarded");
     const fullRepo = await createFixtureRepo("full");
@@ -468,5 +507,103 @@ describe("validation orchestrator", () => {
     expect(summary.reviewQueueCount).toBeGreaterThan(0);
     expect(summary.scenarioVerdicts[0]?.verdict.repairRecommendations.length).toBeGreaterThan(0);
     expect(summary.scenarioVerdicts[0]?.evidence.artifactPaths?.artifactDir).toBeDefined();
+  });
+
+  test("generates replay, truth-diff, and scorecard artifacts as post-run analyzers", async () => {
+    const repoRoot = await createFixtureRepo("analyzer-pass");
+    const outputRoot = await createTempDir("openpx-validation-analyzer-output-");
+    const dataDir = path.join(outputRoot, "validation.sqlite");
+
+    const summary = await runValidationSuite({
+      scenarios: [createDeterministicSpec(repoRoot, "guarded")],
+      rootDir: outputRoot,
+      dataDir,
+      familyThresholds: {
+        approval_control: 0.7,
+      },
+      executeDeterministicScenario: async ({ sandboxRoot }) => {
+        const scenario = coreEvalScenarios.find((item) => item.id === "approval-required-then-approved");
+        if (!scenario) {
+          throw new Error("approval-required-then-approved scenario not found");
+        }
+        return runScenario({
+          scenario,
+          rootDir: path.join(sandboxRoot, "deterministic"),
+          dataDir,
+        });
+      },
+    });
+
+    const verdict = summary.scenarioVerdicts[0];
+    expect(verdict?.evidence.postRunAnalyzers.some((item) => item.analyzerId === "truth_diff")).toBe(true);
+    expect(await Bun.file(verdict?.evidence.artifactPaths?.replayJsonPath ?? "").exists()).toBe(true);
+    expect(await Bun.file(verdict?.evidence.artifactPaths?.replayMarkdownPath ?? "").exists()).toBe(true);
+    expect(await Bun.file(verdict?.evidence.artifactPaths?.truthDiffJsonPath ?? "").exists()).toBe(true);
+    expect(await Bun.file(summary.artifactPaths?.scorecardJsonPath ?? "").exists()).toBe(true);
+    expect(await Bun.file(summary.artifactPaths?.scorecardMarkdownPath ?? "").exists()).toBe(true);
+  });
+
+  test("generates a failure report artifact when runtime confidence analyzers detect a failed scenario", async () => {
+    const repoRoot = await createFixtureRepo("analyzer-fail");
+    const outputRoot = await createTempDir("openpx-validation-failure-output-");
+    const dataDir = path.join(outputRoot, "validation.sqlite");
+
+    const summary = await runValidationSuite({
+      scenarios: [createDeterministicSpec(repoRoot, "guarded")],
+      rootDir: outputRoot,
+      dataDir,
+      familyThresholds: {
+        approval_control: 0.9,
+      },
+      executeDeterministicScenario: async ({ sandboxRoot }) => {
+        const baseScenario = coreEvalScenarios.find((item) => item.id === "capability-happy-path");
+        if (!baseScenario) {
+          throw new Error("capability-happy-path scenario not found");
+        }
+        return runScenario({
+          scenario: {
+            ...baseScenario,
+            id: "capability-happy-path-validation-failure",
+            expectedOutcome: {
+              ...baseScenario.expectedOutcome,
+              expectedSummaryIncludes: ["missing-summary-token"],
+            },
+          },
+          rootDir: path.join(sandboxRoot, "deterministic"),
+          dataDir,
+        });
+      },
+    });
+
+    const verdict = summary.scenarioVerdicts[0];
+    expect(verdict?.verdict.status).toBe("failed");
+    expect(verdict?.evidence.postRunAnalyzers.some((item) => item.analyzerId === "failure_report")).toBe(true);
+    expect(await Bun.file(verdict?.evidence.artifactPaths?.failureJsonPath ?? "").exists()).toBe(true);
+    expect(await Bun.file(verdict?.evidence.artifactPaths?.failureMarkdownPath ?? "").exists()).toBe(true);
+  });
+
+  test("uses an out-of-tree sandbox when validation output root is nested inside the source repo", async () => {
+    const repoRoot = await createFixtureRepo("nested-output");
+    const outputRoot = path.join(repoRoot, ".openpx", "validation");
+    const dataDir = path.join(outputRoot, "validation.sqlite");
+    let capturedSandboxRepoRoot = "";
+
+    const summary = await runValidationSuite({
+      scenarios: [createDeterministicSpec(repoRoot, "guarded")],
+      rootDir: outputRoot,
+      dataDir,
+      familyThresholds: {
+        approval_control: 0.7,
+      },
+      executeDeterministicScenario: async ({ sandboxRepoRoot }) => {
+        capturedSandboxRepoRoot = sandboxRepoRoot;
+        expect(await Bun.file(path.join(sandboxRepoRoot, "README.md")).exists()).toBe(true);
+        return createEvalScenarioResult("passed");
+      },
+    });
+
+    expect(summary.status).toBe("passed");
+    expect(capturedSandboxRepoRoot).not.toContain(path.join(repoRoot, ".openpx", "validation"));
+    expect(capturedSandboxRepoRoot.startsWith(repoRoot)).toBe(false);
   });
 });

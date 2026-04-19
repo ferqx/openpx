@@ -104,7 +104,10 @@ export function mergeThreadViewIntoSession(
     status,
     stage: status === "waiting_approval" ? "awaiting_confirmation" : status === "blocked" ? "blocked" : "idle",
     threadId: update.threadId,
-    summary: update.summary ?? current?.summary ?? "Awaiting answer",
+    finalResponse: update.finalResponse ?? current?.finalResponse,
+    executionSummary: update.executionSummary ?? current?.executionSummary,
+    verificationSummary: update.verificationSummary ?? current?.verificationSummary,
+    pauseSummary: update.pauseSummary ?? current?.pauseSummary,
     tasks: update.tasks ?? [],
     approvals: update.approvals ?? [],
     answers,
@@ -145,20 +148,56 @@ export function deriveMessagesFromSession(result: RuntimeSessionState | TuiSessi
     ];
   }
 
-  const summary = result.summary?.trim();
-  if (summary && summary !== "Awaiting answer") {
+  const finalResponse = result.finalResponse?.trim();
+  if (finalResponse) {
     return [
       {
         id: `assistant-summary-${result.threadId ?? "unknown"}`,
         role: "assistant",
-        content: summary,
+        content: finalResponse,
+        timestamp: Date.now(),
+      },
+    ];
+  }
+
+  const pauseSummary = result.pauseSummary?.trim();
+  if (pauseSummary) {
+    return [
+      {
+        id: `assistant-pause-${result.threadId ?? "unknown"}`,
+        role: "assistant",
+        content: pauseSummary,
+        timestamp: Date.now(),
+      },
+    ];
+  }
+
+  const verificationSummary = result.verificationSummary?.trim();
+  if (verificationSummary) {
+    return [
+      {
+        id: `assistant-verification-${result.threadId ?? "unknown"}`,
+        role: "assistant",
+        content: verificationSummary,
+        timestamp: Date.now(),
+      },
+    ];
+  }
+
+  const executionSummary = result.executionSummary?.trim();
+  if (executionSummary) {
+    return [
+      {
+        id: `assistant-execution-${result.threadId ?? "unknown"}`,
+        role: "assistant",
+        content: executionSummary,
         timestamp: Date.now(),
       },
     ];
   }
 
   const narrativeSummary = result.narrativeSummary?.trim();
-  if (narrativeSummary && narrativeSummary !== "Awaiting answer") {
+  if (narrativeSummary) {
     return [
       {
         id: `assistant-narrative-${result.threadId ?? "unknown"}`,

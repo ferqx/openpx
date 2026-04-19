@@ -2,11 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { buildDisplayMessages, deriveMessagesFromSession, mergeThreadViewIntoSession } from "../../src/surfaces/tui/session-sync";
 
 describe("session-sync", () => {
-  test("derives assistant display from summary when transcript arrays are absent", () => {
+  test("derives assistant display from final response when transcript arrays are absent", () => {
     const messages = deriveMessagesFromSession({
       status: "completed",
       threadId: "thread-summary",
-      summary: "Projected summary",
+      finalResponse: "Projected summary",
       workspaceRoot: "/workspace",
       projectId: "project-1",
       tasks: [],
@@ -32,7 +32,7 @@ describe("session-sync", () => {
       {
         status: "completed",
         threadId: "thread-sync",
-        summary: "Old summary",
+        finalResponse: "Old summary",
         workspaceRoot: "/workspace",
         projectId: "project-1",
         tasks: [
@@ -86,7 +86,7 @@ describe("session-sync", () => {
       {
         threadId: "thread-sync",
         status: "completed",
-        summary: "Fresh summary",
+        finalResponse: "Fresh summary",
         recoveryFacts: {
           threadId: "thread-sync",
           revision: 2,
@@ -123,7 +123,7 @@ describe("session-sync", () => {
       {
         status: "blocked",
         threadId: "thread-sync",
-        summary: "Blocked summary",
+        pauseSummary: "Blocked summary",
         workspaceRoot: "/workspace",
         projectId: "project-1",
         tasks: [],
@@ -140,13 +140,13 @@ describe("session-sync", () => {
       {
         threadId: "thread-sync",
         status: "completed",
-        summary: "Recovered summary",
+        finalResponse: "Recovered summary",
       },
     );
 
     expect(merged.status).toBe("completed");
     expect(merged.blockingReason).toBeUndefined();
-    expect(merged.summary).toBe("Recovered summary");
+    expect(merged.finalResponse).toBe("Recovered summary");
   });
 
   test("combines session truth with transient display-only overlays", () => {
@@ -154,7 +154,7 @@ describe("session-sync", () => {
       session: {
         status: "completed",
         threadId: "thread-display",
-        summary: "Durable summary",
+        finalResponse: "Durable summary",
         workspaceRoot: "/workspace",
         projectId: "project-1",
         tasks: [],

@@ -56,3 +56,7 @@ OpenPX 当前不追求“计划很多”，而追求：
 - 每个活跃计划都能被执行
 - 每个活跃计划都有明确验证
 - `active/` 不变成新的文档堆积区
+
+## 当前活跃计划
+
+- [2026-04-18-m3-openai-compatible-model-layer.md](/Users/chenchao/Code/ai/openpx/docs/space/execution/active/2026-04-18-m3-openai-compatible-model-layer.md)

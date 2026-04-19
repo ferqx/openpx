@@ -28,7 +28,11 @@ function createEmptySessionResult(scope: HarnessSessionScope): SessionCommandRes
   return {
     threadId: "",
     status: "completed",
-    summary: "Awaiting answer",
+    finalResponse: undefined,
+    executionSummary: undefined,
+    verificationSummary: undefined,
+    pauseSummary: undefined,
+    latestExecutionStatus: "completed",
     workspaceRoot: scope.workspaceRoot,
     projectId: scope.projectId,
     approvals: [],
@@ -151,6 +155,37 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       const result = await deps.context.kernel.hydrateSession();
       if (!result) throw new Error("failed to hydrate thread");
       return result;
+    }
+
+    if (
+      command.kind === "restart_run"
+      || command.kind === "resubmit_intent"
+      || command.kind === "abandon_run"
+    ) {
+      const thread = await deps.context.stores.threadStore.get(command.threadId);
+      if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
+        throw new Error(`thread ${command.threadId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+
+      await deps.touchThread(thread, "active");
+      deps.setActiveThreadId(thread.threadId);
+
+      if (command.kind === "restart_run") {
+        return deps.context.kernel.handleCommand({
+          type: "restart_run",
+          payload: { threadId: thread.threadId },
+        });
+      }
+      if (command.kind === "resubmit_intent") {
+        return deps.context.kernel.handleCommand({
+          type: "resubmit_intent",
+          payload: { threadId: thread.threadId, content: command.content },
+        });
+      }
+      return deps.context.kernel.handleCommand({
+        type: "abandon_run",
+        payload: { threadId: thread.threadId },
+      });
     }
 
     if (command.kind === "interrupt") {

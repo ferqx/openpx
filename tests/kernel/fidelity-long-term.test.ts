@@ -5,6 +5,7 @@ import { compactThreadView } from "../../src/control/context/thread-compaction-p
 import { hydrateRootState } from "../../src/control/context/root-state-hydrator";
 import { nextId } from "../../src/shared/ids";
 import type { DerivedThreadView } from "../../src/control/context/thread-compaction-types";
+import { resolveConfig } from "../../src/shared/config";
 
 /**
  * KERNEL FIDELITY BENCHMARK
@@ -12,21 +13,32 @@ import type { DerivedThreadView } from "../../src/control/context/thread-compact
  * preserves "Strategic Intent" over long durations.
  */
 describe("Kernel Fidelity Benchmark (Real Model)", () => {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-  const modelName = process.env.OPENAI_MODEL || "gpt-4-turbo";
+  const resolvedConfig = resolveConfig({
+    workspaceRoot: process.cwd(),
+    dataDir: process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ":memory:",
+    allowMissingModel: true,
+  });
+  const apiKey = resolvedConfig.model.default.provider.apiKey;
+  const baseURL = resolvedConfig.model.default.provider.profile.baseURL;
+  const modelName = resolvedConfig.model.default.name;
   const runRealModelTests = process.env.OPENPX_RUN_REAL_MODEL_TESTS === "1";
 
   if (!runRealModelTests || !apiKey) {
     console.warn(
-      "Skipping fidelity test: set OPENPX_RUN_REAL_MODEL_TESTS=1 and OPENAI_API_KEY to enable real-model benchmarks.",
+      "Skipping fidelity test: set OPENPX_RUN_REAL_MODEL_TESTS=1 and configure the active model profile API key to enable real-model benchmarks.",
     );
     return;
   }
 
   console.log(`[DEBUG] Initializing ModelGateway with model: ${modelName} at ${baseURL}`);
   
-  const gateway = createModelGateway({ apiKey, baseURL, modelName });
+  const gateway = createModelGateway({
+    slots: {
+      default: resolvedConfig.model.default,
+      small: resolvedConfig.model.small,
+    },
+    selectionPolicy: resolvedConfig.model.selectionPolicy,
+  });
   const projector = createThreadStateProjector();
 
   test("preserves architectural constraints after multiple hard compactions", async () => {
