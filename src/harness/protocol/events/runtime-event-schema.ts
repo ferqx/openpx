@@ -38,6 +38,7 @@ export const runtimeEventTypes = [
   "model.first_token_received",
   "model.completed",
   "model.failed",
+  "model.telemetry",
   "stream.thinking_started",
   "stream.thinking_chunk",
   "stream.tool_call_started",
@@ -242,6 +243,33 @@ const modelFailedPayloadSchema = z.object({
   error: z.string(),
 }).strict();
 
+const modelTelemetryPayloadSchema = z.object({
+  providerId: z.string().min(1),
+  baseURL: z.string().min(1),
+  model: z.string().min(1),
+  operation: z.enum(["plan", "verify", "respond"]),
+  threadId: z.string().min(1).optional(),
+  runId: z.string().min(1).optional(),
+  taskId: z.string().min(1).optional(),
+  requestId: z.string().min(1).optional(),
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+  waitDuration: z.number().int().nonnegative(),
+  genDuration: z.number().int().nonnegative(),
+  totalDuration: z.number().int().nonnegative(),
+  status: z.enum(["completed", "failed", "cancelled"]),
+  errorKind: z.enum([
+    "config_error",
+    "network_error",
+    "provider_error",
+    "rate_limit_error",
+    "timeout_error",
+    "cancelled_error",
+    "invalid_response_error",
+  ]).optional(),
+  fallbackCount: z.number().int().nonnegative(),
+}).strict();
+
 const streamThinkingStartedPayloadSchema = z.object({
   model: z.string(),
 }).strict();
@@ -303,6 +331,7 @@ export const runtimeEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("model.first_token_received"), payload: modelTimestampPayloadSchema }),
   z.object({ type: z.literal("model.completed"), payload: modelCompletedPayloadSchema }),
   z.object({ type: z.literal("model.failed"), payload: modelFailedPayloadSchema }),
+  z.object({ type: z.literal("model.telemetry"), payload: modelTelemetryPayloadSchema }),
   z.object({ type: z.literal("stream.thinking_started"), payload: streamThinkingStartedPayloadSchema }),
   z.object({ type: z.literal("stream.thinking_chunk"), payload: streamThinkingChunkPayloadSchema }),
   z.object({ type: z.literal("stream.tool_call_started"), payload: streamToolCallStartedPayloadSchema }),

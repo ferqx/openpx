@@ -125,23 +125,34 @@ OpenPX `v1.0` 的正式恢复承诺锁定为混合恢复策略：
 
 ### M3 - Provider & Cost
 
-目标：把模型接入层从“能调用 provider”升级为“可切换、可观测、可控成本”的 provider 层。
+目标：把模型接入层从“OpenAI SDK 直连”升级为“稳定的 OpenAI-compatible 模型接入与成本控制层”。
 
 重点包括：
 
-- canonical request / response 抽象
-- provider adapter layer
-- capability matrix
-- structured output / tool-call normalization
-- usage / cost / latency telemetry
-- fallback / retry policy
-- 至少第二家 provider 的接入验证
+- OpenAI Chat Facade（OpenAI Chat 门面层）
+- OpenAI-compatible provider profile（兼容 OpenAI Chat 的 provider profile）
+- `defaultModel + smallModel` 模型选择
+- usage / cost / latency / error / fallback telemetry
+- fallback / retry / timeout 策略层
+- 至少第二家 OpenAI-compatible provider 的接入验证
+
+本阶段明确不做：
+
+- OpenAI Responses API
+- Anthropic native / Gemini native 协议
+- 跨协议 tool-calling 抽象
+- provider-native adapter zoo（provider 原生适配器动物园）
+- 大而全模型注册中心
 
 退出标准：
 
-- 上层 run-loop 不感知 provider 细节
-- token / cost / latency / failure rate 可见
-- 第二 provider 接入不破坏 runtime 语义
+- `run-loop` / `control plane` 不感知 provider 差异
+- `ModelGateway` 不再是 OpenAI SDK 细节堆积点，而是 OpenAI-compatible facade
+- Provider Profile 已上线，且能明确表达不支持参数与兼容差异
+- `defaultModel + smallModel` 已进入主路径
+- `model.telemetry` 已进入现有 runtime 观测路径
+- fallback / retry / timeout 已策略化
+- 第二家 OpenAI-compatible provider 接入不破坏 runtime、恢复与审计语义
 
 ### M4 - Agent Capability Beta
 

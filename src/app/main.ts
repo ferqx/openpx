@@ -5,6 +5,7 @@ import { ensureRuntime } from "../runtime/service/runtime-daemon";
 import { RuntimeClient, createRemoteKernel } from "../surfaces/tui/runtime";
 import { resolve, join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
+import { ensureUserOpenPXConfigFile } from "../config/initializer";
 
 // 产品主入口：启动或复用共享 runtime daemon，然后挂载默认 TUI surface。
 // surface 通过 remote-kernel adapter 消费 harness protocol，而不是成为系统本体。
@@ -12,6 +13,7 @@ type MainInput = {
   workspaceRoot?: string;
   projectId?: string;
   dataDir?: string;
+  homeDir?: string;
   mount?: (
     tree: React.ReactElement,
     options?: { exitOnCtrlC?: boolean },
@@ -54,6 +56,12 @@ export async function main(input?: MainInput) {
   const workspaceRoot = input?.workspaceRoot ?? process.cwd();
   const projectId = input?.projectId ?? resolveProjectId(workspaceRoot);
   const dataDir = input?.dataDir ?? process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ".openpx";
+
+  // CLI 首次启动时，先确保用户级配置文件骨架存在，便于后续统一走文件配置。
+  await ensureUserOpenPXConfigFile({
+    workspaceRoot,
+    homeDir: input?.homeDir,
+  });
 
   // 第一步：确保当前 workspace/project 只有一个 runtime 进程在提供服务。
   const runtimeInfo = await ensureRuntime({

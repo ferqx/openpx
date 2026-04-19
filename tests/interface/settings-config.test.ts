@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -27,17 +27,19 @@ describe("settings config", () => {
 
     const resolved = await store.readResolved();
 
-    expect(resolved.global.autoCompact).toBe(true);
+    expect(resolved.user.autoCompact).toBe(true);
     expect(resolved.project).toEqual({});
+    expect(resolved.projectLocal).toEqual({});
     expect(resolved.effective.promptSuggestions).toBe(true);
     expect(resolved.sources.promptSuggestions).toBe("default");
-    expect(resolved.paths.global).toBe(join(homeDir, ".openpx", "config.json"));
-    expect(resolved.paths.project).toBe(join(workspaceRoot, ".openpx", "config.json"));
+    expect(resolved.paths.user).toBe(join(homeDir, ".openpx", "openpx.jsonc"));
+    expect(resolved.paths.project).toBe(join(workspaceRoot, ".openpx", "openpx.jsonc"));
+    expect(resolved.paths.projectLocal).toBe(join(workspaceRoot, ".openpx", "settings.local.jsonc"));
   });
 
-  test("resolves effective values from project overrides above global defaults", () => {
+  test("resolves effective values from project-local > project > user", () => {
     const resolved = resolveSettingsConfig({
-      global: {
+      user: {
         autoCompact: false,
         showTips: true,
         reduceMotion: false,
@@ -50,38 +52,78 @@ describe("settings config", () => {
       },
       project: {
         autoCompact: true,
+      },
+      projectLocal: {
         verboseOutput: true,
+        autoCompact: false,
       },
     });
 
-    expect(resolved.effective.autoCompact).toBe(true);
+    expect(resolved.effective.autoCompact).toBe(false);
     expect(resolved.effective.verboseOutput).toBe(true);
     expect(resolved.effective.showTips).toBe(true);
-    expect(resolved.sources.autoCompact).toBe("project");
-    expect(resolved.sources.verboseOutput).toBe("project");
-    expect(resolved.sources.showTips).toBe("global");
+    expect(resolved.sources.autoCompact).toBe("project-local");
+    expect(resolved.sources.verboseOutput).toBe("project-local");
+    expect(resolved.sources.showTips).toBe("user");
   });
 
-  test("persists global and project config as separate json files", async () => {
+  test("persists user and project-local config into the new jsonc paths", async () => {
     const homeDir = await createTempDir("openpx-home-");
     const workspaceRoot = await createTempDir("openpx-workspace-");
     const store = createSettingsConfigStore({ homeDir, workspaceRoot });
 
-    await store.writeGlobal({
+    await store.writeUser({
       autoCompact: false,
       terminalProgressBar: false,
     });
-    await store.writeProject({
+    await store.writeProjectLocal({
       promptSuggestions: false,
     });
 
     const resolved = await store.readResolved();
+    const userContent = await readFile(join(homeDir, ".openpx", "openpx.jsonc"), "utf8");
+    const projectLocalContent = await readFile(join(workspaceRoot, ".openpx", "settings.local.jsonc"), "utf8");
 
-    expect(resolved.global.autoCompact).toBe(false);
-    expect(resolved.global.terminalProgressBar).toBe(false);
-    expect(resolved.project.promptSuggestions).toBe(false);
+    expect(resolved.user.autoCompact).toBe(false);
+    expect(resolved.user.terminalProgressBar).toBe(false);
+    expect(resolved.projectLocal.promptSuggestions).toBe(false);
     expect(resolved.effective.promptSuggestions).toBe(false);
-    expect(resolved.sources.promptSuggestions).toBe("project");
-    expect(resolved.sources.autoCompact).toBe("global");
+    expect(resolved.sources.promptSuggestions).toBe("project-local");
+    expect(resolved.sources.autoCompact).toBe("user");
+    expect(userContent).not.toContain("\"$schema\"");
+    expect(projectLocalContent).not.toContain("\"$schema\"");
+  });
+
+  test("refuses to overwrite an invalid current config file", async () => {
+    const homeDir = await createTempDir("openpx-home-");
+    const workspaceRoot = await createTempDir("openpx-workspace-");
+    const configPath = join(homeDir, ".openpx", "openpx.jsonc");
+    const store = createSettingsConfigStore({ homeDir, workspaceRoot });
+
+    await mkdir(join(homeDir, ".openpx"), { recursive: true });
+    await writeFile(configPath, `{
+      "provider": {
+        "openai": {
+          "baseURL": "https://api.openai.com/v1",
+          "apiKey": "sk-openpx-test"
+        }
+      },
+      "model": {
+        "default": {
+          "provider": "openai",
+          "name": 42
+        }
+      }
+    }\n`, "utf8");
+
+    await expect(
+      store.writeUser({
+        showTips: false,
+      }),
+    ).rejects.toThrow("cannot update settings because the current config file is invalid");
+
+    const content = await readFile(configPath, "utf8");
+    expect(content).toContain("\"name\": 42");
+    expect(content).not.toContain("\"showTips\": false");
   });
 });

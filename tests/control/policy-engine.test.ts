@@ -77,4 +77,48 @@ describe("PolicyEngine", () => {
 
     expect(decision.kind).toBe("deny");
   });
+
+  test("allows write-like exec and delete actions in full_access mode within allowed roots", () => {
+    const policy = createPolicyEngine({
+      workspaceRoot: "/repo",
+      permissionMode: "full_access",
+      additionalDirectories: ["/tmp/openpx-scratch"],
+    });
+
+    const execDecision = policy.evaluate({
+      toolName: "exec",
+      effect: "exec",
+      command: "touch",
+      commandArgs: ["tmp.txt"],
+      cwd: "/repo",
+    });
+    const deleteDecision = policy.evaluate({
+      toolName: "apply_patch",
+      effect: "apply_patch",
+      action: "delete_file",
+      path: "/tmp/openpx-scratch/cache.txt",
+      changedFiles: 1,
+    });
+
+    expect(execDecision.kind).toBe("allow");
+    expect(deleteDecision.kind).toBe("allow");
+  });
+
+  test("still denies paths outside the allowed roots in full_access mode", () => {
+    const policy = createPolicyEngine({
+      workspaceRoot: "/repo",
+      permissionMode: "full_access",
+      additionalDirectories: ["/tmp/openpx-scratch"],
+    });
+
+    const decision = policy.evaluate({
+      toolName: "apply_patch",
+      effect: "apply_patch",
+      action: "modify_file",
+      path: "/etc/passwd",
+      changedFiles: 1,
+    });
+
+    expect(decision.kind).toBe("deny");
+  });
 });

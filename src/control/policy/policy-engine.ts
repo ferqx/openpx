@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { classifyRisk, type PatchAction, type RiskClassification, type ToolEffect } from "./risk-model";
+import type { PermissionMode } from "../../config/types";
 
 /** policy engine 输入：把工具请求抽象为统一副作用模型 */
 export type PolicyRequest = {
@@ -31,15 +32,26 @@ export type PolicyDecision =
       risk: RiskClassification;
     };
 
-/** 创建策略引擎：基于 workspace 边界和风险等级裁决工具请求 */
-export function createPolicyEngine(input: { workspaceRoot: string }) {
+/** 创建策略引擎：基于 allowed roots 和风险等级裁决工具请求 */
+export function createPolicyEngine(input: {
+  workspaceRoot: string;
+  permissionMode?: PermissionMode;
+  additionalDirectories?: string[];
+}) {
   const workspaceRoot = resolve(input.workspaceRoot);
+  const allowedRoots = [
+    workspaceRoot,
+    ...(input.additionalDirectories ?? []).map((directory) => resolve(directory)),
+  ];
+  const permissionMode = input.permissionMode ?? "guarded";
 
   /** 路径是否仍在 workspace 内，防止 ../ 或同前缀目录逃逸 */
-  function isWithinWorkspace(path: string): boolean {
+  function isWithinAllowedRoots(path: string): boolean {
     const resolvedPath = resolve(path);
-    const workspaceRelativePath = relative(workspaceRoot, resolvedPath);
-    return workspaceRelativePath === "" || (!workspaceRelativePath.startsWith("..") && !isAbsolute(workspaceRelativePath));
+    return allowedRoots.some((root) => {
+      const rootRelativePath = relative(root, resolvedPath);
+      return rootRelativePath === "" || (!rootRelativePath.startsWith("..") && !isAbsolute(rootRelativePath));
+    });
   }
 
   /** 识别只读终端命令：命中时可以直接放行 */
@@ -81,6 +93,50 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
     evaluate(request: PolicyRequest): PolicyDecision {
       const risk = classifyRisk(request);
 
+      if ((request.effect === "apply_patch" || request.effect === "sensitive_write" || request.effect === "read") && request.path) {
+        if (!isWithinAllowedRoots(request.path)) {
+          return {
+            kind: "deny",
+            reason: "filesystem target is outside the allowed roots",
+            risk,
+          };
+        }
+      }
+
+      if (request.effect === "exec" && request.cwd && !isWithinAllowedRoots(request.cwd)) {
+        return {
+          kind: "deny",
+          reason: "terminal commands outside the allowed roots are denied",
+          risk,
+        };
+      }
+
+      if (permissionMode === "full_access") {
+        if (request.effect === "read") {
+          return {
+            kind: "allow",
+            reason: "full_access allows reads within allowed roots",
+            risk,
+          };
+        }
+
+        if (request.effect === "apply_patch" || request.effect === "sensitive_write") {
+          return {
+            kind: "allow",
+            reason: "full_access allows writes within allowed roots",
+            risk,
+          };
+        }
+
+        if (request.effect === "exec") {
+          return {
+            kind: "allow",
+            reason: "full_access allows terminal commands within allowed roots",
+            risk,
+          };
+        }
+      }
+
       if (request.effect === "apply_patch" && request.action === "delete_file") {
         return {
           kind: "needs_approval",
@@ -90,14 +146,6 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
       }
 
       if ((request.effect === "apply_patch" || request.effect === "sensitive_write") && request.path) {
-        if (!isWithinWorkspace(request.path)) {
-          return {
-            kind: "deny",
-            reason: "writes outside the workspace are denied",
-            risk,
-          };
-        }
-
         if (risk.level !== "low") {
           return {
             kind: "needs_approval",
@@ -114,30 +162,22 @@ export function createPolicyEngine(input: { workspaceRoot: string }) {
       }
 
       if (request.effect === "read") {
-        if (request.path && isWithinWorkspace(request.path)) {
+        if (request.path && isWithinAllowedRoots(request.path)) {
           return {
             kind: "allow",
-            reason: "workspace reads are allowed",
+            reason: "allowed-root reads are allowed",
             risk,
           };
         }
 
         return {
           kind: "deny",
-          reason: "reads outside the workspace are denied",
+          reason: "reads outside the allowed roots are denied",
           risk,
         };
       }
 
       if (request.effect === "exec") {
-        if (request.cwd && !isWithinWorkspace(request.cwd)) {
-          return {
-            kind: "deny",
-            reason: "terminal commands outside the workspace are denied",
-            risk,
-          };
-        }
-
         if (isReadOnlyExec(request)) {
           return {
             kind: "allow",

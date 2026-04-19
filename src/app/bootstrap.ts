@@ -400,7 +400,11 @@ async function createControlPlane(input: {
   });
   const approvals = createPersistentApprovalService(input.stores);
   const toolRegistry = createToolRegistry({
-    policy: createPolicyEngine({ workspaceRoot: input.config.workspaceRoot }),
+    policy: createPolicyEngine({
+      workspaceRoot: input.config.workspaceRoot,
+      permissionMode: input.config.permission.defaultMode,
+      additionalDirectories: input.config.permission.additionalDirectories,
+    }),
     approvals,
     executionLedger: input.stores.executionLedger,
   });
@@ -1019,7 +1023,10 @@ export async function createAppContext(input: {
 }) {
   // 单个 runtime scope 的装配根。推荐阅读顺序：
   // config -> sqlite stores -> recovery -> model gateway -> control plane -> kernel。
-  const config = resolveConfig(input);
+  const config = resolveConfig({
+    ...input,
+    allowMissingModel: true,
+  });
   const { sqlite, stores } = await createAppPersistenceLayer({
     config,
     openSqlite: createSqlite,

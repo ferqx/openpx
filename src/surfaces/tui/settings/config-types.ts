@@ -1,33 +1,19 @@
-/** 设置项键集合 */
-export type SettingsConfigKey =
-  | "autoCompact"
-  | "showTips"
-  | "reduceMotion"
-  | "thinkingMode"
-  | "fastMode"
-  | "promptSuggestions"
-  | "rewindCode"
-  | "verboseOutput"
-  | "terminalProgressBar";
+import {
+  DEFAULT_TUI_UI_CONFIG,
+  TUI_UI_KEYS,
+  type TuiUIConfig,
+  type TuiUIConfigKey,
+} from "../../../config/types";
 
-/** 完整设置配置 */
-export type SettingsConfig = Record<SettingsConfigKey, boolean>;
+/** 完整设置配置。 */
+export type SettingsConfig = TuiUIConfig;
+export type SettingsConfigKey = TuiUIConfigKey;
 export type PartialSettingsConfig = Partial<SettingsConfig>;
-export type SettingsConfigScope = "global" | "project";
-export type SettingsConfigSource = "default" | "global" | "project";
+export type SettingsConfigScope = "user" | "project-local";
+export type SettingsConfigSource = "default" | "user" | "project" | "project-local";
 
-/** 默认设置值 */
-export const DEFAULT_SETTINGS_CONFIG: SettingsConfig = {
-  autoCompact: true,
-  showTips: true,
-  reduceMotion: false,
-  thinkingMode: true,
-  fastMode: false,
-  promptSuggestions: true,
-  rewindCode: true,
-  verboseOutput: false,
-  terminalProgressBar: true,
-};
+/** 默认设置值。 */
+export const DEFAULT_SETTINGS_CONFIG: SettingsConfig = DEFAULT_TUI_UI_CONFIG;
 
-/** 设置键列表 */
-export const SETTINGS_CONFIG_KEYS = Object.keys(DEFAULT_SETTINGS_CONFIG) as SettingsConfigKey[];
+/** 设置键列表。 */
+export const SETTINGS_CONFIG_KEYS = TUI_UI_KEYS;

@@ -2,7 +2,10 @@ import { createAppContext } from "./bootstrap";
 import { lookup } from "node:dns/promises";
 import { Socket } from "node:net";
 import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
-import { resolveConfig } from "../shared/config";
+import {
+  getPrimaryBaseURL,
+  resolveConfig,
+} from "../shared/config";
 
 /** smoke planner 命令返回的最小结果形状 */
 type SmokePlannerCommandResult = {
@@ -42,8 +45,14 @@ type SmokePlannerCreateContext = (input: {
 }) => Promise<{
   config?: {
     model?: {
-      name?: string;
-      baseURL?: string;
+      default?: {
+        name?: string;
+        provider?: {
+          profile?: {
+            baseURL?: string;
+          };
+        };
+      };
     };
   };
   kernel: SmokePlannerKernel;
@@ -289,8 +298,8 @@ async function runSmokeAttempt(
                   payload: {
                     ...event.payload,
                     error: formatSmokeFailure(event.payload.error, {
-                      modelName: ctx.config?.model?.name,
-                      baseURL: ctx.config?.model?.baseURL,
+                      modelName: ctx.config?.model?.default?.name,
+                      baseURL: ctx.config?.model?.default?.provider?.profile?.baseURL,
                       proxy: configuredProxy,
                     }),
                   },
@@ -338,10 +347,28 @@ export async function smokePlanner(
       dataDir: input?.dataDir ?? process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ":memory:",
     });
     const gateway = createModelGateway({
-      apiKey: config.model.apiKey,
-      baseURL: config.model.baseURL,
-      modelName: config.model.name,
-      timeoutMs: deps?.timeoutMs,
+      slots: {
+        default: config.model.default,
+        small: config.model.small,
+      },
+      selectionPolicy: config.model.selectionPolicy,
+      retryPolicy: deps?.timeoutMs === undefined
+        ? undefined
+        : {
+            maxRetries: 1,
+            backoffMs: 250,
+            retryableErrorKinds: [
+              "network_error",
+              "provider_error",
+              "rate_limit_error",
+              "timeout_error",
+            ],
+            operationTimeoutMs: {
+              plan: deps.timeoutMs,
+              verify: deps.timeoutMs,
+              respond: deps.timeoutMs,
+            },
+          },
     });
     const result = await gateway.plan({
       prompt: SMOKE_PLANNER_PROMPT,
@@ -375,14 +402,27 @@ export async function smokePlanner(
         return;
       } catch (retryError) {
         const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
-        const hostReachable = await resolveHostReachable(process.env.OPENAI_BASE_URL);
+        let activeBaseURL: string | undefined;
+        try {
+          const resolvedConfig = resolveConfig({
+            workspaceRoot: input?.workspaceRoot ?? process.cwd(),
+            dataDir: input?.dataDir ?? process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ":memory:",
+            allowMissingModel: true,
+          });
+          activeBaseURL = resolvedConfig.model.configured
+            ? getPrimaryBaseURL(resolvedConfig.model)
+            : undefined;
+        } catch {
+          activeBaseURL = undefined;
+        }
+        const hostReachable = await resolveHostReachable(activeBaseURL);
         throw new Error(
           [
             `Configured local proxy is unreachable: ${configuredProxy}.`,
             `Retried planner smoke without proxy but still failed: ${retryMessage}`,
             hostReachable === false ? "DNS lookup failed for model host." : undefined,
-            "Start the local proxy or provide a directly reachable OPENAI_BASE_URL.",
-            hostReachable === false ? `Current OPENAI_BASE_URL=${process.env.OPENAI_BASE_URL ?? "unset"}.` : undefined,
+            "Start the local proxy or provide a directly reachable provider.baseURL in openpx.jsonc.",
+            hostReachable === false ? `Current provider.baseURL=${activeBaseURL}.` : undefined,
           ].join(" "),
         );
       }

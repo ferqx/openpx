@@ -457,7 +457,7 @@ describe("real eval runner", () => {
       rootDir,
       dataDir,
       runSample: async () => {
-        throw new Error("missing OPENAI_API_KEY");
+        throw new Error("missing apiKey for provider openai");
       },
     });
 
@@ -465,7 +465,7 @@ describe("real eval runner", () => {
     expect(summary.status).toBe("failed");
     expect(summary.exitCode).toBe(1);
     expect(scenario?.failureStage).toBe("sample_execution");
-    expect(scenario?.message).toBe("missing OPENAI_API_KEY");
+    expect(scenario?.message).toBe("missing apiKey for provider openai");
     expect(scenario?.capabilityFamily).toBe("approval_gated_delete");
     expect(scenario?.failureClass).toBe("eval_harness_gap");
     expect(scenario?.evolutionTarget).toBe("eval_harness");
@@ -596,7 +596,7 @@ describe("real eval runner", () => {
                 status: "failed",
                 promptVariantId: "constraint",
                 failureStage: "sample_execution",
-                message: "missing OPENAI_API_KEY",
+                message: "missing apiKey for provider openai",
                 failureClass: "planner_normalization_failure",
                 evolutionTarget: "planner",
                 artifactsDir: "/tmp/openpx-real-eval/approval-gated-bugfix-loop/artifacts",
@@ -646,7 +646,7 @@ describe("real eval runner", () => {
     expect(rendered).toContain("approval-gated-bugfix-loop [failed]");
     expect(rendered).toContain("variant: constraint");
     expect(rendered).toContain("stage: sample_execution");
-    expect(rendered).toContain("reason: missing OPENAI_API_KEY");
+    expect(rendered).toContain("reason: missing apiKey for provider openai");
     expect(rendered).toContain("failure class: planner_normalization_failure");
     expect(rendered).toContain("evolution target: planner");
     expect(rendered).toContain("artifacts: /tmp/openpx-real-eval/approval-gated-bugfix-loop/artifacts");

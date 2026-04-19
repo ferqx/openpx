@@ -18,6 +18,7 @@ export async function runRuntimeGc(input?: {
     workspaceRoot: input?.workspaceRoot ?? process.cwd(),
     dataDir: input?.dataDir ?? process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ".openpx",
     projectId: input?.projectId,
+    allowMissingModel: true,
   });
   const store = new SqliteRunStateStore(config.dataDir);
   try {

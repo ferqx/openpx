@@ -79,6 +79,7 @@ OpenPX 采用 harness-first（以 harness 为先）控制模型。
 - `docs/space/understanding/harness-protocol.md`
 - `docs/space/understanding/runtime-spine.md`
 - `docs/space/understanding/core-concepts.md`
+- `docs/space/understanding/config-system.md`
 - `docs/space/understanding/state-flows.md`
 - `docs/space/understanding/harness-code-map.md`
 - `docs/space/understanding/harness-protocol-code-map.md`
@@ -90,6 +91,7 @@ OpenPX 采用 harness-first（以 harness 为先）控制模型。
 - `docs/space/execution/refactor-playbook.md`
 - `docs/space/execution/tech-debt-tracker.md`
 - `docs/space/execution/active/index.md`
+- `docs/space/execution/active/2026-04-18-m3-openai-compatible-model-layer.md`
 - `docs/space/execution/completed/index.md`
 - `docs/space/references/index.md`
 - `docs/space/generated/index.md`

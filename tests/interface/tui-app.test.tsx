@@ -1,5 +1,8 @@
 import React from "react";
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { render } from "ink-testing-library";
 import { main } from "../../src/app/main";
 import { App } from "../../src/surfaces/tui/app";
@@ -7,6 +10,19 @@ import type { TuiKernel } from "../../src/surfaces/tui/hooks/use-kernel";
 import type { ApprovalCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../../src/surfaces/tui/commands";
 import type { RuntimeSessionState } from "../../src/surfaces/tui/runtime/runtime-session";
 import type { ResolvedSettingsConfig } from "../../src/surfaces/tui/settings/config-resolver";
+import { getPrimaryModelName, resolveConfig } from "../../src/shared/config";
+
+const tempDirs: string[] = [];
+
+async function createTempDir(prefix: string) {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
 
 describe("TUI App", () => {
   const tick = (delayMs = 0) => new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -95,7 +111,7 @@ describe("TUI App", () => {
 
   function createResolvedSettingsConfig(overrides: Partial<ResolvedSettingsConfig> = {}): ResolvedSettingsConfig {
     return {
-      global: {
+      user: {
         autoCompact: true,
         showTips: true,
         reduceMotion: false,
@@ -107,6 +123,7 @@ describe("TUI App", () => {
         terminalProgressBar: true,
       },
       project: {},
+      projectLocal: {},
       effective: {
         autoCompact: true,
         showTips: true,
@@ -160,7 +177,10 @@ describe("TUI App", () => {
     );
 
     const frame = lastFrame();
-    const expectedModelName = process.env.OPENAI_MODEL ?? "unknown";
+    const expectedModelName = getPrimaryModelName(resolveConfig({
+      workspaceRoot: process.cwd(),
+      dataDir: process.env.OPENPX_DATA_DIR ?? process.env.OPENWENPX_DATA_DIR ?? ".openpx",
+    }).model);
 
     expect(frame).toContain("openpx");
     expect(frame).toContain("❯");
@@ -1149,14 +1169,15 @@ describe("TUI App", () => {
         return {
           ...createResolvedSettingsConfig(),
           paths: {
-            global: "/tmp/home/.openpx/config.json",
-            project: "/tmp/workspace/.openpx/config.json",
+            user: "/tmp/home/.openpx/openpx.jsonc",
+            project: "/tmp/workspace/.openpx/openpx.jsonc",
+            projectLocal: "/tmp/workspace/.openpx/settings.local.jsonc",
           },
         };
       },
-      async writeGlobal() {},
-      async writeProject() {
-        throw new Error("project config should not be written in this test");
+      async writeUser() {},
+      async writeProjectLocal() {
+        throw new Error("project-local config should not be written in this test");
       },
     };
     const kernel: TuiKernel = {
@@ -1199,13 +1220,14 @@ describe("TUI App", () => {
         return {
           ...createResolvedSettingsConfig(),
           paths: {
-            global: "/tmp/home/.openpx/config.json",
-            project: "/tmp/workspace/.openpx/config.json",
+            user: "/tmp/home/.openpx/openpx.jsonc",
+            project: "/tmp/workspace/.openpx/openpx.jsonc",
+            projectLocal: "/tmp/workspace/.openpx/settings.local.jsonc",
           },
         };
       },
-      async writeGlobal() {},
-      async writeProject() {},
+      async writeUser() {},
+      async writeProjectLocal() {},
     };
 
     const kernel: TuiKernel = {
@@ -1236,7 +1258,7 @@ describe("TUI App", () => {
     expect(frame.indexOf("OpenPX")).toBeLessThan(frame.indexOf("Status   [Config]   Usage"));
   });
 
-  test("settings pane can switch to project scope and close with escape without interrupting the runtime", async () => {
+  test("settings pane can switch to project-local scope and close with escape without interrupting the runtime", async () => {
     let interruptCount = 0;
     const settingsStore = {
       async readResolved() {
@@ -1244,7 +1266,7 @@ describe("TUI App", () => {
           ...createResolvedSettingsConfig({
             sources: {
               autoCompact: "project",
-              showTips: "global",
+              showTips: "user",
               reduceMotion: "default",
               thinkingMode: "default",
               fastMode: "default",
@@ -1254,6 +1276,9 @@ describe("TUI App", () => {
               terminalProgressBar: "default",
             },
             project: {
+              autoCompact: false,
+            },
+            projectLocal: {
               autoCompact: false,
             },
             effective: {
@@ -1269,15 +1294,16 @@ describe("TUI App", () => {
             },
           }),
           paths: {
-            global: "/tmp/home/.openpx/config.json",
-            project: "/tmp/workspace/.openpx/config.json",
+            user: "/tmp/home/.openpx/openpx.jsonc",
+            project: "/tmp/workspace/.openpx/openpx.jsonc",
+            projectLocal: "/tmp/workspace/.openpx/settings.local.jsonc",
           },
         };
       },
-      async writeGlobal() {
-        throw new Error("global config should not be written in this test");
+      async writeUser() {
+        throw new Error("user config should not be written in this test");
       },
-      async writeProject() {},
+      async writeProjectLocal() {},
     };
     const kernel: TuiKernel = {
       events: {
@@ -1386,13 +1412,14 @@ describe("TUI App", () => {
         return {
           ...createResolvedSettingsConfig(),
           paths: {
-            global: "/tmp/home/.openpx/config.json",
-            project: "/tmp/workspace/.openpx/config.json",
+            user: "/tmp/home/.openpx/openpx.jsonc",
+            project: "/tmp/workspace/.openpx/openpx.jsonc",
+            projectLocal: "/tmp/workspace/.openpx/settings.local.jsonc",
           },
         };
       },
-      async writeGlobal() {},
-      async writeProject() {},
+      async writeUser() {},
+      async writeProjectLocal() {},
     };
     const kernel: TuiKernel = {
       events: {
@@ -2075,14 +2102,17 @@ describe("TUI App", () => {
 
   test("main mounts the Ink shell with the bootstrapped kernel", async () => {
     const mounted: unknown[] = [];
+    const homeDir = await createTempDir("openpx-home-");
 
     await (main as (input: {
       workspaceRoot: string;
       dataDir: string;
+      homeDir: string;
       mount: (tree: React.ReactElement) => unknown;
     }) => Promise<unknown>)({
       workspaceRoot: "/tmp/main-entrypoint-workspace",
       dataDir: ":memory:",
+      homeDir,
       mount(tree) {
         mounted.push(tree);
         return { unmount() {} };

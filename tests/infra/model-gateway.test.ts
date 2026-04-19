@@ -5,6 +5,8 @@ import {
   type ModelGatewayEvent,
   type ModelStatus,
 } from "../../src/infra/model-gateway";
+import { OpenAIChatClient } from "../../src/infra/provider/openai-chat-client";
+import { resolveProviderBinding } from "../../src/infra/provider/profile";
 
 describe("createModelGateway", () => {
   test("throws a clear error when OpenAI-style env-backed config is missing", () => {
@@ -38,6 +40,8 @@ describe("createModelGateway", () => {
     expect(events.some(e => e.type === "model.invocation_started")).toBe(true);
     // Should have a failed event if the URL is fake
     expect(events.some(e => e.type === "model.failed")).toBe(true);
+    // Provider telemetry should also enter the stable event stream
+    expect(events.some(e => e.type === "model.telemetry")).toBe(true);
   });
 
   test("emits status changes and performance metrics", async () => {
@@ -94,5 +98,69 @@ describe("createModelGateway", () => {
     expect(parsed).toEqual({
       summary: "Plan the work in one package.",
     });
+  });
+
+  test("suppresses telemetry events and usage collection when disabled", async () => {
+    const requestUsageFlags: boolean[] = [];
+    class StubTransportClient extends OpenAIChatClient {
+      override async invoke(input: Parameters<OpenAIChatClient["invoke"]>[0]) {
+        requestUsageFlags.push(input.request.requestUsage);
+        input.onFirstToken?.(2);
+        return {
+          content: JSON.stringify({
+            summary: "stub-plan",
+          }),
+          usage: {
+            inputTokens: 11,
+            outputTokens: 7,
+          },
+          timing: {
+            startedAt: 1,
+            firstTokenAt: 2,
+            endedAt: 4,
+          },
+          meta: {
+            jsonModeDowngraded: false,
+            usageCollectionDowngraded: false,
+          },
+        };
+      }
+    }
+
+    const gateway = createModelGateway({
+      slots: {
+        default: {
+          provider: resolveProviderBinding({
+            providerId: "openai",
+            definition: {
+              baseURL: "https://api.openai.com/v1",
+              apiKey: "fake-key",
+            },
+          }),
+          name: "gpt-5.4",
+        },
+        small: {
+          provider: resolveProviderBinding({
+            providerId: "openai",
+            definition: {
+              baseURL: "https://api.openai.com/v1",
+              apiKey: "fake-key",
+            },
+          }),
+          name: "gpt-5-mini",
+        },
+      },
+      enableTelemetry: false,
+      enableCostTracking: false,
+      transportClient: new StubTransportClient(),
+    });
+    const events: ModelGatewayEvent[] = [];
+    gateway.onEvent((event) => events.push(event));
+
+    const result = await gateway.plan({ prompt: "test prompt" });
+
+    expect(result.summary).toBe("stub-plan");
+    expect(requestUsageFlags).toEqual([false]);
+    expect(events.some((event) => event.type === "model.telemetry")).toBe(false);
   });
 });

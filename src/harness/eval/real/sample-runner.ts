@@ -574,13 +574,16 @@ export async function runRealSample(options: RunRealSampleOptions): Promise<Real
     workspaceRoot,
     dataDir: options.dataDir,
     projectId: `real-eval-${options.scenario.id}`,
+    allowMissingModel: options.createModelGateway !== undefined,
   });
   const baseGateway =
     options.createModelGateway?.(workspaceRoot)
     ?? createModelGateway({
-      apiKey: resolvedConfig.model.apiKey,
-      baseURL: resolvedConfig.model.baseURL,
-      modelName: resolvedConfig.model.name,
+      slots: {
+        default: resolvedConfig.model.default,
+        small: resolvedConfig.model.small,
+      },
+      selectionPolicy: resolvedConfig.model.selectionPolicy,
     });
   const instrumentedGateway = wrapModelGateway(baseGateway, (output) => {
     latestPlannerCapture = extractPlannerCapture(output);

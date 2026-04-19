@@ -157,7 +157,7 @@ describe("smokePlanner", () => {
                 type: "task.failed",
                 payload: {
                   threadId: "thread-smoke-failed",
-                  error: "missing OPENAI_API_KEY",
+                  error: "missing apiKey for provider openai",
                 },
               });
             });
@@ -178,15 +178,21 @@ describe("smokePlanner", () => {
           timeoutMs: 100,
         },
       ),
-    ).rejects.toThrow("missing OPENAI_API_KEY");
+    ).rejects.toThrow("missing apiKey for provider openai");
   });
 
   test("annotates connection failures with model configuration details", async () => {
     const failingCreateAppContextMock = mock(async () => ({
       config: {
         model: {
-          name: "gpt-5.4",
-          baseURL: "https://gateway.example.test/v1",
+          default: {
+            name: "gpt-5.4",
+            provider: {
+              profile: {
+                baseURL: "https://gateway.example.test/v1",
+              },
+            },
+          },
         },
       },
       kernel: {
@@ -268,8 +274,14 @@ describe("smokePlanner", () => {
       },
       config: {
         model: {
-          name: "gpt-5.4",
-          baseURL: "https://gateway.example.test/v1",
+          default: {
+            name: "gpt-5.4",
+            provider: {
+              profile: {
+                baseURL: "https://gateway.example.test/v1",
+              },
+            },
+          },
         },
       },
     }));
@@ -333,8 +345,14 @@ describe("smokePlanner", () => {
       },
       config: {
         model: {
-          name: "DeepSeek-V3.2",
-          baseURL: "https://ark.cn-beijing.volces.com/api/coding/v3",
+          default: {
+            name: "DeepSeek-V3.2",
+            provider: {
+              profile: {
+                baseURL: "https://ark.cn-beijing.volces.com/api/coding/v3",
+              },
+            },
+          },
         },
       },
     }));

@@ -1,7 +1,7 @@
 import type { ScreenChromeView, ScreenComposerView, ScreenConversationView, ScreenUtilityView } from "./screen";
 import type { RuntimeSessionState, SessionStage } from "./runtime/runtime-session";
 import type { ResolvedSettingsConfig } from "./settings/config-resolver";
-import type { SettingsConfig, SettingsConfigScope } from "./settings/config-types";
+import type { PartialSettingsConfig, SettingsConfigScope } from "./settings/config-types";
 import type { UtilityPaneSessionSnapshot } from "./components/utility-pane";
 import type { TaskSummary } from "./components/task-panel";
 import type { ApprovalSummary } from "./components/approval-panel";
@@ -79,7 +79,7 @@ export function buildComposerView(input: {
   submit: (text: string) => Promise<void> | void;
   onCommandMenuOpenChange: (isOpen: boolean) => void;
   onComposerEscape: () => Promise<void> | void;
-  onSettingsSave: (scope: SettingsConfigScope, config: SettingsConfig) => Promise<void> | void;
+  onSettingsSave: (scope: SettingsConfigScope, config: PartialSettingsConfig) => Promise<void> | void;
   onSettingsClose: () => void;
 }): ScreenComposerView {
   return {

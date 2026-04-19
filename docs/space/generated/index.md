@@ -43,3 +43,8 @@ OpenPX 之前已经吃过“AI 生成内容失控”的亏。
 所以 `generated/` 必须始终遵守这条原则：
 
 **可以生成，但不能天然拥有权威。**
+
+## 当前材料
+
+- [2026-04-18-m3-cost-baseline-v1.md](/Users/chenchao/Code/ai/openpx/docs/space/generated/2026-04-18-m3-cost-baseline-v1.md)
+- [2026-04-18-m3-cross-provider-validation-report.md](/Users/chenchao/Code/ai/openpx/docs/space/generated/2026-04-18-m3-cross-provider-validation-report.md)

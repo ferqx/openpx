@@ -1,18 +1,10 @@
 import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
 import type { Database } from "bun:sqlite";
 import { closeSqliteHandle } from "../persistence/sqlite/sqlite-client";
+import type { AppConfig } from "../shared/config";
 
 /** createAppContext 关心的最小配置形状 */
-type ConfigLike = {
-  dataDir: string;
-  workspaceRoot: string;
-  projectId: string;
-  model: {
-    apiKey?: string;
-    baseURL?: string;
-    name?: string;
-  };
-};
+type ConfigLike = Pick<AppConfig, "dataDir" | "workspaceRoot" | "projectId" | "model" | "permission">;
 
 /** 持久化恢复使用的 scope 形状 */
 type ScopeLike = {
@@ -78,11 +70,33 @@ export function resolveAppModelGateway(input: {
     return input.modelGateway;
   }
 
+  if (!input.config.model.configured) {
+    const fail = async () => {
+      throw new Error("model.default is required");
+    };
+    return {
+      plan: fail,
+      verify: fail,
+      respond: fail,
+      onStatusChange() {
+        return () => undefined;
+      },
+      onEvent() {
+        return () => undefined;
+      },
+    };
+  }
+
   // 允许测试或外部调用方注入 gateway；未注入时才根据配置创建默认实现。
   return createModelGateway({
-    apiKey: input.config.model.apiKey,
-    baseURL: input.config.model.baseURL,
-    modelName: input.config.model.name,
+    slots: {
+      default: input.config.model.default,
+      small: input.config.model.small,
+    },
+    selectionPolicy: input.config.model.selectionPolicy,
+    retryPolicy: input.config.model.retryPolicy,
+    enableTelemetry: input.config.model.enableTelemetry,
+    enableCostTracking: input.config.model.enableCostTracking,
   });
 }
 

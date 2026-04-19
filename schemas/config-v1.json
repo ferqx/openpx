@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenPX Config v1",
+  "description": "OpenPX v1 layered configuration schema.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri"
+    },
+    "provider": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "baseURL": {
+            "type": "string",
+            "format": "uri"
+          },
+          "apiKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supportsStreaming": {
+            "type": "boolean"
+          },
+          "supportsJsonMode": {
+            "type": "boolean"
+          },
+          "supportsUsageFields": {
+            "type": "boolean"
+          },
+          "unsupportedParams": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "model": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "small": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "thinkingLevel": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "off"
+          ]
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "chunkTimeoutMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxRetries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "enableTelemetry": {
+          "type": "boolean"
+        },
+        "enableCostTracking": {
+          "type": "boolean"
+        },
+        "compactionPolicy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workingSetPolicy": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "defaultAgent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enablePlanner": {
+          "type": "boolean"
+        },
+        "enableVerifier": {
+          "type": "boolean"
+        },
+        "enableScout": {
+          "type": "boolean"
+        },
+        "enableSkills": {
+          "type": "boolean"
+        },
+        "maxSubagents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "defaultMode": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "permission": {
+      "type": "object",
+      "properties": {
+        "defaultMode": {
+          "type": "string",
+          "enum": [
+            "guarded",
+            "full_access"
+          ]
+        },
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "ask": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "deny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalDirectories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "disableBypassMode": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "autoload": {
+          "type": "boolean"
+        },
+        "directories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "allowlist": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "denylist": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "maxLoaded": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "ui": {
+      "type": "object",
+      "properties": {
+        "theme": {
+          "type": "string",
+          "minLength": 1
+        },
+        "showCost": {
+          "type": "boolean"
+        },
+        "showTurnDuration": {
+          "type": "boolean"
+        },
+        "showLoopEvents": {
+          "type": "boolean"
+        },
+        "editorMode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tui": {
+          "type": "object",
+          "properties": {
+            "autoCompact": {
+              "type": "boolean"
+            },
+            "showTips": {
+              "type": "boolean"
+            },
+            "reduceMotion": {
+              "type": "boolean"
+            },
+            "thinkingMode": {
+              "type": "boolean"
+            },
+            "fastMode": {
+              "type": "boolean"
+            },
+            "promptSuggestions": {
+              "type": "boolean"
+            },
+            "rewindCode": {
+              "type": "boolean"
+            },
+            "verboseOutput": {
+              "type": "boolean"
+            },
+            "terminalProgressBar": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "provider": {
+        "openai": {
+          "baseURL": "https://api.openai.com/v1",
+          "apiKey": "sk-..."
+        }
+      },
+      "model": {
+        "default": {
+          "provider": "openai",
+          "name": "gpt-5.4"
+        },
+        "small": {
+          "provider": "openai",
+          "name": "gpt-5-mini"
+        }
+      },
+      "ui": {
+        "tui": {
+          "autoCompact": true,
+          "showTips": true,
+          "reduceMotion": false,
+          "thinkingMode": true,
+          "fastMode": false,
+          "promptSuggestions": true,
+          "rewindCode": true,
+          "verboseOutput": false,
+          "terminalProgressBar": true
+        }
+      }
+    }
+  ]
+}

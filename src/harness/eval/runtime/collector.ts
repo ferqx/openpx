@@ -76,6 +76,7 @@ export async function collectRuntimeEvidence(input: {
     workspaceRoot: input.workspaceRoot,
     dataDir: input.dataDir,
     projectId: input.projectId,
+    allowMissingModel: true,
   });
   const db = createSqlite(input.dataDir);
   migrateSqlite(db);
