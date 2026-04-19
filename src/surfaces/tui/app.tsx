@@ -607,6 +607,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     session?.tasks,
     session?.finalResponse,
     session?.pauseSummary,
+    session?.planDecision,
     session?.verificationSummary,
     session?.executionSummary,
     session?.workers,

@@ -79,6 +79,52 @@ function extractDeletePathFromWorkPackage(workPackage: WorkPackage): string | un
   return undefined;
 }
 
+/** 判断用户输入是否更像功能实现请求，而不是普通对话或知识问答。 */
+function inputSuggestsImplementationWork(value: string): boolean {
+  const normalized = normalizeWhitespace(value).toLowerCase();
+  return /\b(build|create|add|implement|develop|design|refactor|fix|update|modify)\b/.test(normalized)
+    || /(开发|实现|新增|添加|创建|构建|设计|重构|修复|修改|改造|页面|界面|组件|功能)/.test(normalized);
+}
+
+/** 明确让用户选择方案的工作包不应被强行归一成执行包。 */
+function workPackageRequestsUserDecision(workPackage: WorkPackage, summary: string): boolean {
+  const combined = `${workPackage.objective}\n${summary}`.toLowerCase();
+  return combined.includes("ask_user_decision")
+    || combined.includes("choose between")
+    || combined.includes("2-3 options")
+    || combined.includes("concrete options")
+    || /(方案选择|选择方案|选项|请选择|确认方案)/.test(combined);
+}
+
+function normalizeImplementationObjective(inputText: string, objective: string): string {
+  const normalizedObjective = normalizeWhitespace(objective);
+  const genericResponseObjective =
+    /\brespond to\b/i.test(normalizedObjective)
+    || /\boffer(?:ing)? assistance\b/i.test(normalizedObjective)
+    || /\basking clarifying questions\b/i.test(normalizedObjective)
+    || /(回复用户|回答用户|提供帮助|泛泛协助)/.test(normalizedObjective);
+
+  return genericResponseObjective
+    ? `实现用户请求：${normalizeWhitespace(inputText)}`
+    : normalizedObjective;
+}
+
+function ensureImplementationTools(tools: readonly string[]): string[] {
+  return Array.from(new Set([...tools, "read_file", "apply_patch"]));
+}
+
+function normalizeImplementationArtifacts(artifacts: readonly string[]): string[] {
+  const hasImplementationArtifact = artifacts.some((artifact) =>
+    artifact.startsWith("patch:") || artifact.startsWith("file:") || artifact.startsWith("artifact:"),
+  );
+
+  if (hasImplementationArtifact) {
+    return [...artifacts];
+  }
+
+  return ["patch:workspace"];
+}
+
 function approvalActionsSuggestDelete(actions: readonly string[]): boolean {
   return actions.some((action) => {
     const normalized = action.toLowerCase();
@@ -136,6 +182,14 @@ function inferCapabilityMarker(input: {
     ) {
       return "apply_patch.delete_file";
     }
+    if (
+      input.workPackage.capabilityMarker === "respond_only"
+      && inputSuggestsImplementationWork(input.inputText)
+      && !workPackageRequestsUserDecision(input.workPackage, input.inputText)
+      && input.replanHint !== "avoid_same_capability_marker"
+    ) {
+      return "implementation_work";
+    }
     return input.workPackage.capabilityMarker;
   }
 
@@ -158,6 +212,13 @@ function inferCapabilityMarker(input: {
     return "apply_patch.delete_file";
   }
 
+  if (
+    inputSuggestsImplementationWork(input.inputText)
+    && !workPackageRequestsUserDecision(input.workPackage, input.inputText)
+  ) {
+    return "implementation_work";
+  }
+
   return "respond_only";
 }
 
@@ -177,6 +238,10 @@ function inferCapabilityFamily(input: {
 
   if (input.capabilityMarker === "apply_patch.delete_file") {
     return "approval_gated_delete";
+  }
+
+  if (input.capabilityMarker === "implementation_work") {
+    return "feature_implementation";
   }
 
   if (input.inputText.includes(REPLAN_HINT_TOKEN)) {
@@ -236,6 +301,8 @@ function normalizeExistingWorkPackage(
     ?? extractPathReference(inputText);
   const normalizedObjective = capabilityMarker === "apply_patch.delete_file" && deletePath
     ? `delete ${deletePath}`
+    : capabilityMarker === "implementation_work"
+      ? normalizeImplementationObjective(inputText, workPackage.objective)
     : normalizeWhitespace(workPackage.objective);
 
   return {
@@ -244,6 +311,10 @@ function normalizeExistingWorkPackage(
     capabilityMarker,
     capabilityFamily,
     requiresApproval,
+    allowedTools:
+      capabilityMarker === "implementation_work"
+        ? ensureImplementationTools(workPackage.allowedTools)
+        : workPackage.allowedTools,
     replanHint,
     inputRefs:
       capabilityMarker === "apply_patch.delete_file" && deletePath && !workPackage.inputRefs.some((item) => item === `file:${deletePath}`)
@@ -252,6 +323,8 @@ function normalizeExistingWorkPackage(
     expectedArtifacts:
       capabilityMarker === "apply_patch.delete_file" && deletePath && !workPackage.expectedArtifacts.some((item) => item === `patch:${deletePath}`)
         ? [`patch:${deletePath}`, ...workPackage.expectedArtifacts]
+        : capabilityMarker === "implementation_work"
+          ? normalizeImplementationArtifacts(workPackage.expectedArtifacts)
         : workPackage.expectedArtifacts,
   };
 }
@@ -270,6 +343,19 @@ function createSyntheticWorkPackage(inputText: string, summary: string): WorkPac
       allowedTools: ["apply_patch"],
       inputRefs: ["thread:goal", `file:${deletePath}`],
       expectedArtifacts: [`patch:${deletePath}`],
+    };
+  }
+
+  if (inputSuggestsImplementationWork(inputText) && replanHint !== "avoid_same_capability_marker") {
+    return {
+      id: "pkg_implementation",
+      objective: `实现用户请求：${normalizeWhitespace(inputText)}`,
+      capabilityMarker: "implementation_work",
+      capabilityFamily: "feature_implementation",
+      requiresApproval: false,
+      allowedTools: ["read_file", "apply_patch"],
+      inputRefs: ["thread:goal"],
+      expectedArtifacts: ["patch:workspace"],
     };
   }
 

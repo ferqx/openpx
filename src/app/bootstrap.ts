@@ -6,7 +6,11 @@ import { createTaskManager } from "../control/tasks/task-manager";
 import { createControlTask, type ControlTask } from "../control/tasks/task-types";
 import { createToolRegistry } from "../control/tools/tool-registry";
 import type { ContinuationEnvelope } from "../harness/core/run-loop/continuation";
-import { isApprovalResolutionContinuation } from "../harness/core/run-loop/continuation";
+import {
+  isApprovalResolutionContinuation,
+  isPlanDecisionContinuation,
+} from "../harness/core/run-loop/continuation";
+import { buildPlanDecisionContinuation } from "../harness/core/run-loop/approval-suspension";
 import { createRunLoopEngine } from "../harness/core/run-loop/run-loop-engine";
 import type { RunLoopState } from "../harness/core/run-loop/step-types";
 import { createSessionKernel, type SessionControlPlaneResult } from "../harness/core/session/session-kernel";
@@ -33,6 +37,7 @@ import { createEvent } from "../domain/event";
 import { createRun, transitionRun, type Run } from "../domain/run";
 import { prefixedUuid } from "../shared/id-generators";
 import { normalizePlannerOutput } from "../runtime/planning/planner-normalization";
+import type { PlanDecisionRequest } from "../runtime/planning/planner-result";
 import type { WorkPackage } from "../runtime/planning/work-package";
 import {
   buildApprovedExecutionArtifacts,
@@ -70,6 +75,13 @@ type AppStores = ReturnType<typeof createStores>;
 
 type ControlPlane = {
   startRootTask(threadId: string, input: string | ContinuationEnvelope): Promise<SessionControlPlaneResult>;
+  resolvePlanDecision(input: {
+    threadId: string;
+    runId: string;
+    optionId: string;
+    optionLabel: string;
+    continuationInput: string;
+  }): Promise<SessionControlPlaneResult>;
   approveRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   rejectRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   restartRun(threadId: string): Promise<SessionControlPlaneResult>;
@@ -91,6 +103,17 @@ type ControlPlane = {
 };
 
 const LEGACY_CHECKPOINT_INVALIDATION_MIGRATION = "legacy_checkpoint_invalidation_v1";
+
+function attachPlanDecisionSource(
+  decision: PlanDecisionRequest,
+  sourceInput: string,
+): PlanDecisionRequest {
+  return {
+    ...decision,
+    sourceInput: decision.sourceInput ?? sourceInput,
+  };
+}
+
 
 function createStores(path: string | ReturnType<typeof createSqlite>) {
   return {
@@ -474,7 +497,9 @@ async function createControlPlane(input: {
     const tasks = await input.stores.taskStore.listByThread(args.threadId);
     const currentTask = tasks.at(-1);
     const fallbackBlockingReason =
-      args.run.blockingReason?.kind === "waiting_approval" || args.run.blockingReason?.kind === "human_recovery"
+      args.run.blockingReason?.kind === "waiting_approval"
+      || args.run.blockingReason?.kind === "plan_decision"
+      || args.run.blockingReason?.kind === "human_recovery"
         ? {
             kind: args.run.blockingReason.kind,
             message: args.run.blockingReason.message,
@@ -615,6 +640,19 @@ async function createControlPlane(input: {
         summary: result.summary,
         plannerResult: result.plannerResult,
       });
+      const planDecision = normalized.plannerResult.decisionRequest
+        ? attachPlanDecisionSource(normalized.plannerResult.decisionRequest, text)
+        : undefined;
+
+      if (planDecision) {
+        return {
+          plannerResult: normalized.plannerResult,
+          workPackages: normalized.plannerResult.workPackages,
+          currentWorkPackageId: normalized.plannerResult.workPackages[0]?.id,
+          planDecision,
+          nextStep: "waiting_plan_decision" as const,
+        };
+      }
 
       return {
         plannerResult: normalized.plannerResult,
@@ -844,7 +882,7 @@ async function createControlPlane(input: {
 
       try {
         if (typeof inputValue !== "string") {
-          if (!isApprovalResolutionContinuation(inputValue)) {
+          if (!isApprovalResolutionContinuation(inputValue) && !isPlanDecisionContinuation(inputValue)) {
             throw new Error(`unsupported continuation kind for run-loop resume: ${inputValue.kind}`);
           }
           engineResult = await runLoopEngine.resume({
@@ -883,6 +921,30 @@ async function createControlPlane(input: {
         run,
         task,
         engineResult,
+      );
+    },
+
+    async resolvePlanDecision(decisionInput) {
+      const run = await input.stores.runStore.get(decisionInput.runId);
+      if (!run || run.threadId !== decisionInput.threadId) {
+        throw new Error(`run ${decisionInput.runId} not found for thread ${decisionInput.threadId}`);
+      }
+
+      const suspension = await input.stores.runStateStore.loadActiveSuspensionByRun(run.runId);
+      if (!suspension || suspension.reasonKind !== "waiting_plan_decision") {
+        throw new Error(`run ${run.runId} is not waiting for a plan decision`);
+      }
+
+      return controlPlane.startRootTask(
+        decisionInput.threadId,
+        buildPlanDecisionContinuation({
+          threadId: decisionInput.threadId,
+          runId: run.runId,
+          taskId: run.activeTaskId ?? suspension.taskId,
+          optionId: decisionInput.optionId,
+          optionLabel: decisionInput.optionLabel,
+          input: decisionInput.continuationInput,
+        }),
       );
     },
 

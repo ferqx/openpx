@@ -1,10 +1,15 @@
 import type { RuntimeSnapshot } from "../../../harness/protocol/schemas/api-schema";
+import { DEFAULT_PRIMARY_AGENT_ID, type PrimaryAgentId } from "../../../control/agents/agent-spec";
+import type { ThreadMode } from "../../../control/agents/thread-mode";
+import type { PlanDecisionRequest } from "../../../runtime/planning/planner-result";
 
 /** TUI 关注的会话阶段：把底层 runtime/run 状态压平成更易渲染的 UI 阶段 */
 export type SessionStage = "idle" | "planning" | "awaiting_confirmation" | "executing" | "blocked";
 
 /** TUI 消费的会话状态：由 runtime snapshot 归一化而来 */
 export type RuntimeSessionState = {
+  primaryAgent?: PrimaryAgentId;
+  threadMode?: ThreadMode;
   status: "completed" | "waiting_approval" | "blocked";
   stage?: SessionStage;
   threadId?: string;
@@ -21,6 +26,7 @@ export type RuntimeSessionState = {
   projectId: string;
   blockingReason?: RuntimeSnapshot["blockingReason"];
   recommendationReason?: string;
+  planDecision?: PlanDecisionRequest;
   narrativeSummary?: string;
   threads: RuntimeSnapshot["threads"];
 };
@@ -30,6 +36,7 @@ export function formatThreadListSummary(session: Pick<RuntimeSessionState, "thre
   const lines = session.threads.map((thread) =>
     [
       `${thread.threadId}${thread.threadId === session.threadId ? " (active)" : ""} [${thread.activeRunStatus ?? thread.status}]`,
+      `mode:${thread.threadMode}`,
       thread.pendingApprovalCount ? `approval:${thread.pendingApprovalCount}` : undefined,
       thread.blockingReasonKind,
       thread.narrativeSummary,
@@ -69,6 +76,7 @@ export function deriveRuntimeSession(snapshot: RuntimeSnapshot): RuntimeSessionS
     };
   } else if (
     activeRun?.blockingReason?.kind === "waiting_approval" ||
+    activeRun?.blockingReason?.kind === "plan_decision" ||
     activeRun?.blockingReason?.kind === "human_recovery"
   ) {
     normalizedRunBlockingReason = {
@@ -97,6 +105,8 @@ export function deriveRuntimeSession(snapshot: RuntimeSnapshot): RuntimeSessionS
   const stage = status === "waiting_approval" ? "awaiting_confirmation" : status === "blocked" ? "blocked" : "idle";
 
   return {
+    primaryAgent: DEFAULT_PRIMARY_AGENT_ID,
+    threadMode: snapshot.threadMode,
     status,
     stage,
     threadId: snapshot.activeThreadId,
@@ -113,6 +123,7 @@ export function deriveRuntimeSession(snapshot: RuntimeSnapshot): RuntimeSessionS
     projectId: snapshot.projectId,
     blockingReason,
     recommendationReason: snapshot.recommendationReason,
+    planDecision: snapshot.planDecision,
     narrativeSummary: snapshot.narrativeSummary,
     threads: snapshot.threads,
   };

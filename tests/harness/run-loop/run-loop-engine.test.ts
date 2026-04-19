@@ -1,17 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { createRunLoopEngine } from "../../../src/harness/core/run-loop/run-loop-engine";
-import type { ApprovalSuspension } from "../../../src/harness/core/run-loop/approval-suspension";
+import type { RunSuspension } from "../../../src/harness/core/run-loop/approval-suspension";
 import type { RunStateStorePort } from "../../../src/persistence/ports/run-state-store";
 import type { RunLoopState } from "../../../src/harness/core/run-loop/step-types";
 import type { ContinuationEnvelope } from "../../../src/harness/core/run-loop/continuation";
 
 function createMemoryRunStateStore(): RunStateStorePort & {
   states: Map<string, RunLoopState>;
-  suspensions: Map<string, ApprovalSuspension>;
+  suspensions: Map<string, RunSuspension>;
   continuations: Map<string, ContinuationEnvelope>;
 } {
   const states = new Map<string, RunLoopState>();
-  const suspensions = new Map<string, ApprovalSuspension>();
+  const suspensions = new Map<string, RunSuspension>();
   const continuations = new Map<string, ContinuationEnvelope>();
 
   return {
@@ -203,6 +203,68 @@ function createMemoryRunStateStore(): RunStateStorePort & {
         state: resumedState,
       };
     },
+    async applyPlanDecisionContinuation({ continuation, expectedEngineVersion, expectedStateVersion }) {
+      const state = states.get(continuation.runId) ?? {
+        stateVersion: expectedStateVersion,
+        engineVersion: expectedEngineVersion,
+        threadId: continuation.threadId,
+        runId: continuation.runId,
+        taskId: continuation.taskId,
+        input: continuation.input,
+        nextStep: "waiting_plan_decision" as const,
+        artifacts: [],
+        latestArtifacts: [],
+      };
+      if (
+        state.stateVersion !== expectedStateVersion
+        || state.engineVersion !== expectedEngineVersion
+      ) {
+        return {
+          disposition: "not_resumable" as const,
+          state,
+        };
+      }
+
+      const activeSuspension = [...suspensions.values()].find(
+        (suspension) => suspension.runId === continuation.runId && suspension.status === "active",
+      );
+      if (!activeSuspension || activeSuspension.reasonKind !== "waiting_plan_decision") {
+        return {
+          disposition: "invalidated" as const,
+          state,
+          suspension: activeSuspension,
+        };
+      }
+
+      const consumed = {
+        ...continuation,
+        status: "consumed" as const,
+        consumedAt: new Date().toISOString(),
+      };
+      continuations.set(continuation.continuationId, consumed);
+      const resolvedSuspension: RunSuspension = {
+        ...activeSuspension,
+        status: "resolved",
+        resolvedAt: new Date().toISOString(),
+        resolvedByContinuationId: continuation.continuationId,
+      };
+      suspensions.set(activeSuspension.suspensionId, resolvedSuspension);
+      const resumedState: RunLoopState = {
+        ...state,
+        input: continuation.input,
+        nextStep: "plan",
+        planDecision: undefined,
+        pauseSummary: undefined,
+        recommendationReason: undefined,
+      };
+      states.set(continuation.runId, resumedState);
+      return {
+        disposition: "resumed" as const,
+        state: resumedState,
+        continuation: consumed,
+        suspension: resolvedSuspension,
+      };
+    },
     async invalidateRunRecoveryArtifacts({ runId, reason }) {
       let suspensionsCount = 0;
       let continuationsCount = 0;
@@ -323,6 +385,107 @@ describe("run-loop engine", () => {
     expect(result.executionSummary).toBe("executed startup message update");
     expect(result.verificationSummary).toBe("verified");
     expect(store.states.has("run_1")).toBe(false);
+  });
+
+  test("等待方案选择后通过 plan_decision continuation 回到 planner", async () => {
+    const store = createMemoryRunStateStore();
+    let plannerCalls = 0;
+    const engine = createRunLoopEngine({
+      runStateStore: store,
+      planner: async (state) => {
+        plannerCalls += 1;
+        if (!state.input.includes("已选择方案")) {
+          return {
+            nextStep: "waiting_plan_decision" as const,
+            planDecision: {
+              question: "请选择登录界面的实现方案",
+              sourceInput: state.input,
+              options: [
+                {
+                  id: "simple",
+                  label: "简洁表单",
+                  description: "只包含账号、密码和提交按钮。",
+                  continuation: "按简洁表单方案实现登录界面。",
+                },
+              ],
+            },
+          };
+        }
+
+        return {
+          nextStep: "execute" as const,
+          plannerResult: {
+            workPackages: [
+              {
+                id: "pkg_login",
+                objective: "实现简洁登录表单",
+                allowedTools: ["apply_patch"],
+                inputRefs: ["thread:goal"],
+                expectedArtifacts: ["patch:login"],
+              },
+            ],
+            acceptanceCriteria: ["登录表单完成"],
+            riskFlags: [],
+            approvalRequiredActions: [],
+            verificationScope: ["ui smoke"],
+          },
+          workPackages: [
+            {
+              id: "pkg_login",
+              objective: "实现简洁登录表单",
+              allowedTools: ["apply_patch"],
+              inputRefs: ["thread:goal"],
+              expectedArtifacts: ["patch:login"],
+            },
+          ],
+        };
+      },
+      executor: async () => ({
+        nextStep: "verify",
+        executionSummary: "Executed request: 实现简洁登录表单",
+      }),
+      verifier: async () => ({
+        nextStep: "respond",
+        verificationReport: { summary: "verified", passed: true },
+      }),
+      responder: async () => ({
+        nextStep: "done",
+        finalResponse: "responded",
+      }),
+    });
+
+    const blocked = await engine.start({
+      threadId: "thread_plan_decision",
+      runId: "run_plan_decision",
+      taskId: "task_plan_decision",
+      input: "我要开发一个登录界面",
+    });
+    const suspension = await store.loadActiveSuspensionByRun("run_plan_decision");
+
+    expect(blocked.status).toBe("blocked");
+    expect(blocked.planDecision?.question).toBe("请选择登录界面的实现方案");
+    expect(suspension?.reasonKind).toBe("waiting_plan_decision");
+
+    const resumed = await engine.resume({
+      threadId: "thread_plan_decision",
+      runId: "run_plan_decision",
+      taskId: "task_plan_decision",
+      continuation: {
+        continuationId: "continuation_plan_decision",
+        threadId: "thread_plan_decision",
+        runId: "run_plan_decision",
+        taskId: "task_plan_decision",
+        kind: "plan_decision",
+        optionId: "simple",
+        optionLabel: "简洁表单",
+        input: "我要开发一个登录界面\n\n已选择方案：简洁表单\n按简洁表单方案实现登录界面。",
+        status: "created",
+      },
+    });
+
+    expect(resumed.status).toBe("completed");
+    expect(resumed.executionSummary).toBe("Executed request: 实现简洁登录表单");
+    expect(plannerCalls).toBe(2);
   });
 
   test("等待审批后可通过 continuation 恢复执行", async () => {

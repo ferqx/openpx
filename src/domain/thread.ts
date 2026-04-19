@@ -15,6 +15,7 @@ import { threadId as sharedThreadId } from "../shared/ids";
 import { domainError } from "../shared/errors";
 import { threadStatusSchema } from "../shared/schemas";
 import type { DerivedThreadView } from "../control/context/thread-compaction-types";
+import { DEFAULT_THREAD_MODE, type ThreadMode } from "../control/agents/thread-mode";
 import { z } from "zod";
 
 /** Thread 状态——从 schema 推导，如 active/idle/archived */
@@ -36,6 +37,8 @@ export type Thread = {
   revision: number;
   /** status——当前协作线状态 */
   status: ThreadStatus;
+  /** threadMode——Build 在当前 thread 内的工作方式 */
+  threadMode: ThreadMode;
   /** recommendationReason——推荐原因（可选，用于智能推荐场景） */
   recommendationReason?: string;
   /** narrativeSummary——叙事摘要，由控制面压缩策略生成（可选） */
@@ -68,6 +71,7 @@ export function createThread(threadId: string, workspaceRoot: string = "", proje
     projectId,
     revision: 1,
     status: "active",
+    threadMode: DEFAULT_THREAD_MODE,
   };
 }
 

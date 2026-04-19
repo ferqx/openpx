@@ -74,6 +74,7 @@ export function migrateSqlite(db: Database): void {
       project_id TEXT,
       revision INTEGER DEFAULT 1,
       status TEXT NOT NULL,
+      thread_mode TEXT DEFAULT 'normal',
       updated_at TEXT,
       recommendation_reason TEXT,
       narrative_summary TEXT,
@@ -102,6 +103,7 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "threads", "workspace_root", "TEXT");
   ensureColumn(db, "threads", "project_id", "TEXT");
   ensureColumn(db, "threads", "revision", "INTEGER DEFAULT 1");
+  ensureColumn(db, "threads", "thread_mode", "TEXT DEFAULT 'normal'");
   ensureColumn(db, "threads", "recommendation_reason", "TEXT");
   ensureColumn(db, "threads", "narrative_summary", "TEXT");
   ensureColumn(db, "threads", "narrative_revision", "INTEGER DEFAULT 0");

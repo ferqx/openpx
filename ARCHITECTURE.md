@@ -55,6 +55,25 @@ TUI 只是默认 surface（交互表面），而不是产品主轴本身。
 
 当前默认 surface 是 TUI，但 TUI 不是系统真相源，也不是架构主轴终点。
 
+## 协作语义分层
+
+当前协作语义已经固定为三层，不应再混写：
+
+- 产品层：
+  `Build` 是唯一 primary agent；`Plan` 不是第二个主代理，而是 `Build` 在 thread 上的 `plan` mode
+- 合同层：
+  `Explore / Verify / Review / General` 是 subagent（子代理）合同；`Compaction / Summary / Title / MemoryMaintainer` 是 system agent（系统代理）合同
+- 运行实例层：
+  当前 runtime 内部仍保留 `worker` 命名，但其正式解释已经降到 `AgentRun`，负责生命周期与实例追踪，不负责承担产品层 agent 身份
+
+这条分层会同时进入：
+
+- thread truth 与 protocol：`threadMode`
+- TUI 顶部 chrome：`Agent: Build / Mode: normal|plan`
+- 生命周期面板：`agent run`
+
+因此 UI 里不能再把内部 `worker` 面板解释为“当前 agent 面板”。
+
 ## 主要模块边界
 
 ### 产品主路径
@@ -83,7 +102,7 @@ TUI 只是默认 surface（交互表面），而不是产品主轴本身。
 ### 运行时内部支撑
 
 - `src/control/`
-  控制面（control plane），负责审批、工具策略、任务生命周期与 worker 协调
+  控制面（control plane），负责审批、工具策略、任务生命周期，以及 `Build / thread mode / subagent / AgentRun` 的协作编排
 - `src/domain/`
   核心实体与生命周期规则
 - `src/infra/`

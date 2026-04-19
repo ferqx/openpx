@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { threadModeSchema } from "../../../control/agents/thread-mode";
+import { planDecisionRequestSchema } from "../../../runtime/planning/planner-result";
 import { answerViewSchema } from "./answer-view";
 import { approvalViewSchema } from "./approval-view";
 import { messageViewSchema } from "./message-view";
@@ -16,7 +18,9 @@ export const runtimeSnapshotSchema = z.object({
   lastEventSeq: z.number().int().nonnegative(),
   activeThreadId: z.string().optional(),
   activeRunId: z.string().optional(),
+  threadMode: threadModeSchema,
   recommendationReason: z.string().optional(),
+  planDecision: planDecisionRequestSchema.optional(),
   finalResponse: z.string().optional(),
   executionSummary: z.string().optional(),
   verificationSummary: z.string().optional(),

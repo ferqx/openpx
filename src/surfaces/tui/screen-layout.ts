@@ -16,7 +16,7 @@ export function computeScreenLayout(input: {
   composerMode?: "input" | "confirm" | "blocked";
   recommendationReason?: string;
   blockingReason?: {
-    kind: "waiting_approval" | "human_recovery";
+    kind: "waiting_approval" | "plan_decision" | "human_recovery";
     message: string;
   };
   stage?: SessionStage;

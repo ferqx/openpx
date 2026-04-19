@@ -4,6 +4,8 @@ import { buildDisplayMessages, deriveMessagesFromSession, mergeThreadViewIntoSes
 describe("session-sync", () => {
   test("derives assistant display from final response when transcript arrays are absent", () => {
     const messages = deriveMessagesFromSession({
+      primaryAgent: "build",
+      threadMode: "normal",
       status: "completed",
       threadId: "thread-summary",
       finalResponse: "Projected summary",
@@ -30,6 +32,8 @@ describe("session-sync", () => {
   test("rebuilds thread view collections from protocol truth instead of stale current state", () => {
     const merged = mergeThreadViewIntoSession(
       {
+        primaryAgent: "build",
+        threadMode: "normal",
         status: "completed",
         threadId: "thread-sync",
         finalResponse: "Old summary",
@@ -86,6 +90,7 @@ describe("session-sync", () => {
       {
         threadId: "thread-sync",
         status: "completed",
+        threadMode: "normal",
         finalResponse: "Fresh summary",
         recoveryFacts: {
           threadId: "thread-sync",
@@ -121,6 +126,8 @@ describe("session-sync", () => {
   test("clears stale blocking truth when thread view returns to a completed state", () => {
     const merged = mergeThreadViewIntoSession(
       {
+        primaryAgent: "build",
+        threadMode: "normal",
         status: "blocked",
         threadId: "thread-sync",
         pauseSummary: "Blocked summary",
@@ -140,6 +147,7 @@ describe("session-sync", () => {
       {
         threadId: "thread-sync",
         status: "completed",
+        threadMode: "normal",
         finalResponse: "Recovered summary",
       },
     );
@@ -152,6 +160,8 @@ describe("session-sync", () => {
   test("combines session truth with transient display-only overlays", () => {
     const messages = buildDisplayMessages({
       session: {
+        primaryAgent: "build",
+        threadMode: "normal",
         status: "completed",
         threadId: "thread-display",
         finalResponse: "Durable summary",

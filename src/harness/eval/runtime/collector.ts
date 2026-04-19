@@ -14,7 +14,7 @@ import type { Event } from "../../../domain/event";
 import type { Run } from "../../../domain/run";
 import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
-import type { ApprovalSuspension } from "../../core/run-loop/approval-suspension";
+import type { RunSuspension } from "../../core/run-loop/approval-suspension";
 import type { ContinuationEnvelope } from "../../core/run-loop/continuation";
 import type { RunLoopState } from "../../core/run-loop/step-types";
 import { buildRuntimeSnapshot } from "../../protocol/views/runtime-snapshot-builder";
@@ -49,7 +49,7 @@ export type RuntimeCollectedEvidence = {
   workers: WorkerRecord[];
   events: Event[];
   ledgerEntries: Awaited<ReturnType<SqliteExecutionLedger["listByThread"]>>;
-  suspensions: ApprovalSuspension[];
+  suspensions: RunSuspension[];
   continuations: ContinuationEnvelope[];
   snapshot?: RuntimeSnapshot;
   sessionProjection?: ProjectedSessionResult;
@@ -157,6 +157,7 @@ export async function collectRuntimeEvidence(input: {
         return {
           threadId: thread.threadId,
           status: thread.status,
+          threadMode: thread.threadMode,
           activeRunId: latestRun?.runId,
           activeRunStatus: latestRun?.status,
           narrativeSummary: thread.narrativeState?.threadSummary,
@@ -212,6 +213,7 @@ export async function collectRuntimeEvidence(input: {
       thread: {
         threadId: activeThread.threadId,
         status: activeThread.status,
+        threadMode: activeThread.threadMode,
         recoveryFacts: activeThread.recoveryFacts,
         narrativeState: activeThread.narrativeState,
         workingSetWindow: activeThread.workingSetWindow,

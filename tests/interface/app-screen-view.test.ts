@@ -10,6 +10,8 @@ describe("app screen view builders", () => {
   test("builds conversation and utility slices from app state", () => {
     const session = {
       status: "completed" as const,
+      primaryAgent: "build" as const,
+      threadMode: "normal" as const,
       finalResponse: "Awaiting answer",
       threadId: "thread-1",
       workspaceRoot: "/tmp/workspace",
@@ -27,6 +29,7 @@ describe("app screen view builders", () => {
           projectId: "project-1",
           revision: 1,
           status: "active" as const,
+          threadMode: "normal" as const,
         },
       ],
     };
@@ -67,6 +70,8 @@ describe("app screen view builders", () => {
       session: {
         status: "blocked",
         pauseSummary: "blocked",
+        primaryAgent: "build",
+        threadMode: "plan",
         threadId: "thread-1",
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
@@ -94,6 +99,8 @@ describe("app screen view builders", () => {
       onSettingsClose: () => undefined,
     });
 
+    expect(chromeView.primaryAgent).toBe("build");
+    expect(chromeView.threadMode).toBe("plan");
     expect(chromeView.stage).toBe("blocked");
     expect(chromeView.showThreadPanel).toBe(true);
     expect(composerView.composerMode).toBe("input");

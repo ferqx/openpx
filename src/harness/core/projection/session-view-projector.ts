@@ -14,6 +14,8 @@ import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
 import type { Worker } from "../../../domain/worker";
 import type { DerivedThreadView } from "../../../control/context/thread-compaction-types";
+import type { ThreadMode } from "../../../control/agents/thread-mode";
+import type { PlanDecisionRequest } from "../../../runtime/planning/planner-result";
 import type { AnswerView } from "../../protocol/views/answer-view";
 import type { MessageView } from "../../protocol/views/message-view";
 import type { WorkerView } from "../../protocol/views/worker-view";
@@ -22,17 +24,19 @@ import type { WorkerView } from "../../protocol/views/worker-view";
 export type SessionThreadSummary = {
   threadId: string;
   status: string;
+  threadMode: ThreadMode;
   activeRunId?: string;
   activeRunStatus?: Run["status"];
   narrativeSummary?: string;
   pendingApprovalCount?: number;
-  blockingReasonKind?: "waiting_approval" | "human_recovery";
+  blockingReasonKind?: "waiting_approval" | "plan_decision" | "human_recovery";
 };
 
 /** 投影后的会话结果——surface 消费的完整状态视图 */
 export type ProjectedSessionResult = DerivedThreadView & {
   status: "idle" | "active" | "completed" | "waiting_approval" | "blocked" | "failed" | "interrupted";
   threadId: string;
+  threadMode: ThreadMode;
   resumeDisposition?: "resumed" | "already_resolved" | "already_consumed" | "invalidated" | "not_resumable";
   finalResponse?: string;
   executionSummary?: string;
@@ -40,6 +44,7 @@ export type ProjectedSessionResult = DerivedThreadView & {
   pauseSummary?: string;
   latestExecutionStatus?: "running" | "waiting_approval" | "blocked" | "completed";
   recommendationReason?: string;
+  planDecision?: PlanDecisionRequest;
   approvals?: ApprovalRequest[];
   tasks?: Task[];
   answers?: AnswerView[];
@@ -125,6 +130,7 @@ export async function projectSessionResult(input: {
   thread: {
     threadId: string;
     status?: Thread["status"];
+    threadMode: ThreadMode;
     recoveryFacts?: DerivedThreadView["recoveryFacts"];
     narrativeState?: DerivedThreadView["narrativeState"];
     workingSetWindow?: DerivedThreadView["workingSetWindow"];
@@ -139,6 +145,7 @@ export async function projectSessionResult(input: {
   pauseSummary?: string;
   latestExecutionStatus?: ProjectedSessionResult["latestExecutionStatus"];
   recommendationReason?: string;
+  planDecision?: PlanDecisionRequest;
   approvals?: ApprovalRequest[];
   tasks?: Task[];
   answers?: AnswerView[];
@@ -152,6 +159,7 @@ export async function projectSessionResult(input: {
     workingSetWindow: input.thread.workingSetWindow,
     status: input.status,
     threadId: input.thread.threadId,
+    threadMode: input.thread.threadMode,
     finalResponse: input.finalResponse,
     resumeDisposition: input.resumeDisposition,
     executionSummary: input.executionSummary,
@@ -159,6 +167,7 @@ export async function projectSessionResult(input: {
     pauseSummary: input.pauseSummary,
     latestExecutionStatus: input.latestExecutionStatus,
     recommendationReason: input.recommendationReason,
+    planDecision: input.planDecision,
     approvals: input.approvals,
     tasks: input.tasks,
     answers: input.answers,

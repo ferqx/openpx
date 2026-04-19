@@ -47,4 +47,55 @@ describe("control-plane prompt support", () => {
     expect(responderPrompt).toContain("user: 我叫测试用户");
     expect(responderPrompt).toContain("answer from the transcript");
   });
+
+  test("plan mode asks for an executable plan and decision options instead of stopping after planning", () => {
+    const thread = {
+      ...createThread("thread-plan-mode-prompt", "/workspace", "project-1"),
+      threadMode: "plan" as const,
+    };
+
+    const plannerPrompt = buildPlannerPrompt({
+      text: "我要开发一个登录界面",
+      threadView: thread,
+    });
+
+    expect(plannerPrompt).toContain("Current thread mode: plan");
+    expect(plannerPrompt).toContain("continue into execution");
+    expect(plannerPrompt).toContain("2-3 concrete options");
+    expect(plannerPrompt).not.toContain("Do not assume this turn will execute file changes");
+  });
+
+  test("plan mode final responder prompt asks for plan and execution result", () => {
+    const thread = {
+      ...createThread("thread-plan-mode-response", "/workspace", "project-1"),
+      threadMode: "plan" as const,
+    };
+
+    const responderPrompt = buildFinalResponderPrompt({
+      text: "我要开发一个登录界面",
+      threadView: thread,
+      plannerResult: {
+        workPackages: [
+          {
+            id: "pkg_login_ui",
+            objective: "实现登录界面",
+            capabilityMarker: "implementation_work" as const,
+            capabilityFamily: "feature_implementation" as const,
+            allowedTools: ["read_file", "apply_patch"],
+            inputRefs: ["thread:goal"],
+            expectedArtifacts: ["patch:workspace"],
+          },
+        ],
+        acceptanceCriteria: ["登录界面可输入账号和密码"],
+        riskFlags: [],
+        approvalRequiredActions: [],
+        verificationScope: ["UI smoke check"],
+      },
+    });
+
+    expect(responderPrompt).toContain("Plan mode final response contract");
+    expect(responderPrompt).toContain("计划方案");
+    expect(responderPrompt).toContain("执行结果");
+    expect(responderPrompt).toContain("方案选项");
+  });
 });

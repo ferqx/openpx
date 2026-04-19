@@ -1,10 +1,18 @@
 import {
   createApprovalSuspension,
+  createPlanDecisionSuspension,
   type ApprovalSuspension,
+  type PlanDecisionSuspension,
+  type RunSuspension,
 } from "./approval-suspension";
 import type {
   ApprovalResolutionContinuation,
   ContinuationEnvelope,
+  PlanDecisionContinuation,
+} from "./continuation";
+import {
+  isApprovalResolutionContinuation,
+  isPlanDecisionContinuation,
 } from "./continuation";
 import { commitCompletedWorkPackage } from "./phase-commit";
 import { createInitialRunLoopState } from "./run-loop-state";
@@ -24,20 +32,21 @@ export type RunLoopEngine = {
     threadId: string;
     runId: string;
     taskId: string;
-    continuation: ApprovalResolutionContinuation;
+    continuation: ApprovalResolutionContinuation | PlanDecisionContinuation;
   }): Promise<RunLoopEngineResult>;
 };
 
 export type RunLoopEngineResult = {
   status: "completed" | "waiting_approval" | "blocked";
   state: RunLoopState;
-  suspension?: ApprovalSuspension;
+  suspension?: RunSuspension;
   resumeDisposition?: "resumed" | "already_resolved" | "already_consumed" | "invalidated" | "not_resumable";
   finalResponse?: string;
   executionSummary?: string;
   verificationSummary?: string;
   pauseSummary?: string;
   recommendationReason?: string;
+  planDecision?: RunLoopState["planDecision"];
   approvedApprovalRequestId?: string;
   pendingToolCallId?: string;
   pendingToolName?: string;
@@ -48,7 +57,7 @@ export type RunLoopEngineResult = {
 function projectEngineResult(input: {
   state: RunLoopState;
   status: "completed" | "waiting_approval" | "blocked";
-  suspension?: ApprovalSuspension;
+  suspension?: RunSuspension;
   resumeDisposition?: RunLoopEngineResult["resumeDisposition"];
 }): RunLoopEngineResult {
   return {
@@ -61,6 +70,7 @@ function projectEngineResult(input: {
     verificationSummary: input.state.verificationSummary ?? input.state.verificationReport?.summary,
     pauseSummary: input.state.pauseSummary,
     recommendationReason: input.state.recommendationReason,
+    planDecision: input.state.planDecision,
     approvedApprovalRequestId: input.state.approvedApprovalRequestId,
     pendingToolCallId: input.state.pendingToolCallId,
     pendingToolName: input.state.pendingToolName,
@@ -82,7 +92,7 @@ function mergeState(state: RunLoopState, patch: Partial<RunLoopState>): RunLoopS
 function blockForResumeDisposition(input: {
   disposition: Exclude<NonNullable<RunLoopEngineResult["resumeDisposition"]>, "resumed">;
   state: RunLoopState;
-  suspension?: ApprovalSuspension;
+  suspension?: RunSuspension;
 }): RunLoopEngineResult {
   const status: RunLoopEngineResult["status"] = input.state.nextStep === "done" ? "completed" : "blocked";
   const blockedState: RunLoopState = {
@@ -94,7 +104,7 @@ function blockForResumeDisposition(input: {
           ? "Run-loop state is no longer safely resumable. Manual recovery is required."
           : input.disposition === "invalidated"
             ? "This approval continuation is no longer valid."
-            : "This approval has already been processed."
+            : "This continuation has already been processed."
       ),
     recommendationReason:
       input.disposition === "not_resumable"
@@ -196,6 +206,37 @@ export function createRunLoopEngine(input: {
     });
   }
 
+  async function waitForPlanDecision(state: RunLoopState): Promise<RunLoopEngineResult> {
+    if (!state.threadId || !state.runId || !state.taskId || !state.planDecision) {
+      throw new Error("waiting_plan_decision requires thread/run/task ids and planDecision");
+    }
+
+    const suspension = createPlanDecisionSuspension({
+      threadId: state.threadId,
+      runId: state.runId,
+      taskId: state.taskId,
+      summary: state.planDecision.question,
+      planDecision: state.planDecision,
+    });
+    const suspendedState: RunLoopState = {
+      ...state,
+      nextStep: "waiting_plan_decision",
+      pauseSummary: state.planDecision.question,
+    };
+    await input.runStateStore.saveState(suspendedState);
+    await input.runStateStore.saveSuspension(suspension);
+    emitLoopEvent({
+      type: "loop.suspended",
+      state: suspendedState,
+      suspensionId: suspension.suspensionId,
+    });
+    return projectEngineResult({
+      state: suspendedState,
+      status: "blocked",
+      suspension,
+    });
+  }
+
   async function drive(initialState: RunLoopState): Promise<RunLoopEngineResult> {
     let state = initialState;
     let budget = 32;
@@ -214,6 +255,9 @@ export function createRunLoopEngine(input: {
             }
             if (state.nextStep === "waiting_approval" && state.pendingApproval) {
               return waitForApproval(state);
+            }
+            if (state.nextStep === "waiting_plan_decision" && state.planDecision) {
+              return waitForPlanDecision(state);
             }
             if (state.nextStep === "plan") {
               state = mergeState(state, dispatchNextStep(state));
@@ -269,6 +313,9 @@ export function createRunLoopEngine(input: {
           case "waiting_approval":
             return waitForApproval(state);
 
+          case "waiting_plan_decision":
+            return waitForPlanDecision(state);
+
           case "done":
             if (state.runId) {
               await input.runStateStore.deleteActiveRunState(state.runId);
@@ -295,11 +342,23 @@ export function createRunLoopEngine(input: {
     },
 
     async resume(resumeInput) {
-      const applied = await input.runStateStore.applyApprovalContinuation({
-        continuation: resumeInput.continuation,
-        expectedStateVersion: RUN_LOOP_STATE_VERSION,
-        expectedEngineVersion: RUN_LOOP_ENGINE_VERSION,
-      });
+      const applied = isApprovalResolutionContinuation(resumeInput.continuation)
+        ? await input.runStateStore.applyApprovalContinuation({
+            continuation: resumeInput.continuation,
+            expectedStateVersion: RUN_LOOP_STATE_VERSION,
+            expectedEngineVersion: RUN_LOOP_ENGINE_VERSION,
+          })
+        : isPlanDecisionContinuation(resumeInput.continuation)
+          ? await input.runStateStore.applyPlanDecisionContinuation({
+              continuation: resumeInput.continuation,
+              expectedStateVersion: RUN_LOOP_STATE_VERSION,
+              expectedEngineVersion: RUN_LOOP_ENGINE_VERSION,
+            })
+          : undefined;
+
+      if (!applied) {
+        throw new Error(`unsupported continuation kind for run-loop resume: ${resumeInput.continuation.kind}`);
+      }
 
       if (applied.disposition !== "resumed") {
         return blockForResumeDisposition({
@@ -313,7 +372,9 @@ export function createRunLoopEngine(input: {
         type: "loop.resumed",
         state: applied.state,
         continuationId: applied.continuation?.continuationId,
-        approvalRequestId: applied.continuation?.approvalRequestId,
+        approvalRequestId: applied.continuation && isApprovalResolutionContinuation(applied.continuation)
+          ? applied.continuation.approvalRequestId
+          : undefined,
         resumeDisposition: "resumed",
       });
 

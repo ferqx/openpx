@@ -12,6 +12,7 @@ import type { RuntimeStatusEvent, TuiKernel, TuiKernelEvent } from "../hooks/use
 import type { RuntimeClient } from "./runtime-client";
 import type {
   ApprovalCommand,
+  PlanDecisionCommand,
   PlanInputCommand,
   SubmitInputCommand,
   ThreadCommand,
@@ -98,17 +99,49 @@ export function createRemoteKernel(client: RemoteRuntimeClient): TuiKernel {
         return () => handlers.delete(handler);
       },
     },
-    async handleCommand(command: SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand) {
+    async handleCommand(command: SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand) {
       // 这里负责把 TUI command vocabulary 翻译成 harness protocol vocabulary。
       // 这是 surface adapter 的职责，不应回流到 harness core。
       if (command.type === "submit_input") {
+        const snapshot = await client.getSnapshot();
+        if (snapshot.activeThreadId) {
+          await client.sendCommand({
+            kind: "clear_thread_mode",
+            threadId: snapshot.activeThreadId,
+            trigger: "plain_input",
+          });
+        }
         await client.sendCommand({ kind: "add_task", content: command.payload.text });
       } else if (command.type === "plan_input") {
-        await client.sendCommand({ kind: "plan_task", content: command.payload.text });
+        const snapshot = await client.getSnapshot();
+        if (snapshot.activeThreadId) {
+          await client.sendCommand({
+            kind: "set_thread_mode",
+            threadId: snapshot.activeThreadId,
+            mode: "plan",
+            trigger: "slash_command",
+          });
+          await client.sendCommand({ kind: "add_task", content: command.payload.text });
+        } else {
+          await client.sendCommand({ kind: "plan_task", content: command.payload.text });
+        }
       } else if (command.type === "approve_request") {
         await client.sendCommand({ kind: "approve", approvalRequestId: command.payload.approvalRequestId });
       } else if (command.type === "reject_request") {
         await client.sendCommand({ kind: "reject", approvalRequestId: command.payload.approvalRequestId });
+      } else if (command.type === "resolve_plan_decision") {
+        const snapshot = await client.getSnapshot();
+        if (!snapshot.activeThreadId || !snapshot.activeRunId) {
+          return hydrateSession();
+        }
+        await client.sendCommand({
+          kind: "resolve_plan_decision",
+          threadId: snapshot.activeThreadId,
+          runId: snapshot.activeRunId,
+          optionId: command.payload.optionId,
+          optionLabel: command.payload.optionLabel,
+          input: command.payload.input,
+        });
       } else if (command.type === "thread_new") {
         await client.sendCommand({ kind: "new_thread" });
       } else if (command.type === "thread_switch") {

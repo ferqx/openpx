@@ -4,8 +4,10 @@ import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
 import type { Event } from "../../../domain/event";
 import type { WorkerRecord } from "../../../control/workers/worker-types";
+import { DEFAULT_THREAD_MODE } from "../../../control/agents/thread-mode";
 import type { HarnessSessionScope } from "../../server/harness-session-scope";
 import type { RuntimeSnapshot } from "../schemas/api-schema";
+import type { PlanDecisionRequest } from "../../../runtime/planning/planner-result";
 import { CURRENT_PROTOCOL_VERSION as PROTOCOL_VERSION } from "../schemas/protocol-version";
 import { getStoredEventSequence } from "../events/runtime-event-envelope";
 
@@ -14,7 +16,7 @@ type RuntimeThreadView = Thread & {
   activeRunId?: string;
   activeRunStatus?: Run["status"];
   pendingApprovalCount?: number;
-  blockingReasonKind?: "waiting_approval" | "human_recovery";
+  blockingReasonKind?: "waiting_approval" | "plan_decision" | "human_recovery";
 };
 
 /** 组装 runtime snapshot：把 thread/run/task/approval 等 durable 状态裁成协议视图 */
@@ -30,6 +32,7 @@ export function buildRuntimeSnapshot(input: {
   events: Event[];
   fallbackLastEventSeq: number;
   narrativeSummary?: string;
+  planDecision?: PlanDecisionRequest;
 }): RuntimeSnapshot {
   // 优先使用 thread recoveryFacts 中的阻塞原因；
   // 没有时再退回当前 blocked task 上的 blockingReason。
@@ -65,7 +68,9 @@ export function buildRuntimeSnapshot(input: {
     lastEventSeq,
     activeThreadId: input.activeThread?.threadId,
     activeRunId: input.activeRunId,
+    threadMode: input.activeThread?.threadMode ?? DEFAULT_THREAD_MODE,
     recommendationReason: input.activeThread?.recommendationReason,
+    planDecision: input.planDecision,
     finalResponse: latestAnswer?.summary,
     pauseSummary,
     latestExecutionStatus,
@@ -81,6 +86,7 @@ export function buildRuntimeSnapshot(input: {
         projectId: thread.projectId,
         revision: thread.revision,
         status: thread.status,
+        threadMode: thread.threadMode,
         activeRunId: thread.activeRunId ?? latestRun?.runId,
         activeRunStatus: thread.activeRunStatus ?? latestRun?.status,
         narrativeSummary: thread.narrativeSummary,

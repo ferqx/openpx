@@ -8,6 +8,7 @@
  */
 import type { StreamEvent } from "../../../domain/stream-events";
 import type { Thread } from "../../../domain/thread";
+import type { ThreadMode } from "../../../control/agents/thread-mode";
 import type { WorkerView } from "../../protocol/views/worker-view";
 import type { ProjectedSessionResult } from "../projection/session-view-projector";
 import type { ModelGatewayEvent, ModelStatus } from "../../../infra/model-gateway";
@@ -23,6 +24,18 @@ export type ThreadInterruptedKernelEvent = {
   type: "thread.interrupted";
   payload: {
     threadId: string;
+    reason?: string;
+  };
+};
+
+/** 协作线模式切换事件。 */
+export type ThreadModeChangedKernelEvent = {
+  type: "thread.mode_changed";
+  payload: {
+    threadId: string;
+    fromMode: ThreadMode;
+    toMode: ThreadMode;
+    trigger: "slash_command" | "plain_input" | "runtime_command" | "compat_plan_task";
     reason?: string;
   };
 };
@@ -55,7 +68,7 @@ export type LoopKernelEvent = {
     threadId: string;
     runId: string;
     taskId: string;
-    step: "plan" | "execute" | "verify" | "respond" | "waiting_approval" | "done";
+    step: "plan" | "execute" | "verify" | "respond" | "waiting_approval" | "waiting_plan_decision" | "done";
     suspensionId?: string;
     continuationId?: string;
     approvalRequestId?: string;
@@ -101,6 +114,7 @@ export type ModelStatusKernelEvent = {
 export type KernelEvent =
   | ThreadStartedKernelEvent
   | ThreadInterruptedKernelEvent
+  | ThreadModeChangedKernelEvent
   | ThreadViewUpdatedKernelEvent
   | ThreadRecoveryResolvedKernelEvent
   | LoopKernelEvent

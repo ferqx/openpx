@@ -14,6 +14,16 @@ export type PlanInputCommand = {
   };
 };
 
+/** 方案选择命令：对应 planner decisionRequest 的用户选择 */
+export type PlanDecisionCommand = {
+  type: "resolve_plan_decision";
+  payload: {
+    optionId: string;
+    optionLabel: string;
+    input: string;
+  };
+};
+
 /** 审批命令：对应 approve / reject 两条路径 */
 export type ApprovalCommand =
   | {

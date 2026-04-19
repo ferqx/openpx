@@ -24,6 +24,7 @@ const threads = [
     projectId: "project-1",
     revision: 1,
     status: "active" as const,
+    threadMode: "normal" as const,
   },
   {
     threadId: "thread-2",
@@ -31,6 +32,7 @@ const threads = [
     projectId: "project-1",
     revision: 2,
     status: "idle" as const,
+    threadMode: "normal" as const,
     activeRunStatus: "completed" as const,
   },
 ];

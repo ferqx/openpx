@@ -17,6 +17,15 @@
 - kernel 负责稳定命令边界
 - control plane 负责真正推进执行
 
+### `/plan` mode toggle
+
+`/plan` 的正式语义不是把前缀文本塞进 prompt，而是切换当前 thread 的 `threadMode`：
+
+1. 普通输入前，TUI 会显式清回 `normal`
+2. `/plan` 输入前，TUI 会显式切到 `plan`
+3. mode 切换会发布 `thread.mode_changed`
+4. 两种输入随后都走统一的提交路径；差异体现在 planner prompt 与工作包语义
+
 ## 2. 新建执行
 
 当 `startRootTask(...)` 走新执行路径时，会依次：
@@ -26,6 +35,15 @@
 3. 创建根 `Task`
 4. 将 `Task` 置为 `running`
 5. 调用 run-loop engine 推进 plan / execute / verify / respond
+
+如果当前 thread 处于 `plan` mode：
+
+- planner 必须优先产出可执行计划
+- 计划足够明确时，run-loop 继续进入 execute / verify / respond
+- 如果关键细节缺失，planner 应生成 `decisionRequest`
+- `decisionRequest` 会保存为 `waiting_plan_decision` suspension，并投影为 TUI 的方案选择卡片
+- 用户输入数字后，surface 发送 `resolve_plan_decision`，control plane 构造 `plan_decision` continuation 并恢复原 run
+- 恢复后 run-loop 回到 planner，把原始请求与所选方案作为新的规划输入，再进入 execute / verify / respond
 
 ## 3. 等待审批
 
@@ -42,6 +60,22 @@
 - 当前 task 被阻塞
 - UI 出现 approval 面板
 
+## 3.1 等待方案选择
+
+当 plan mode 的 planner 发现关键方案细节必须由用户选择时：
+
+- `Task` 变为 `blocked`
+- `Run` 变为 `blocked`
+- `Run.blockingReason.kind` 记录为 `plan_decision`
+- `run_loop_state` 的 `nextStep` 记录为 `waiting_plan_decision`
+- `run_suspension` 以 `active` 状态保存 `planDecision` 与恢复锚点
+
+这时系统对外暴露的是：
+
+- thread 正在等待用户选择方案，而不是等待 approval（审批）
+- TUI 显示 `planDecision` 卡片
+- hydrate 会从 active suspension 恢复方案选择卡片，不依赖 TUI 临时内存
+
 ## 4. 批准后恢复
 
 入口：`approve_request`
@@ -50,6 +84,7 @@
 
 - 系统必须精确加载 `runId` 对应的 active suspension
 - continuation（继续执行信封）必须带完整归属链；`approval_resolution` 必须携带 `threadId`、`runId`、`taskId`、`approvalRequestId`
+- `plan_decision` continuation 必须携带 `threadId`、`runId`、`taskId`、`optionId`、`optionLabel` 和新的规划输入
 - suspension 只能从 `active -> resolved` 一次
 - continuation 只能从 `created -> consumed` 一次
 - 事务提交之后，run-loop 才会继续推进

@@ -15,6 +15,7 @@ describe("ThreadPanel", () => {
             projectId: "project-1",
             revision: 4,
             status: "active",
+            threadMode: "plan",
             activeRunStatus: "waiting_approval",
             narrativeSummary: "Current active runtime recovery thread.",
             pendingApprovalCount: 1,
@@ -25,6 +26,7 @@ describe("ThreadPanel", () => {
             projectId: "project-1",
             revision: 2,
             status: "active",
+            threadMode: "normal",
             activeRunStatus: "blocked",
             narrativeSummary: "Manual recovery pending for a risky patch.",
             blockingReasonKind: "human_recovery",
@@ -38,6 +40,7 @@ describe("ThreadPanel", () => {
     expect(frame).toContain("threads");
     expect(frame).toContain("thread-active");
     expect(frame).toContain("active");
+    expect(frame).toContain("mode:plan");
     expect(frame).toContain("1 approval");
     expect(frame).toContain("blocked");
     expect(frame).toContain("recovery");

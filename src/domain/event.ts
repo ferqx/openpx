@@ -19,6 +19,7 @@ export const durableEventTypes = [
   "task.completed",  // task 执行完成
   "task.failed",     // task 执行失败
   "thread.blocked",  // thread 被阻塞（等待审批或人工恢复）
+  "thread.mode_changed", // thread 模式切换
   "thread.view_updated", // thread 投影视图（projected view）更新
   "tool.executed",   // 工具执行成功
   "tool.failed",     // 工具执行失败

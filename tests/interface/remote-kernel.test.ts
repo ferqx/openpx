@@ -14,6 +14,7 @@ describe("Remote Kernel", () => {
           lastEventSeq: 12,
           activeThreadId: "thread-1",
           activeRunId: undefined,
+          threadMode: "normal",
           recommendationReason: undefined,
           blockingReason: {
             kind: "human_recovery",
@@ -68,6 +69,8 @@ describe("Remote Kernel", () => {
     expect(hydrated).toEqual({
       status: "blocked",
       stage: "blocked",
+      primaryAgent: "build",
+      threadMode: "normal",
       threadId: "thread-1",
       finalResponse: undefined,
       executionSummary: undefined,
@@ -123,6 +126,7 @@ describe("Remote Kernel", () => {
           lastEventSeq: 3,
           activeThreadId: "thread-2",
           activeRunId: undefined,
+          threadMode: "plan",
           recommendationReason: undefined,
           narrativeSummary: "Current active thread summary.",
           blockingReason: undefined,
@@ -133,6 +137,7 @@ describe("Remote Kernel", () => {
               projectId: "project-1",
               revision: 4,
               status: "active",
+              threadMode: "plan",
               narrativeSummary: "Current active thread summary.",
               pendingApprovalCount: 1,
             },
@@ -142,6 +147,7 @@ describe("Remote Kernel", () => {
               projectId: "project-1",
               revision: 2,
               status: "idle",
+              threadMode: "normal",
               activeRunStatus: "completed",
               narrativeSummary: "Completed repo scan and isolated runtime recovery work.",
               blockingReasonKind: "human_recovery",
@@ -173,9 +179,9 @@ describe("Remote Kernel", () => {
       status: "completed",
       threadId: "thread-2",
     });
-    expect((result as { finalResponse: string }).finalResponse).toContain("thread-2 (active) [active] approval:1 Current active thread summary.");
+    expect((result as { finalResponse: string }).finalResponse).toContain("thread-2 (active) [active] mode:plan approval:1 Current active thread summary.");
     expect((result as { finalResponse: string }).finalResponse).toContain(
-      "thread-1 [completed] human_recovery Completed repo scan and isolated runtime recovery work.",
+      "thread-1 [completed] mode:normal human_recovery Completed repo scan and isolated runtime recovery work.",
     );
   });
 
@@ -189,6 +195,7 @@ describe("Remote Kernel", () => {
           lastEventSeq: 12,
           activeThreadId: "thread-1",
           activeRunId: undefined,
+          threadMode: "normal",
           recommendationReason: undefined,
           blockingReason: {
             kind: "human_recovery",
@@ -240,6 +247,7 @@ describe("Remote Kernel", () => {
           lastEventSeq: 12,
           activeThreadId: "thread-1",
           activeRunId: undefined,
+          threadMode: "normal",
           recommendationReason: undefined,
           blockingReason: undefined,
           threads: [],
@@ -284,6 +292,7 @@ describe("Remote Kernel", () => {
           lastEventSeq: subscribeAttempt === 0 ? 4 : 5,
           activeThreadId: "thread-1",
           activeRunId: undefined,
+          threadMode: "normal",
           recommendationReason: undefined,
           blockingReason: undefined,
           threads: [],
@@ -343,6 +352,7 @@ describe("Remote Kernel", () => {
           lastEventSeq: 12,
           activeThreadId: "thread-1",
           activeRunId: undefined,
+          threadMode: "normal",
           recommendationReason: undefined,
           blockingReason: undefined,
           threads: [],
@@ -373,7 +383,7 @@ describe("Remote Kernel", () => {
     expect(sentCommands).toEqual([{ kind: "interrupt", threadId: "thread-1" }]);
   });
 
-  test("forwards planning input through an explicit plan_task runtime command", async () => {
+  test("forwards planning input through a thread mode toggle plus normal task submission", async () => {
     const sentCommands: unknown[] = [];
     const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
       async getSnapshot() {
@@ -384,6 +394,7 @@ describe("Remote Kernel", () => {
           lastEventSeq: 12,
           activeThreadId: "thread-1",
           activeRunId: undefined,
+          threadMode: "normal",
           recommendationReason: undefined,
           blockingReason: undefined,
           threads: [],
@@ -414,6 +425,130 @@ describe("Remote Kernel", () => {
       payload: { text: "design the rollout" },
     });
 
-    expect(sentCommands).toContainEqual({ kind: "plan_task", content: "design the rollout" });
+    expect(sentCommands).toEqual([
+      {
+        kind: "set_thread_mode",
+        threadId: "thread-1",
+        mode: "plan",
+        trigger: "slash_command",
+      },
+      {
+        kind: "add_task",
+        content: "design the rollout",
+      },
+    ]);
+  });
+
+  test("clears plan mode before forwarding ordinary submit input", async () => {
+    const sentCommands: unknown[] = [];
+    const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
+      async getSnapshot() {
+        return {
+          protocolVersion: "1.0.0",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          lastEventSeq: 12,
+          activeThreadId: "thread-1",
+          activeRunId: undefined,
+          threadMode: "plan",
+          recommendationReason: undefined,
+          blockingReason: undefined,
+          threads: [],
+          runs: [],
+          tasks: [],
+          pendingApprovals: [],
+          answers: [],
+          workers: [],
+        };
+      },
+      async sendCommand(command) {
+        sentCommands.push(command);
+        return undefined;
+      },
+      subscribeEvents() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            await new Promise(() => undefined);
+          },
+        };
+      },
+    };
+
+    const kernel = createRemoteKernel(client);
+
+    await kernel.handleCommand({
+      type: "submit_input",
+      payload: { text: "ship it" },
+    });
+
+    expect(sentCommands).toEqual([
+      {
+        kind: "clear_thread_mode",
+        threadId: "thread-1",
+        trigger: "plain_input",
+      },
+      {
+        kind: "add_task",
+        content: "ship it",
+      },
+    ]);
+  });
+
+  test("forwards plan decision selections as durable continuation commands", async () => {
+    const sentCommands: unknown[] = [];
+    const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
+      async getSnapshot() {
+        return {
+          protocolVersion: "1.0.0",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          lastEventSeq: 12,
+          activeThreadId: "thread-1",
+          activeRunId: "run-1",
+          threadMode: "plan",
+          recommendationReason: undefined,
+          blockingReason: undefined,
+          threads: [],
+          runs: [],
+          tasks: [],
+          pendingApprovals: [],
+          answers: [],
+          workers: [],
+        };
+      },
+      async sendCommand(command) {
+        sentCommands.push(command);
+        return undefined;
+      },
+      subscribeEvents() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            await new Promise(() => undefined);
+          },
+        };
+      },
+    };
+
+    const kernel = createRemoteKernel(client);
+
+    await kernel.handleCommand({
+      type: "resolve_plan_decision",
+      payload: {
+        optionId: "brand",
+        optionLabel: "品牌化登录页",
+        input: "我要开发一个登录界面\n\n已选择方案：品牌化登录页",
+      },
+    });
+
+    expect(sentCommands).toEqual([
+      {
+        kind: "resolve_plan_decision",
+        threadId: "thread-1",
+        runId: "run-1",
+        optionId: "brand",
+        optionLabel: "品牌化登录页",
+        input: "我要开发一个登录界面\n\n已选择方案：品牌化登录页",
+      },
+    ]);
   });
 });

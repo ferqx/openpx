@@ -6,13 +6,14 @@
 
 1. [runtime-spine.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/runtime-spine.md)
 2. [core-concepts.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/core-concepts.md)
-3. [config-system.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/config-system.md)
-4. [state-flows.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/state-flows.md)
-5. [harness-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-code-map.md)
-6. [harness-protocol-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-protocol-code-map.md)
-7. [harness-feedback-loop.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-feedback-loop.md)
-8. [system-confidence.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/system-confidence.md)
-9. [harness-surface-boundary.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-surface-boundary.md)
+3. [agent-mode-ontology.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/agent-mode-ontology.md)
+4. [config-system.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/config-system.md)
+5. [state-flows.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/state-flows.md)
+6. [harness-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-code-map.md)
+7. [harness-protocol-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-protocol-code-map.md)
+8. [harness-feedback-loop.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-feedback-loop.md)
+9. [system-confidence.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/system-confidence.md)
+10. [harness-surface-boundary.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-surface-boundary.md)
 
 ## 每个文档回答什么
 
@@ -31,11 +32,20 @@
 - `thread / run / task / approval / runtime / kernel / protocol` 各自是什么意思
 - 这些术语在代码里的落点是什么
 
+### `agent-mode-ontology.md`
+
+回答：
+
+- `Build / plan mode / subagent / AgentRun` 各自是什么
+- 为什么 `Plan` 是 thread mode，而不是第二个主代理
+- 为什么 `worker` 现在应理解为兼容期内部实例术语
+
 ### `state-flows.md`
 
 回答：
 
 - submit
+- `/plan` mode toggle
 - waiting approval
 - approve resume
 - reject replan

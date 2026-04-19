@@ -18,6 +18,7 @@ describe("projectSessionResult", () => {
         {
           threadId: "thread-1",
           status: "completed",
+          threadMode: "normal",
           narrativeSummary: "Completed repo scan",
           pendingApprovalCount: 0,
         },

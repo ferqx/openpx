@@ -19,11 +19,13 @@ import type { Run } from "../../../domain/run";
 import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
 import type { ThreadNarrativeService } from "../../../control/context/thread-narrative-service";
+import type { PlanDecisionRequest } from "../../../runtime/planning/planner-result";
 import type { ContinuationEnvelope } from "../run-loop/continuation";
 import type { EventLogPort } from "../../../persistence/ports/event-log-port";
 import type { TaskStorePort } from "../../../persistence/ports/task-store-port";
 import type { ThreadStorePort } from "../../../persistence/ports/thread-store-port";
 import type { WorkerStorePort } from "../../../persistence/ports/worker-store-port";
+import type { RunStateStorePort } from "../../../persistence/ports/run-state-store";
 import { prefixedUuid } from "../../../shared/id-generators";
 import { createEventBus, type KernelEvent } from "../events/event-bus";
 import { createInterruptService } from "../events/interrupt-service";
@@ -66,6 +68,17 @@ export type RejectRequestCommand = {
   };
 };
 
+export type ResolvePlanDecisionCommand = {
+  type: "resolve_plan_decision";
+  payload: {
+    threadId: string;
+    runId: string;
+    optionId: string;
+    optionLabel: string;
+    input: string;
+  };
+};
+
 export type RecoveryCommand =
   | {
       type: "restart_run";
@@ -97,13 +110,14 @@ export type SessionControlPlaneResult = {
   verificationSummary?: string;
   pauseSummary?: string;
   recommendationReason?: string;
+  planDecision?: PlanDecisionRequest;
   lastCompletedToolCallId?: string;
   lastCompletedToolName?: string;
   pendingToolCallId?: string;
   pendingToolName?: string;
 };
 
-export type SessionCommand = SubmitInputCommand | ApproveRequestCommand | RejectRequestCommand | RecoveryCommand;
+export type SessionCommand = SubmitInputCommand | ApproveRequestCommand | RejectRequestCommand | ResolvePlanDecisionCommand | RecoveryCommand;
 
 export type SessionCommandResult = ProjectedSessionResult;
 
@@ -121,6 +135,7 @@ export function createSessionKernel(deps: {
     runStore: {
       getLatestByThread(threadId: string): Promise<Run | undefined>;
     };
+    runStateStore?: RunStateStorePort;
     approvalStore: {
       listPendingByThread(threadId: string): Promise<ApprovalRequest[]>;
       get(id: string): Promise<ApprovalRequest | undefined>;
@@ -130,6 +145,13 @@ export function createSessionKernel(deps: {
   };
   controlPlane: {
     startRootTask: (threadId: string, input: string | ContinuationEnvelope) => Promise<SessionControlPlaneResult>;
+    resolvePlanDecision?: (input: {
+      threadId: string;
+      runId: string;
+      optionId: string;
+      optionLabel: string;
+      continuationInput: string;
+    }) => Promise<SessionControlPlaneResult>;
     approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     restartRun: (threadId: string) => Promise<SessionControlPlaneResult>;
@@ -164,6 +186,7 @@ export function createSessionKernel(deps: {
       return {
         threadId: t.threadId,
         status: latestRun?.status ?? t.status,
+        threadMode: t.threadMode,
         activeRunId: latestRun?.runId,
         activeRunStatus: latestRun?.status,
         narrativeSummary: t.narrativeState?.threadSummary,
@@ -276,6 +299,7 @@ export function createSessionKernel(deps: {
     verificationSummary?: string;
     pauseSummary?: string;
     recommendationReason?: string;
+    planDecision?: PlanDecisionRequest;
     threadList?: SessionThreadSummary[];
   }): Promise<SessionCommandResult> {
     const stableArtifacts = buildStableSessionArtifacts({
@@ -305,6 +329,7 @@ export function createSessionKernel(deps: {
               ? "blocked"
               : "running",
       recommendationReason: input.recommendationReason,
+      planDecision: input.planDecision,
       workspaceRoot: deps.workspaceRoot,
       projectId: deps.projectId,
       threads: input.threadList,
@@ -333,6 +358,7 @@ export function createSessionKernel(deps: {
       verificationSummary: result.verificationSummary,
       pauseSummary: result.pauseSummary,
       recommendationReason: result.recommendationReason,
+      planDecision: result.planDecision,
       threadList,
     });
 
@@ -348,6 +374,12 @@ export function createSessionKernel(deps: {
     const threadList = await getThreadSummaries();
     const tasks = await deps.stores.taskStore.listByThread(thread.threadId);
     const approvals = await deps.stores.approvalStore.listPendingByThread(thread.threadId);
+    const activeSuspension = latestRun && deps.stores.runStateStore
+      ? await deps.stores.runStateStore.loadActiveSuspensionByRun(latestRun.runId)
+      : undefined;
+    const planDecision = activeSuspension?.reasonKind === "waiting_plan_decision"
+      ? activeSuspension.planDecision
+      : undefined;
     const blockedWithoutRun = !latestRun && shouldShortCircuitBlockedSubmit({ latestRun, thread, tasks });
 
     return buildSessionResult({
@@ -355,6 +387,7 @@ export function createSessionKernel(deps: {
       status: blockedWithoutRun ? "blocked" : deriveProjectedExecutionStatus(latestRun, thread.status),
       tasks,
       approvals,
+      planDecision,
       threadList,
     });
   }
@@ -433,6 +466,44 @@ export function createSessionKernel(deps: {
           status: deriveProjectedExecutionStatus(approvalContext.latestRun, approvalContext.thread.status),
           tasks: approvalContext.tasks,
           approvals: approvalContext.approvals,
+          threadList,
+        });
+      }
+
+      if (command.type === "resolve_plan_decision") {
+        const thread = await deps.stores.threadStore.get(command.payload.threadId);
+        if (!thread) {
+          throw new Error(`thread ${command.payload.threadId} not found`);
+        }
+        const [latestRun, tasks, approvals] = await Promise.all([
+          deps.stores.runStore.getLatestByThread(thread.threadId),
+          deps.stores.taskStore.listByThread(thread.threadId),
+          deps.stores.approvalStore.listPendingByThread(thread.threadId),
+        ]);
+
+        startBackgroundControlAction({
+          threadId: thread.threadId,
+          execute: () => {
+            if (!deps.controlPlane.resolvePlanDecision) {
+              throw new Error("plan decision resolution is not configured");
+            }
+            return deps.controlPlane.resolvePlanDecision({
+              threadId: thread.threadId,
+              runId: command.payload.runId,
+              optionId: command.payload.optionId,
+              optionLabel: command.payload.optionLabel,
+              continuationInput: command.payload.input,
+            });
+          },
+        });
+
+        const threadList = await getThreadSummaries();
+        return buildSessionResult({
+          thread,
+          status: "active",
+          tasks,
+          approvals,
+          executionSummary: latestRun?.resultSummary,
           threadList,
         });
       }

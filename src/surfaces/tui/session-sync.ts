@@ -1,6 +1,7 @@
 import type { ProjectedSessionResult } from "../../harness/core/projection/session-view-projector";
 import type { TuiKernelEvent, TuiSessionResult } from "./hooks/use-kernel";
 import type { RuntimeSessionState } from "./runtime/runtime-session";
+import { DEFAULT_PRIMARY_AGENT_ID } from "../../control/agents/agent-spec";
 
 /** TUI 内部消息模型：把 runtime session truth 转成界面可渲染的对话条目 */
 export type TuiMessage = {
@@ -89,6 +90,7 @@ export function mergeThreadViewIntoSession(
           projectId: existing?.projectId ?? projectId,
           revision: existing?.revision ?? index + 1,
           status: thread.status as RuntimeSessionState["threads"][number]["status"],
+          threadMode: thread.threadMode,
           activeRunId: thread.activeRunId,
           activeRunStatus: thread.activeRunStatus,
           narrativeSummary: thread.narrativeSummary,
@@ -101,6 +103,8 @@ export function mergeThreadViewIntoSession(
   const messages = update.messages ?? deriveMessagesFromRecoveryFacts(update.threadId, update.recoveryFacts);
 
   return {
+    primaryAgent: current?.primaryAgent ?? DEFAULT_PRIMARY_AGENT_ID,
+    threadMode: update.threadMode,
     status,
     stage: status === "waiting_approval" ? "awaiting_confirmation" : status === "blocked" ? "blocked" : "idle",
     threadId: update.threadId,
@@ -117,8 +121,29 @@ export function mergeThreadViewIntoSession(
     projectId,
     blockingReason,
     recommendationReason: update.recommendationReason ?? current?.recommendationReason,
+    planDecision: update.planDecision,
     narrativeSummary: update.narrativeState?.threadSummary ?? current?.narrativeSummary,
     threads,
+  };
+}
+
+/** 把 thread.mode_changed 事件合并进当前会话 truth。 */
+export function mergeThreadModeChangeIntoSession(
+  current: RuntimeSessionState | undefined,
+  update: Extract<TuiKernelEvent, { type: "thread.mode_changed" }>["payload"],
+): RuntimeSessionState | undefined {
+  if (!current) {
+    return current;
+  }
+
+  return {
+    ...current,
+    threadMode: current.threadId === update.threadId ? update.toMode : current.threadMode,
+    threads: current.threads.map((thread) => (
+      thread.threadId === update.threadId
+        ? { ...thread, threadMode: update.toMode }
+        : thread
+    )),
   };
 }
 

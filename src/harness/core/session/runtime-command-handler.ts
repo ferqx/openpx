@@ -1,7 +1,9 @@
 import { createAppContext } from "../../../app/bootstrap";
+import { createEvent } from "../../../domain/event";
 import type { Run } from "../../../domain/run";
 import { createThread, type Thread } from "../../../domain/thread";
 import { transitionThread } from "../../../domain/thread";
+import { DEFAULT_THREAD_MODE, type ThreadMode } from "../../../control/agents/thread-mode";
 import type { HarnessSessionScope } from "../../server/harness-session-scope";
 import type { RuntimeCommand } from "../../protocol/schemas/api-schema";
 import type { SessionCommandResult } from "./session-kernel";
@@ -27,6 +29,7 @@ function scopeKey(scope: HarnessSessionScope): string {
 function createEmptySessionResult(scope: HarnessSessionScope): SessionCommandResult {
   return {
     threadId: "",
+    threadMode: DEFAULT_THREAD_MODE,
     status: "completed",
     finalResponse: undefined,
     executionSummary: undefined,
@@ -106,6 +109,64 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       return undefined;
     }
     return thread;
+  }
+
+  async function appendRuntimeEvent(input: {
+    threadId: string;
+    type: string;
+    payload: Record<string, unknown>;
+  }) {
+    if (!deps.context.stores.eventLog) {
+      return;
+    }
+
+    await deps.context.stores.eventLog.append({
+      ...createEvent({
+        eventId: `event_${crypto.randomUUID()}`,
+        threadId: input.threadId,
+        type: input.type,
+        payload: input.payload,
+        createdAt: new Date().toISOString(),
+      }),
+    });
+  }
+
+  async function updateThreadMode(input: {
+    thread: Thread;
+    nextMode: ThreadMode;
+    trigger: "slash_command" | "plain_input" | "runtime_command" | "compat_plan_task";
+    reason?: string;
+  }) {
+    const fromMode = input.thread.threadMode;
+    if (fromMode === input.nextMode) {
+      return input.thread;
+    }
+
+    const nextThread: Thread = {
+      ...input.thread,
+      threadMode: input.nextMode,
+      revision: (input.thread.revision ?? 1) + 1,
+    };
+    await deps.context.stores.threadStore.save(nextThread);
+
+    const payload = {
+      threadId: input.thread.threadId,
+      fromMode,
+      toMode: input.nextMode,
+      trigger: input.trigger,
+      reason: input.reason,
+    };
+    deps.context.kernel.events.publish({
+      type: "thread.mode_changed",
+      payload,
+    });
+    await appendRuntimeEvent({
+      threadId: input.thread.threadId,
+      type: "thread.mode_changed",
+      payload,
+    });
+
+    return nextThread;
   }
 
   function publishWorkerEvent(
@@ -223,6 +284,23 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       return result;
     }
 
+    if (command.kind === "set_thread_mode" || command.kind === "clear_thread_mode") {
+      const thread = await deps.context.stores.threadStore.get(command.threadId);
+      if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
+        throw new Error(`thread ${command.threadId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+
+      await updateThreadMode({
+        thread,
+        nextMode: command.kind === "set_thread_mode" ? command.mode : DEFAULT_THREAD_MODE,
+        trigger: command.trigger,
+        reason: command.reason,
+      });
+
+      const result = await deps.context.kernel.hydrateSession();
+      return result ?? createEmptySessionResult(deps.scope);
+    }
+
     if (command.kind === "add_task") {
       // add_task 是 runtime protocol 到 kernel submit_input 的直接映射。
       await deps.ensureActiveThread();
@@ -238,13 +316,17 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
     }
 
     if (command.kind === "plan_task") {
-      // 当前通过 plan: 前缀把“规划请求”编码进普通 submit_input，
-      // 具体如何路由由 root graph / planner normalization 决定。
-      await deps.ensureActiveThread();
+      // 兼容旧 plan_task：先把 thread truth 切到 plan，再沿普通提交路径进入 kernel。
+      const thread = await deps.ensureActiveThread();
+      await updateThreadMode({
+        thread,
+        nextMode: "plan",
+        trigger: "compat_plan_task",
+      });
       const result = await deps.context.kernel.handleCommand({
         type: "submit_input",
         payload: {
-          text: `plan: ${command.content}`,
+          text: command.content,
         },
       });
       deps.setActiveThreadId(result.threadId);
@@ -366,6 +448,26 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       return deps.context.kernel.handleCommand({
         type: "reject_request",
         payload: { approvalRequestId: command.approvalRequestId },
+      });
+    }
+
+    if (command.kind === "resolve_plan_decision") {
+      const thread = await deps.context.stores.threadStore.get(command.threadId);
+      if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
+        throw new Error(`thread ${command.threadId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+
+      await deps.touchThread(thread, "active");
+      deps.setActiveThreadId(thread.threadId);
+      return deps.context.kernel.handleCommand({
+        type: "resolve_plan_decision",
+        payload: {
+          threadId: thread.threadId,
+          runId: command.runId,
+          optionId: command.optionId,
+          optionLabel: command.optionLabel,
+          input: command.input,
+        },
       });
     }
 

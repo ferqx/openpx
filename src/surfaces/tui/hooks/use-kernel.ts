@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ApprovalCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../commands";
+import type { ApprovalCommand, PlanDecisionCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../commands";
 import type { RuntimeEvent } from "../../../harness/protocol/schemas/api-schema";
 import type { RuntimeSessionState } from "../runtime/runtime-session";
 import type { SessionUpdatedEvent } from "../runtime/tui-session-event";
@@ -21,7 +21,7 @@ export type TuiKernel = {
   events: {
     subscribe: (handler: (event: TuiKernelEvent) => void) => () => void;
   };
-  handleCommand: (command: SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand) => Promise<TuiSessionResult>;
+  handleCommand: (command: SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand) => Promise<TuiSessionResult>;
   hydrateSession?: () => Promise<TuiSessionResult | undefined>;
   interruptCurrentThread?: () => Promise<TuiSessionResult | undefined>;
 };

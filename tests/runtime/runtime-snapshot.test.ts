@@ -15,6 +15,7 @@ describe("Runtime snapshot", () => {
         projectId: "project-1",
         revision: 2,
         status: "active",
+        threadMode: "plan",
       },
       threads: [
         {
@@ -23,6 +24,7 @@ describe("Runtime snapshot", () => {
           projectId: "project-1",
           revision: 2,
           status: "active",
+          threadMode: "plan",
           activeRunId: "run-1",
           activeRunStatus: "completed",
           narrativeSummary: "Completed repo scan and isolated the runtime recovery path.",
@@ -50,9 +52,11 @@ describe("Runtime snapshot", () => {
     });
 
     expect(snapshot.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
+    expect(snapshot.threadMode).toBe("plan");
     expect(snapshot.activeRunId).toBe("run-1");
     expect(snapshot.runs[0]?.resultSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
     expect(snapshot.threads[0]?.activeRunId).toBe("run-1");
+    expect(snapshot.threads[0]?.threadMode).toBe("plan");
     expect(snapshot.threads[0]?.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
     expect(snapshot.threads[0]?.pendingApprovalCount).toBe(1);
     expect(snapshot.threads[0]?.blockingReasonKind).toBe("human_recovery");
@@ -91,6 +95,7 @@ describe("Runtime snapshot", () => {
         projectId: "project-1",
         revision: 2,
         status: "active",
+        threadMode: "normal",
         recoveryFacts: {
           threadId: "thread-1",
           revision: 2,
@@ -135,6 +140,7 @@ describe("Runtime snapshot", () => {
     });
 
     expect(snapshot.blockingReason?.kind).toBe("human_recovery");
+    expect(snapshot.threadMode).toBe("normal");
     expect(snapshot.activeRunId).toBe("run-2");
     expect(snapshot.runs[0]?.status).toBe("blocked");
     expect(snapshot.narrativeSummary).toBe("Runtime snapshot migration is paused.");

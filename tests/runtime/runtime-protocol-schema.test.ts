@@ -43,6 +43,7 @@ describe("runtime protocol schemas", () => {
         projectId: "project-1",
         revision: 1,
         status: "active",
+        threadMode: "normal",
         activeRunId: "run-1",
       }).status,
     ).toBe("active");
@@ -108,6 +109,7 @@ describe("runtime protocol schemas", () => {
       lastEventSeq: 7,
       activeThreadId: "thread-1",
       activeRunId: "run-1",
+      threadMode: "plan",
       threads: [
         {
           threadId: "thread-1",
@@ -115,6 +117,7 @@ describe("runtime protocol schemas", () => {
           projectId: "project-1",
           revision: 1,
           status: "active",
+          threadMode: "plan",
           activeRunId: "run-1",
         },
       ],
@@ -152,6 +155,8 @@ describe("runtime protocol schemas", () => {
 
     expect(parsed.workers).toHaveLength(1);
     expect(parsed.runs).toHaveLength(1);
+    expect(parsed.threadMode).toBe("plan");
+    expect(parsed.threads[0]?.threadMode).toBe("plan");
     expect(parsed.workers[0]?.role).toBe("planner");
   });
 
@@ -173,9 +178,22 @@ describe("runtime protocol schemas", () => {
   test("runtime events accept known stable event names and reject unknown ones", () => {
     expect(
       runtimeEventSchema.safeParse({
+        type: "thread.mode_changed",
+        payload: {
+          threadId: "thread-1",
+          fromMode: "normal",
+          toMode: "plan",
+          trigger: "slash_command",
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      runtimeEventSchema.safeParse({
         type: "thread.view_updated",
         payload: {
           threadId: "thread-1",
+          threadMode: "normal",
           recoveryFacts: {
             threadId: "thread-1",
             revision: 2,

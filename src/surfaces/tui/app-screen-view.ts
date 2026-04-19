@@ -27,7 +27,8 @@ export function buildConversationView(input: {
     modelStatus: input.conversationState.modelStatus,
     performance: input.conversationState.performance,
     narrativeSummary: input.session?.narrativeSummary,
-    showWelcome: !input.hasCreatedThreadThisLaunch,
+    planDecision: input.session?.planDecision,
+    showWelcome: !input.hasCreatedThreadThisLaunch && !input.session?.planDecision,
     streamScrollOffset: input.conversationState.streamScrollOffset,
   };
 }
@@ -60,6 +61,8 @@ export function buildChromeView(input: {
   return {
     workspaceRoot: input.session?.workspaceRoot,
     projectId: input.session?.projectId,
+    primaryAgent: input.session?.primaryAgent,
+    threadMode: input.session?.threadMode,
     threadId: input.session?.threadId,
     runtimeStatus: input.runtimeStatus,
     stage: input.stage,

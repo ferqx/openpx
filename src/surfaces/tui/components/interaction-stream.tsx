@@ -4,7 +4,8 @@ import Spinner from 'ink-spinner';
 import type { TaskSummary } from './task-panel';
 import type { ApprovalSummary } from './approval-panel';
 import type { WorkerSummary } from './worker-panel';
-import { WorkerPanel } from './worker-panel';
+import type { PlanDecisionRequest } from '../../../runtime/planning/planner-result';
+import { AgentRunPanel } from './worker-panel';
 import { theme } from '../theme';
 import { Markdown } from './markdown';
 
@@ -24,6 +25,7 @@ export interface InteractionStreamProps {
   tasks: TaskSummary[];
   approvals: ApprovalSummary[];
   workers: WorkerSummary[];
+  planDecision?: PlanDecisionRequest;
   modelStatus?: string;
   performance?: { waitMs: number; genMs: number };
   narrativeSummary?: string;
@@ -93,6 +95,7 @@ export function InteractionStream({
   tasks,
   approvals,
   workers,
+  planDecision,
   modelStatus,
   performance,
   narrativeSummary,
@@ -103,6 +106,7 @@ export function InteractionStream({
   const shouldRenderNarrativeFallback =
     messages.length === 0 &&
     approvals.length === 0 &&
+    !planDecision &&
     tasks.length === 0 &&
     workers.length === 0 &&
     Boolean(narrativeSummary);
@@ -116,6 +120,7 @@ export function InteractionStream({
       ? estimateWrappedLines(narrativeSummary ?? '', contentWidth) + 2
       : 0) +
     (modelStatus === 'thinking' || modelStatus === 'responding' ? 2 : 0) +
+    (planDecision ? planDecision.options.length + 4 : 0) +
     tasks.filter((task) => task.status === 'running').length +
     workers.length +
     approvals.length * 3;
@@ -227,7 +232,33 @@ export function InteractionStream({
               </Box>
             </Box>
           ))}
-          <WorkerPanel workers={workers} />
+          {planDecision ? (
+            <Box
+              paddingX={1}
+              borderStyle="round"
+              borderColor="cyan"
+              marginBottom={1}
+              flexDirection="column"
+            >
+              <Box gap={1}>
+                <Text bold color="cyan">
+                  方案选择:
+                </Text>
+                <Text>{planDecision.question}</Text>
+              </Box>
+              {planDecision.options.map((option, index) => (
+                <Box key={option.id} marginLeft={2} gap={1}>
+                  <Text color="cyan">{`${index + 1}.`}</Text>
+                  <Text bold>{option.label}</Text>
+                  <Text color={theme.colors.dim}>{option.description}</Text>
+                </Box>
+              ))}
+              <Box marginLeft={2}>
+                <Text color={theme.colors.dim}>输入数字选择方案并继续执行。</Text>
+              </Box>
+            </Box>
+          ) : null}
+          <AgentRunPanel workers={workers} />
         </Box>
       </Box>
 

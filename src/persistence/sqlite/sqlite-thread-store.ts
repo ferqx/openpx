@@ -5,6 +5,7 @@ import type {
   RecoveryFacts,
   WorkingSetWindow,
 } from "../../control/context/thread-compaction-types";
+import { normalizeThreadMode, type ThreadMode } from "../../control/agents/thread-mode";
 import type { ThreadStorePort } from "../ports/thread-store-port";
 import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
 import { migrateSqlite } from "./sqlite-migrator";
@@ -16,6 +17,7 @@ type ThreadRow = {
   project_id: string;
   revision: number;
   status: Thread["status"];
+  thread_mode: ThreadMode | null;
   recommendation_reason: string | null;
   narrative_summary: string | null;
   narrative_revision: number | null;
@@ -47,6 +49,7 @@ export class SqliteThreadStore implements ThreadStorePort {
          project_id,
          revision,
          status,
+         thread_mode,
          recommendation_reason,
          narrative_summary,
          narrative_revision,
@@ -55,12 +58,13 @@ export class SqliteThreadStore implements ThreadStorePort {
          working_set_window_json,
          updated_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(thread_id) DO UPDATE SET
          workspace_root = excluded.workspace_root,
          project_id = excluded.project_id,
          revision = excluded.revision,
          status = excluded.status,
+         thread_mode = excluded.thread_mode,
          recommendation_reason = excluded.recommendation_reason,
          narrative_summary = excluded.narrative_summary,
          narrative_revision = excluded.narrative_revision,
@@ -74,6 +78,7 @@ export class SqliteThreadStore implements ThreadStorePort {
         thread.projectId,
         thread.revision,
         thread.status,
+        thread.threadMode,
         thread.recommendationReason ?? null,
         thread.narrativeSummary ?? null,
         thread.narrativeRevision ?? 0,
@@ -93,6 +98,7 @@ export class SqliteThreadStore implements ThreadStorePort {
            project_id,
            revision,
            status,
+           thread_mode,
            recommendation_reason,
            narrative_summary,
            narrative_revision,
@@ -110,6 +116,7 @@ export class SqliteThreadStore implements ThreadStorePort {
           projectId: row.project_id,
           revision: row.revision,
           status: row.status,
+          threadMode: normalizeThreadMode(row.thread_mode ?? undefined),
           recommendationReason: row.recommendation_reason ?? undefined,
           narrativeSummary: row.narrative_summary ?? undefined,
           narrativeRevision: row.narrative_revision ?? 0,
@@ -128,6 +135,7 @@ export class SqliteThreadStore implements ThreadStorePort {
         project_id,
         revision,
         status,
+        thread_mode,
         recommendation_reason,
         narrative_summary,
         narrative_revision,
@@ -156,6 +164,7 @@ export class SqliteThreadStore implements ThreadStorePort {
           projectId: row.project_id,
           revision: row.revision,
           status: row.status,
+          threadMode: normalizeThreadMode(row.thread_mode ?? undefined),
           recommendationReason: row.recommendation_reason ?? undefined,
           narrativeSummary: row.narrative_summary ?? undefined,
           narrativeRevision: row.narrative_revision ?? 0,
@@ -175,6 +184,7 @@ export class SqliteThreadStore implements ThreadStorePort {
            project_id,
            revision,
            status,
+           thread_mode,
            recommendation_reason,
            narrative_summary,
            narrative_revision,
@@ -194,6 +204,7 @@ export class SqliteThreadStore implements ThreadStorePort {
       projectId: row.project_id,
       revision: row.revision,
       status: row.status,
+      threadMode: normalizeThreadMode(row.thread_mode ?? undefined),
       recommendationReason: row.recommendation_reason ?? undefined,
       narrativeSummary: row.narrative_summary ?? undefined,
       narrativeRevision: row.narrative_revision ?? 0,

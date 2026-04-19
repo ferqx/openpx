@@ -20,6 +20,7 @@ describe("Stable Control API Compliance", () => {
         projectId: "test-project",
         lastEventSeq: 0,
         activeRunId: undefined,
+        threadMode: "normal",
         threads: [],
         runs: [],
         tasks: [],
@@ -39,6 +40,7 @@ describe("Stable Control API Compliance", () => {
               type: "thread.view_updated",
               payload: {
                 threadId: "thread-1",
+                threadMode: "normal",
                 status: "active",
               },
             },
@@ -107,6 +109,25 @@ describe("Stable Control API Compliance", () => {
       schemas.RuntimeCommand.safeParse({
         kind: "plan_task",
         content: "design the rollout",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("runtime command schema accepts thread mode toggle commands", () => {
+    expect(
+      schemas.RuntimeCommand.safeParse({
+        kind: "set_thread_mode",
+        threadId: "thread-1",
+        mode: "plan",
+        trigger: "slash_command",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      schemas.RuntimeCommand.safeParse({
+        kind: "clear_thread_mode",
+        threadId: "thread-1",
+        trigger: "plain_input",
       }).success,
     ).toBe(true);
   });
@@ -214,6 +235,20 @@ describe("Stable Control API Compliance", () => {
             status: "running",
             spawnReason: "hydrate runtime truth",
           },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  test("runtime event schema accepts thread mode change events", () => {
+    expect(
+      schemas.RuntimeEvent.safeParse({
+        type: "thread.mode_changed",
+        payload: {
+          threadId: "thread-1",
+          fromMode: "normal",
+          toMode: "plan",
+          trigger: "slash_command",
         },
       }).success,
     ).toBe(true);

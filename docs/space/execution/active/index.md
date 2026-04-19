@@ -59,4 +59,4 @@ OpenPX 当前不追求“计划很多”，而追求：
 
 ## 当前活跃计划
 
-- [2026-04-18-m3-openai-compatible-model-layer.md](/Users/chenchao/Code/ai/openpx/docs/space/execution/active/2026-04-18-m3-openai-compatible-model-layer.md)
+- [agent-mode-agentrun-refactor.md](/Users/chenchao/Code/ai/openpx/docs/space/execution/active/agent-mode-agentrun-refactor.md)

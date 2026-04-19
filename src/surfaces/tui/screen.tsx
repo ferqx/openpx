@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text, useStdout } from "ink";
 import { InteractionStream } from "./components/interaction-stream";
+import { AgentModeHeader } from "./components/agent-mode-header";
 import { Composer } from "./components/composer";
 import { StatusBar } from "./components/status-bar";
 import { ThreadPanel, type ThreadSummary } from "./components/thread-panel";
@@ -16,6 +17,7 @@ import type { UtilityPaneMode } from "./view-state";
 import type { SessionStage } from "./runtime/runtime-session";
 import type { ResolvedSettingsConfig } from "./settings/config-resolver";
 import type { PartialSettingsConfig, SettingsConfigScope } from "./settings/config-types";
+import type { PlanDecisionRequest } from "../../runtime/planning/planner-result";
 
 /** Screen 会话区消息模型 */
 type Message = {
@@ -31,6 +33,7 @@ export type ScreenConversationView = {
   tasks: TaskSummary[];
   approvals: ApprovalSummary[];
   workers: WorkerSummary[];
+  planDecision?: PlanDecisionRequest;
   modelStatus?: string;
   performance?: { waitMs: number; genMs: number };
   narrativeSummary?: string;
@@ -50,6 +53,8 @@ export type ScreenUtilityView = {
 export type ScreenChromeView = {
   workspaceRoot?: string;
   projectId?: string;
+  primaryAgent?: "build";
+  threadMode?: "normal" | "plan";
   threadId?: string;
   runtimeStatus?: string;
   stage?: SessionStage;
@@ -57,7 +62,7 @@ export type ScreenChromeView = {
   thinkingLevel?: string;
   recommendationReason?: string;
   blockingReason?: {
-    kind: "waiting_approval" | "human_recovery";
+    kind: "waiting_approval" | "plan_decision" | "human_recovery";
     message: string;
   };
   threads?: ThreadSummary[];
@@ -91,17 +96,24 @@ type ScreenUtilityRegionProps = {
 };
 
 const ScreenThreadRegion = React.memo(function ScreenThreadRegion(input: {
+  primaryAgent?: "build";
+  threadMode?: "normal" | "plan";
   showThreadPanel?: boolean;
   threads?: ThreadSummary[];
   activeThreadId?: string;
 }) {
-  if (!input.showThreadPanel) {
+  if (!input.showThreadPanel && !input.primaryAgent && !input.threadMode) {
     return null;
   }
 
   return (
-    <Box key="thread-panel" marginBottom={1}>
-      <ThreadPanel threads={input.threads ?? []} activeThreadId={input.activeThreadId} />
+    <Box key="thread-panel" flexDirection="column" marginBottom={1}>
+      {input.primaryAgent && input.threadMode ? (
+        <AgentModeHeader primaryAgent={input.primaryAgent} threadMode={input.threadMode} />
+      ) : null}
+      {input.showThreadPanel ? (
+        <ThreadPanel threads={input.threads ?? []} activeThreadId={input.activeThreadId} />
+      ) : null}
     </Box>
   );
 });
@@ -234,6 +246,8 @@ export function Screen(input: {
   return (
     <Box flexDirection="column">
       <ScreenThreadRegion
+        primaryAgent={input.chromeView.primaryAgent}
+        threadMode={input.chromeView.threadMode}
         showThreadPanel={input.chromeView.showThreadPanel}
         threads={input.chromeView.threads}
         activeThreadId={input.chromeView.threadId}
@@ -253,17 +267,18 @@ export function Screen(input: {
             />
           </Box>
         ) : (
-            <InteractionStream 
-              messages={input.conversationView.messages}
-              tasks={input.conversationView.tasks}
-              approvals={input.conversationView.approvals}
-              workers={input.conversationView.workers}
-              modelStatus={input.conversationView.modelStatus}
-              performance={input.conversationView.performance}
-              narrativeSummary={input.conversationView.narrativeSummary}
-              viewportWidth={stdout?.columns ?? 80}
-              scrollOffset={input.conversationView.streamScrollOffset}
-            />
+          <InteractionStream
+            messages={input.conversationView.messages}
+            tasks={input.conversationView.tasks}
+            approvals={input.conversationView.approvals}
+            workers={input.conversationView.workers}
+            planDecision={input.conversationView.planDecision}
+            modelStatus={input.conversationView.modelStatus}
+            performance={input.conversationView.performance}
+            narrativeSummary={input.conversationView.narrativeSummary}
+            viewportWidth={stdout?.columns ?? 80}
+            scrollOffset={input.conversationView.streamScrollOffset}
+          />
         )}
       </Box>
 

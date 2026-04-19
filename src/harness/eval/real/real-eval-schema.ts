@@ -179,7 +179,7 @@ export type RealEvalPlannerEvidence = z.infer<typeof realEvalPlannerEvidenceSche
 export const realEvalApprovalPathEvidenceSchema = z.object({
   approvalRequestObserved: z.boolean(),
   terminalMode: z.string().min(1).optional(),
-  blockingReasonKind: z.enum(["waiting_approval", "human_recovery", "environment_block"]).optional(),
+  blockingReasonKind: z.enum(["waiting_approval", "plan_decision", "human_recovery", "environment_block"]).optional(),
   recommendationReason: z.string().min(1).optional(),
 }).strict();
 export type RealEvalApprovalPathEvidence = z.infer<typeof realEvalApprovalPathEvidenceSchema>;

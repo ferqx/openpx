@@ -1,10 +1,10 @@
 import type { RecoveryFacts, NarrativeState, WorkingSetWindow } from "../../../control/context/thread-compaction-types";
 import type { ArtifactRecord } from "../../../runtime/artifacts/artifact-index";
-import type { PlannerResult } from "../../../runtime/planning/planner-result";
+import type { PlanDecisionRequest, PlannerResult } from "../../../runtime/planning/planner-result";
 import type { WorkPackage } from "../../../runtime/planning/work-package";
 
 /** run-loop step：显式表达下一步要推进到哪个阶段。 */
-export type LoopStep = "plan" | "execute" | "verify" | "respond" | "waiting_approval" | "done";
+export type LoopStep = "plan" | "execute" | "verify" | "respond" | "waiting_approval" | "waiting_plan_decision" | "done";
 
 /** run-loop 状态版本：用于判断持久化状态是否还能被当前引擎安全恢复。 */
 export const RUN_LOOP_STATE_VERSION = 1;
@@ -21,6 +21,7 @@ export type VerificationReport = {
 /** continuation：暂停后继续执行的结构化输入。 */
 export type ContinuationKind =
   | "approval_resolution"
+  | "plan_decision"
   | "user_resume"
   | "retry_step"
   | "replan"
@@ -58,6 +59,7 @@ export type RunLoopState = {
   finalResponse?: string;
   pauseSummary?: string;
   recommendationReason?: string;
+  planDecision?: PlanDecisionRequest;
   recoveryFacts?: RecoveryFacts;
   narrativeState?: NarrativeState;
   workingSetWindow?: WorkingSetWindow;

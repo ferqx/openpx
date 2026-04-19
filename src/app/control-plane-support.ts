@@ -8,6 +8,7 @@ import type { ThreadStorePort } from "../persistence/ports/thread-store-port";
 import type { TaskStorePort } from "../persistence/ports/task-store-port";
 import type { ArtifactRecord } from "../runtime/artifacts/artifact-index";
 import type { PlannerResult } from "../runtime/planning/planner-result";
+import { isPlanThreadMode } from "../control/agents/thread-mode";
 import { compactThreadView } from "../control/context/thread-compaction-policy";
 import { createThreadStateProjector } from "../control/context/thread-state-projector";
 import type { ControlTask } from "../control/tasks/task-types";
@@ -212,6 +213,17 @@ export function buildPlannerPrompt(input: {
     sections.push(`Latest durable answer:\n- ${latestAnswer}`);
   }
 
+  if (isPlanThreadMode(input.threadView?.threadMode)) {
+    sections.push(
+      [
+        "Current thread mode: plan",
+        "Plan mode means: produce a concrete implementation plan first, then continue into execution when the request is actionable.",
+        "For feature/build requests, prefer implementation_work work packages over respond_only.",
+        "If critical details are missing, ask the user to choose from 2-3 concrete options before execution; mark that as ASK_USER_DECISION in the summary or first work package objective.",
+      ].join("\n"),
+    );
+  }
+
   sections.push(
     [
       "Decide the next step using the recent conversation as authoritative context.",
@@ -301,6 +313,18 @@ export function buildFinalResponderPrompt(input: {
       input.verificationReport.feedback ? `- feedback: ${input.verificationReport.feedback}` : undefined,
     ].filter((line): line is string => Boolean(line));
     sections.push(`Verification report:\n${verificationLines.join("\n")}`);
+  }
+
+  if (isPlanThreadMode(input.threadView?.threadMode)) {
+    sections.push(
+      [
+        "Plan mode final response contract:",
+        "- 用中文先给出简短的「计划方案」，概括将如何实现用户功能。",
+        "- 随后给出「执行结果」，说明已经完成或尝试完成的内容。",
+        "- 如果 planner 要求用户决策，改为给出「方案选项」并列出 2-3 个可选方案；不要声称已经修改文件。",
+        "- 不要输出泛泛的“我可以帮你”，必须围绕当前用户功能描述组织回复。",
+      ].join("\n"),
+    );
   }
 
   sections.push(
