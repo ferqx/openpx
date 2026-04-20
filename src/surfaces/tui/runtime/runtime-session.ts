@@ -68,8 +68,16 @@ export function deriveRuntimeSession(snapshot: RuntimeSnapshot): RuntimeSessionS
   const activeRun = snapshot.activeRunId
     ? snapshot.runs.find((run) => run.runId === snapshot.activeRunId)
     : undefined;
+  const canUseBlockingReason =
+    !activeRun
+    || activeRun.status === "waiting_approval"
+    || activeRun.status === "blocked"
+    || activeRun.status === "failed"
+    || activeRun.status === "interrupted";
   let normalizedRunBlockingReason: RuntimeSessionState["blockingReason"];
-  if (activeRun?.blockingReason?.kind === "environment_block") {
+  if (!canUseBlockingReason) {
+    normalizedRunBlockingReason = undefined;
+  } else if (activeRun?.blockingReason?.kind === "environment_block") {
     normalizedRunBlockingReason = {
       kind: "human_recovery",
       message: activeRun.blockingReason.message,
@@ -88,10 +96,13 @@ export function deriveRuntimeSession(snapshot: RuntimeSnapshot): RuntimeSessionS
   }
   // environment_block 目前在 TUI 统一折叠成 human_recovery，
   // 避免界面层再理解更多 runtime 内部阻塞细分类。
+  // running run 上的阻塞原因如果存在，只能是上一轮暂停残留，不能禁用输入。
   const blockingReason =
-    normalizedRunBlockingReason ??
-    snapshot.blockingReason ??
-    snapshot.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
+    canUseBlockingReason
+      ? normalizedRunBlockingReason
+        ?? snapshot.blockingReason
+        ?? snapshot.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason
+      : undefined;
   const status =
     activeRun?.status === "waiting_approval"
       ? "waiting_approval"

@@ -1828,7 +1828,7 @@ describe("TUI App", () => {
       },
     };
 
-    const { lastFrame } = render(<App kernel={kernel} />);
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
     await waitFor(
       () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell to render before showing hydrated approval state",
@@ -2005,6 +2005,7 @@ describe("TUI App", () => {
 
   test("reacts to live blocked recovery events without a hydrate refresh", async () => {
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
+    const receivedCommands: unknown[] = [];
 
     const kernel: TuiKernel = {
       events: {
@@ -2013,14 +2014,15 @@ describe("TUI App", () => {
           return () => undefined;
         },
       },
-      async handleCommand() {
+      async handleCommand(command) {
+        receivedCommands.push(command);
         return createCompletedSessionResult({
           threadId: "thread_live_recovery",
         });
       },
     };
 
-    const { lastFrame } = render(<App kernel={kernel} />);
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
 
     emit?.({
       type: "thread.view_updated",
@@ -2071,9 +2073,23 @@ describe("TUI App", () => {
 
     const frame = lastFrame();
 
-    expect(frame).toMatch(/Session blocked: manual recovery required/i);
-    expect(frame).toMatch(/Input disabled for this thread/i);
+    expect(frame).toMatch(/Session blocked: input will resubmit the intent/i);
+    expect(frame).not.toMatch(/Input disabled for this thread/i);
     expect(frame).toContain("stage:blocked");
+
+    await typeAndSubmit(stdin, "继续基于当前状态执行");
+    await waitFor(
+      () => receivedCommands.length > 0,
+      "expected blocked input to resubmit intent instead of being ignored",
+    );
+
+    expect(receivedCommands[0]).toEqual({
+      type: "resubmit_intent",
+      payload: {
+        threadId: "thread_live_recovery",
+        content: "继续基于当前状态执行",
+      },
+    });
   });
 
   test("shows the planning stage while a planning task is being submitted", async () => {

@@ -222,6 +222,66 @@ describe("Runtime session contract", () => {
     expect(session.pauseSummary).toBe("Need approval");
   });
 
+  test("ignores stale blocking reasons while the active run is running", () => {
+    const session = deriveRuntimeSession({
+      protocolVersion: "1.0.0",
+      workspaceRoot: "/tmp/workspace",
+      projectId: "project-1",
+      lastEventSeq: 3,
+      activeThreadId: "thread-running",
+      activeRunId: "run-running",
+      threadMode: "plan",
+      blockingReason: {
+        kind: "plan_decision",
+        message: "旧方案选择问题",
+      },
+      threads: [
+        {
+          threadId: "thread-running",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          revision: 3,
+          status: "active",
+          threadMode: "plan",
+          activeRunId: "run-running",
+          activeRunStatus: "running",
+          blockingReasonKind: "plan_decision",
+        },
+      ],
+      runs: [
+        {
+          runId: "run-running",
+          threadId: "thread-running",
+          status: "running",
+          trigger: "user_input",
+          startedAt: "2026-04-06T00:00:00.000Z",
+          blockingReason: {
+            kind: "plan_decision",
+            message: "旧方案选择问题",
+          },
+        },
+      ],
+      tasks: [
+        {
+          taskId: "task-running",
+          threadId: "thread-running",
+          runId: "run-running",
+          status: "running",
+          summary: "继续执行登录页方案",
+        },
+      ],
+      pendingApprovals: [],
+      answers: [],
+      messages: [],
+      workers: [],
+    });
+
+    expect(session.status).toBe("completed");
+    expect(session.stage).toBe("idle");
+    expect(session.blockingReason).toBeUndefined();
+    expect(session.pauseSummary).toBeUndefined();
+  });
+
   test("formats thread list summaries from stable session views", () => {
     expect(
       formatThreadListSummary({

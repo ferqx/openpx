@@ -71,7 +71,11 @@ export async function prepareRootTaskExecution(
       throw new Error(`no run found for thread ${threadId} to resume`);
     }
 
-    const run = await deps.updateRunStatus(latestRun, "running");
+    const run = await deps.updateRunStatus(latestRun, "running", {
+      blockingReason: undefined,
+      endedAt: undefined,
+      resultSummary: undefined,
+    });
     const tasks = await deps.listTasksByThread(threadId);
     const lastTask = tasks[tasks.length - 1];
     if (!lastTask) {

@@ -304,11 +304,11 @@ export function Screen(input: {
         </Box>
       )}
 
-      {input.composerView.composerMode === "blocked" && (
+      {input.chromeView.stage === "blocked" && input.chromeView.blockingReason && (
         <Box key="blocked" paddingX={1} marginBottom={1} borderStyle="round" borderColor="yellow" flexDirection="column">
-          <Text color="yellow">{theme.symbols.warning} Session blocked: manual recovery required.</Text>
+          <Text color="yellow">{theme.symbols.warning} Session blocked: input will resubmit the intent.</Text>
           {input.chromeView.blockingReason?.message ? <Text>{input.chromeView.blockingReason.message}</Text> : null}
-          <Text color={theme.colors.dim}>Inspect the workspace state before continuing.</Text>
+          <Text color={theme.colors.dim}>Review the warning, then type a new instruction to continue this thread.</Text>
         </Box>
       )}
 

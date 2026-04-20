@@ -58,6 +58,13 @@ export type ThreadCommand =
     }
   | {
       type: "thread_list";
+    }
+  | {
+      type: "resubmit_intent";
+      payload: {
+        threadId: string;
+        content: string;
+      };
     };
 
 /** TUI 解析后的输入结果：普通提交、规划提交或本地命令 */

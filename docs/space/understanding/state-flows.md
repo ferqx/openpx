@@ -135,6 +135,7 @@ v1 合同：
   - `resubmit_intent`
   - `abandon_run`
 - 任一解除动作都会让旧 continuation 失效，并发布 `thread.recovery_resolved`
+- surface（界面层）应把 `human_recovery` 渲染为警告，而不是禁用输入；用户继续输入时应转成 `resubmit_intent`，由 harness 接管旧 run 的失效与新意图提交。
 
 ## 7. cancel
 

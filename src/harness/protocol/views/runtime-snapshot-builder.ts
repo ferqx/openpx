@@ -34,18 +34,27 @@ export function buildRuntimeSnapshot(input: {
   narrativeSummary?: string;
   planDecision?: PlanDecisionRequest;
 }): RuntimeSnapshot {
+  const latestRun = input.runs.find((run) => run.runId === input.activeRunId);
+  const canExposeBlockingReason =
+    !latestRun
+    || latestRun.status === "waiting_approval"
+    || latestRun.status === "blocked"
+    || latestRun.status === "failed"
+    || latestRun.status === "interrupted";
   // 优先使用 thread recoveryFacts 中的阻塞原因；
   // 没有时再退回当前 blocked task 上的 blockingReason。
-  const activeBlockingReason = input.activeThread?.recoveryFacts?.blocking
-    ? {
-        kind: input.activeThread.recoveryFacts.blocking.kind,
-        message: input.activeThread.recoveryFacts.blocking.message,
-      }
-    : input.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
+  // running run 上残留的 blockingReason 只代表旧暂停点，不能继续投影成当前阻塞。
+  const activeBlockingReason = canExposeBlockingReason
+    ? input.activeThread?.recoveryFacts?.blocking
+      ? {
+          kind: input.activeThread.recoveryFacts.blocking.kind,
+          message: input.activeThread.recoveryFacts.blocking.message,
+        }
+      : input.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason
+    : undefined;
 
   const narrativeSummary = input.activeThread?.narrativeState?.threadSummary || input.narrativeSummary;
   const latestAnswer = input.activeThread?.recoveryFacts?.latestDurableAnswer;
-  const latestRun = input.runs.find((run) => run.runId === input.activeRunId);
   const latestExecutionStatus =
     latestRun?.status === "completed"
       ? "completed" as const

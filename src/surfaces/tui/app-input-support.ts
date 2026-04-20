@@ -23,6 +23,7 @@ type InputSupportDeps = {
     | { type: "approve_request"; payload: { approvalRequestId: string } }
     | { type: "reject_request"; payload: { approvalRequestId: string } }
     | { type: "resolve_plan_decision"; payload: { optionId: string; optionLabel: string; input: string } }
+    | { type: "resubmit_intent"; payload: { threadId: string; content: string } }
     | { type: "plan_input"; payload: { text: string } }
     | { type: "submit_input"; payload: { text: string } }
   ) => Promise<TuiSessionResult>;
@@ -38,9 +39,7 @@ export function resolveComposerMode(
 
   return session?.status === "waiting_approval"
     ? "confirm"
-    : session?.status === "blocked"
-      ? "blocked"
-      : "input";
+    : "input";
 }
 
 export function deriveInteractiveStage(input: {
@@ -257,15 +256,42 @@ export async function submitParsedComposerInput(
   deps.onApplyKernelResult(result, "command");
 }
 
+async function submitBlockedRecoveryInput(
+  deps: Pick<
+    InputSupportDeps,
+    | "session"
+    | "onMarkLiveSessionActivity"
+    | "onAppendUserMessage"
+    | "onSetActiveTaskIntent"
+    | "onHandleCommand"
+    | "onApplyKernelResult"
+  >,
+  content: string,
+) {
+  const threadId = deps.session?.threadId;
+  if (deps.session?.status !== "blocked" || !threadId) {
+    return false;
+  }
+
+  deps.onMarkLiveSessionActivity();
+  deps.onAppendUserMessage(content);
+  deps.onSetActiveTaskIntent("execute");
+  const result = await deps.onHandleCommand({
+    type: "resubmit_intent",
+    payload: {
+      threadId,
+      content,
+    },
+  });
+  deps.onApplyKernelResult(result, "command");
+  return true;
+}
+
 export async function submitComposerInput(
   deps: InputSupportDeps,
   text: string,
 ) {
   const composerMode = resolveComposerMode(deps.session);
-  if (composerMode === "blocked") {
-    return;
-  }
-
   if (composerMode === "confirm") {
     await submitApprovalInput(deps, text);
     return;
@@ -283,6 +309,11 @@ export async function submitComposerInput(
   const parsed = parseCommand(value);
   if (parsed.kind === "command") {
     await handleLocalComposerCommand(deps, parsed);
+    return;
+  }
+
+  const recoveryContent = parsed.kind === "plan" && parsed.text.length > 0 ? parsed.text : value;
+  if (await submitBlockedRecoveryInput(deps, recoveryContent)) {
     return;
   }
 

@@ -166,4 +166,71 @@ describe("Runtime snapshot", () => {
       },
     ]);
   });
+
+  test("does not expose stale blocking reason while the active run is running", () => {
+    const snapshot = buildRuntimeSnapshot({
+      scope: {
+        workspaceRoot: "/tmp/workspace",
+        projectId: "project-1",
+      },
+      activeRunId: "run-running",
+      activeThread: {
+        threadId: "thread-running",
+        workspaceRoot: "/tmp/workspace",
+        projectId: "project-1",
+        revision: 3,
+        status: "active",
+        threadMode: "plan",
+        recoveryFacts: {
+          threadId: "thread-running",
+          revision: 3,
+          schemaVersion: 1,
+          status: "active",
+          updatedAt: new Date().toISOString(),
+          pendingApprovals: [],
+          conversationHistory: [],
+          blocking: {
+            sourceTaskId: "task-running",
+            kind: "plan_decision",
+            message: "旧方案选择问题",
+          },
+        },
+      },
+      threads: [],
+      runs: [
+        {
+          runId: "run-running",
+          threadId: "thread-running",
+          status: "running",
+          trigger: "user_input",
+          startedAt: new Date().toISOString(),
+          blockingReason: {
+            kind: "plan_decision",
+            message: "旧方案选择问题",
+          },
+        },
+      ],
+      tasks: [
+        {
+          taskId: "task-running",
+          threadId: "thread-running",
+          runId: "run-running",
+          status: "running",
+          summary: "继续执行登录页方案",
+          blockingReason: {
+            kind: "plan_decision",
+            message: "旧方案选择问题",
+          },
+        },
+      ],
+      pendingApprovals: [],
+      workers: [],
+      events: [],
+      fallbackLastEventSeq: 0,
+    });
+
+    expect(snapshot.latestExecutionStatus).toBe("running");
+    expect(snapshot.blockingReason).toBeUndefined();
+    expect(snapshot.pauseSummary).toBeUndefined();
+  });
 });

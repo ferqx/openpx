@@ -494,6 +494,63 @@ describe("Remote Kernel", () => {
     ]);
   });
 
+  test("forwards blocked recovery input as resubmit_intent", async () => {
+    const sentCommands: unknown[] = [];
+    const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
+      async getSnapshot() {
+        return {
+          protocolVersion: "1.0.0",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          lastEventSeq: 12,
+          activeThreadId: "thread-1",
+          activeRunId: "run-1",
+          threadMode: "normal",
+          recommendationReason: undefined,
+          blockingReason: {
+            kind: "human_recovery",
+            message: "Manual recovery required.",
+          },
+          threads: [],
+          runs: [],
+          tasks: [],
+          pendingApprovals: [],
+          answers: [],
+          workers: [],
+        };
+      },
+      async sendCommand(command) {
+        sentCommands.push(command);
+        return undefined;
+      },
+      subscribeEvents() {
+        return {
+          async *[Symbol.asyncIterator]() {
+            await new Promise(() => undefined);
+          },
+        };
+      },
+    };
+
+    const kernel = createRemoteKernel(client);
+
+    await kernel.handleCommand({
+      type: "resubmit_intent",
+      payload: {
+        threadId: "thread-1",
+        content: "继续基于当前状态执行",
+      },
+    });
+
+    expect(sentCommands).toEqual([
+      {
+        kind: "resubmit_intent",
+        threadId: "thread-1",
+        content: "继续基于当前状态执行",
+      },
+    ]);
+  });
+
   test("forwards plan decision selections as durable continuation commands", async () => {
     const sentCommands: unknown[] = [];
     const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
