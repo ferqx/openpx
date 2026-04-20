@@ -3,9 +3,9 @@ import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
 import type { TaskSummary } from './task-panel';
 import type { ApprovalSummary } from './approval-panel';
-import type { WorkerSummary } from './worker-panel';
+import type { AgentRunSummary } from './agent-run-panel';
 import type { PlanDecisionRequest } from '../../../runtime/planning/planner-result';
-import { AgentRunPanel } from './worker-panel';
+import { AgentRunPanel } from './agent-run-panel';
 import { theme } from '../theme';
 import { Markdown } from './markdown';
 
@@ -24,7 +24,7 @@ export interface InteractionStreamProps {
   messages: Message[];
   tasks: TaskSummary[];
   approvals: ApprovalSummary[];
-  workers: WorkerSummary[];
+  agentRuns: AgentRunSummary[];
   planDecision?: PlanDecisionRequest;
   modelStatus?: string;
   performance?: { waitMs: number; genMs: number };
@@ -94,7 +94,7 @@ export function InteractionStream({
   messages,
   tasks,
   approvals,
-  workers,
+  agentRuns,
   planDecision,
   modelStatus,
   performance,
@@ -108,7 +108,7 @@ export function InteractionStream({
     approvals.length === 0 &&
     !planDecision &&
     tasks.length === 0 &&
-    workers.length === 0 &&
+    agentRuns.length === 0 &&
     Boolean(narrativeSummary);
   const contentWidth = Math.max(24, (viewportWidth ?? 80) - 6);
   const estimatedConversationLines =
@@ -122,7 +122,7 @@ export function InteractionStream({
     (modelStatus === 'thinking' || modelStatus === 'responding' ? 2 : 0) +
     (planDecision ? planDecision.options.length + 4 : 0) +
     tasks.filter((task) => task.status === 'running').length +
-    workers.length +
+    agentRuns.length +
     approvals.length * 3;
   const pageSize = 10;
   const messagesOverflow = messages.length > pageSize;
@@ -258,7 +258,7 @@ export function InteractionStream({
               </Box>
             </Box>
           ) : null}
-          <AgentRunPanel workers={workers} />
+          <AgentRunPanel agentRuns={agentRuns} />
         </Box>
       </Box>
 

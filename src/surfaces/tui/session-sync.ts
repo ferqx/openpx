@@ -116,7 +116,7 @@ export function mergeThreadViewIntoSession(
     approvals: update.approvals ?? [],
     answers,
     messages,
-    workers: update.workers ?? [],
+    agentRuns: update.agentRuns ?? [],
     workspaceRoot,
     projectId,
     blockingReason,

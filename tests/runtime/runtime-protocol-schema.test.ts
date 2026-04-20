@@ -8,7 +8,7 @@ import { runViewSchema } from "../../src/harness/protocol/views/run-view";
 import { runtimeSnapshotSchema } from "../../src/harness/protocol/views/runtime-snapshot-schema";
 import { taskViewSchema } from "../../src/harness/protocol/views/task-view";
 import { threadViewSchema } from "../../src/harness/protocol/views/thread-view";
-import { workerViewSchema } from "../../src/harness/protocol/views/worker-view";
+import { agentRunViewSchema } from "../../src/harness/protocol/views/agent-run-view";
 
 function hasZAny(value: unknown): boolean {
   if (value instanceof z.ZodAny) {
@@ -90,18 +90,21 @@ describe("runtime protocol schemas", () => {
     ).toBe("Completed.");
 
     expect(
-      workerViewSchema.parse({
-        workerId: "worker-1",
+      agentRunViewSchema.parse({
+        agentRunId: "agent-run-1",
         threadId: "thread-1",
         taskId: "task-1",
-        role: "planner",
+        roleKind: "legacy_internal",
+        roleId: "planner",
         status: "running",
         spawnReason: "initial planning",
+        goalSummary: "initial planning",
+        visibilityPolicy: "hidden",
       }).status,
     ).toBe("running");
   });
 
-  test("runtime snapshot includes stable worker views", () => {
+  test("runtime snapshot includes stable agent run views", () => {
     const parsed = runtimeSnapshotSchema.parse({
       protocolVersion: "1.0.0",
       workspaceRoot: "/workspace",
@@ -141,23 +144,26 @@ describe("runtime protocol schemas", () => {
       ],
       pendingApprovals: [],
       answers: [],
-      workers: [
+      agentRuns: [
         {
-          workerId: "worker-1",
+          agentRunId: "agent-run-1",
           threadId: "thread-1",
           taskId: "task-1",
-          role: "planner",
+          roleKind: "legacy_internal",
+          roleId: "planner",
           status: "running",
           spawnReason: "initial planning",
+          goalSummary: "initial planning",
+          visibilityPolicy: "hidden",
         },
       ],
     });
 
-    expect(parsed.workers).toHaveLength(1);
+    expect(parsed.agentRuns).toHaveLength(1);
     expect(parsed.runs).toHaveLength(1);
     expect(parsed.threadMode).toBe("plan");
     expect(parsed.threads[0]?.threadMode).toBe("plan");
-    expect(parsed.workers[0]?.role).toBe("planner");
+    expect(parsed.agentRuns[0]?.roleId).toBe("planner");
   });
 
   test("protocol version schema accepts only supported versions", () => {
@@ -171,7 +177,7 @@ describe("runtime protocol schemas", () => {
     expect(hasZAny(taskViewSchema)).toBe(false);
     expect(hasZAny(approvalViewSchema)).toBe(false);
     expect(hasZAny(answerViewSchema)).toBe(false);
-    expect(hasZAny(workerViewSchema)).toBe(false);
+    expect(hasZAny(agentRunViewSchema)).toBe(false);
     expect(hasZAny(runtimeSnapshotSchema)).toBe(false);
   });
 

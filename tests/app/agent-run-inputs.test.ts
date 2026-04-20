@@ -4,9 +4,9 @@ import {
   buildExecutionArtifacts,
   buildExecutionInput,
   buildVerifierPrompt,
-} from "../../src/app/worker-inputs";
+} from "../../src/app/agent-run-inputs";
 
-describe("worker input builders", () => {
+describe("agent run input builders", () => {
   test("prefers the active work package objective for execution", () => {
     const input = buildExecutionInput({
       input: "make startup copy nicer",

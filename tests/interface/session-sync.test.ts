@@ -15,7 +15,7 @@ describe("session-sync", () => {
       approvals: [],
       answers: [],
       messages: [],
-      workers: [],
+      agentRuns: [],
       threads: [],
     });
 
@@ -75,14 +75,17 @@ describe("session-sync", () => {
             content: "Old answer",
           },
         ],
-        workers: [
+        agentRuns: [
           {
-            workerId: "worker-old",
+            agentRunId: "agent-run-old",
             threadId: "thread-sync",
             taskId: "task-old",
-            role: "planner",
+            roleKind: "legacy_internal",
+            roleId: "planner",
             status: "running",
             spawnReason: "old",
+            goalSummary: "old",
+            visibilityPolicy: "hidden",
           },
         ],
         threads: [],
@@ -118,7 +121,7 @@ describe("session-sync", () => {
 
     expect(merged.tasks).toEqual([]);
     expect(merged.approvals).toEqual([]);
-    expect(merged.workers).toEqual([]);
+    expect(merged.agentRuns).toEqual([]);
     expect(merged.answers[0]?.content).toBe("Fresh answer");
     expect(merged.messages?.[0]?.content).toBe("Fresh message");
   });
@@ -137,7 +140,7 @@ describe("session-sync", () => {
         approvals: [],
         answers: [],
         messages: [],
-        workers: [],
+        agentRuns: [],
         blockingReason: {
           kind: "human_recovery",
           message: "Old blocked state",
@@ -171,7 +174,7 @@ describe("session-sync", () => {
         approvals: [],
         answers: [],
         messages: [],
-        workers: [],
+        agentRuns: [],
         threads: [],
       },
       pendingUserMessage: {

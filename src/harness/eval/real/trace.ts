@@ -27,7 +27,7 @@ type BuildRealRunTraceInput = {
   taskId: string;
   comparable: RealRunTrace["comparable"];
   artifactContext?: RealRunArtifactContext;
-  workerId?: string;
+  agentRunId?: string;
   recoveryMode?: RealRunTrace["recoveryMode"];
 };
 
@@ -180,7 +180,7 @@ export function buildRealRunTrace(input: BuildRealRunTraceInput): RealRunTrace {
     threadId: input.threadId,
     runId: input.runId,
     taskId: input.taskId,
-    workerId: input.workerId,
+    agentRunId: input.agentRunId,
     summary: input.comparable.terminalOutcome.summary,
     rejectionReason: input.comparable.approvalFlow.rejectionReason,
     artifactContext: input.artifactContext,
@@ -193,7 +193,7 @@ export function buildRealRunTrace(input: BuildRealRunTraceInput): RealRunTrace {
 
 /**
  * 从 harness 的 durable truth sources 收集一次真实执行的可比较 trace。
- * 它不依赖 surface state，只依赖 thread、run、task、approval、event、ledger 与 worker。
+ * 它不依赖 surface state，只依赖 thread、run、task、approval、event、ledger 与 agent run。
  */
 export async function collectRealRunTrace(input: CollectRealRunTraceInput): Promise<RealRunTrace> {
   const thread = await input.ctx.stores.threadStore.get(input.threadId);
@@ -206,7 +206,7 @@ export async function collectRealRunTrace(input: CollectRealRunTraceInput): Prom
   const approvals = await input.ctx.stores.approvalStore.listByThread(input.threadId);
   const events = await input.ctx.stores.eventLog.listByThread(input.threadId);
   const ledgerEntries = await input.ctx.stores.executionLedger.listByThread(input.threadId);
-  const workers = await input.ctx.stores.workerStore.listByThread(input.threadId);
+  const agentRuns = await input.ctx.stores.agentRunStore.listByThread(input.threadId);
 
   const comparable = normalizeComparableRun({
     thread,
@@ -235,7 +235,7 @@ export async function collectRealRunTrace(input: CollectRealRunTraceInput): Prom
     taskId: resolvedIdentity.taskId,
     artifactContext: input.artifactContext,
     recoveryMode: input.recoveryMode,
-    workerId: workers.at(-1)?.workerId,
+    agentRunId: agentRuns.at(-1)?.agentRunId,
     comparable,
   });
 }

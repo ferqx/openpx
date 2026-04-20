@@ -4,10 +4,10 @@ import { threadModeSchema } from "../../../control/agents/thread-mode";
 import { planDecisionRequestSchema } from "../../../runtime/planning/planner-result";
 import { approvalViewSchema } from "../views/approval-view";
 import { answerViewSchema } from "../views/answer-view";
+import { agentRunViewSchema } from "../views/agent-run-view";
 import { messageViewSchema } from "../views/message-view";
 import { protocolVersionSchema } from "../schemas/protocol-version";
 import { taskBlockingReasonSchema, taskViewSchema } from "../views/task-view";
-import { workerViewSchema } from "../views/worker-view";
 
 /** runtime 事件类型白名单：客户端只应看到这里定义过的稳定事件 */
 export const runtimeEventTypes = [
@@ -28,12 +28,12 @@ export const runtimeEventTypes = [
   "task.started",
   "task.completed",
   "task.failed",
-  "worker.spawned",
-  "worker.inspected",
-  "worker.resumed",
-  "worker.cancelled",
-  "worker.completed",
-  "worker.failed",
+  "agent_run.spawned",
+  "agent_run.inspected",
+  "agent_run.resumed",
+  "agent_run.cancelled",
+  "agent_run.completed",
+  "agent_run.failed",
   "tool.executed",
   "tool.failed",
   "model.status",
@@ -162,7 +162,7 @@ const threadViewUpdatedPayloadSchema = z.object({
   tasks: z.array(taskViewSchema).optional(),
   answers: z.array(answerViewSchema).optional(),
   messages: z.array(messageViewSchema).optional(),
-  workers: z.array(workerViewSchema).optional(),
+  agentRuns: z.array(agentRunViewSchema).optional(),
   workspaceRoot: z.string().optional(),
   projectId: z.string().optional(),
   threads: z.array(sessionThreadSummarySchema).optional(),
@@ -178,8 +178,8 @@ const taskLifecyclePayloadSchema = z.object({
   error: z.string().optional(),
 }).strict();
 
-const workerLifecyclePayloadSchema = z.object({
-  worker: workerViewSchema,
+const agentRunLifecyclePayloadSchema = z.object({
+  agentRun: agentRunViewSchema,
 }).strict();
 
 const threadStartedPayloadSchema = z.object({
@@ -334,12 +334,12 @@ export const runtimeEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("task.started"), payload: taskLifecyclePayloadSchema }),
   z.object({ type: z.literal("task.completed"), payload: taskLifecyclePayloadSchema }),
   z.object({ type: z.literal("task.failed"), payload: taskLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.spawned"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.inspected"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.resumed"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.cancelled"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.completed"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.failed"), payload: workerLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.spawned"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.inspected"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.resumed"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.cancelled"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.completed"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.failed"), payload: agentRunLifecyclePayloadSchema }),
   z.object({ type: z.literal("tool.executed"), payload: toolEventPayloadSchema }),
   z.object({ type: z.literal("tool.failed"), payload: toolEventPayloadSchema }),
   z.object({ type: z.literal("model.status"), payload: modelStatusPayloadSchema }),

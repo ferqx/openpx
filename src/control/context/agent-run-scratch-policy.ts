@@ -4,15 +4,15 @@ export type ScratchEntry = {
   timestamp?: number;
 };
 
-export interface WorkerScratchPolicy {
+export interface AgentRunScratchPolicy {
   shouldPersist(entry: ScratchEntry): boolean;
 }
 
-export function createWorkerScratchPolicy(): WorkerScratchPolicy {
+export function createAgentRunScratchPolicy(): AgentRunScratchPolicy {
   return {
     shouldPersist(entry: ScratchEntry): boolean {
-      // Scratch is non-durable by default.
-      // Only "stable_output" is promoted for persistence.
+      // scratch 默认不持久化；
+      // 只有 stable_output 才会被提升为可恢复真相。
       return entry.kind === "stable_output";
     },
   };

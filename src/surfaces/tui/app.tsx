@@ -610,7 +610,7 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     session?.planDecision,
     session?.verificationSummary,
     session?.executionSummary,
-    session?.workers,
+    session?.agentRuns,
   ]);
 
   const utilityView = useMemo<ScreenUtilityView>(() => {

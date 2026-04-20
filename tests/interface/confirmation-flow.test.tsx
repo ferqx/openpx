@@ -75,7 +75,7 @@ describe("Confirmation Flow", () => {
             },
           ],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -142,7 +142,7 @@ describe("Confirmation Flow", () => {
               },
             ],
             answers: [],
-            workers: [],
+            agentRuns: [],
             threads: [],
           };
         },
@@ -173,7 +173,7 @@ describe("Confirmation Flow", () => {
               },
             ],
             answers: [],
-            workers: [],
+            agentRuns: [],
             threads: [],
           };
         },

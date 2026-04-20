@@ -25,13 +25,13 @@ type PersistenceLayer<TSqlite, TStores> = {
   stores: TStores;
 };
 
-/** 服务层装配结果：叙事、控制面、worker 与 kernel 等运行期能力 */
-type ServiceLayer<TNarrativeService, TScratchPolicy, TMemoryConsolidator, TControlPlane, TWorkerManager, TKernel> = {
+/** 服务层装配结果：叙事、控制面、AgentRun manager 与 kernel 等运行期能力。 */
+type ServiceLayer<TNarrativeService, TScratchPolicy, TMemoryConsolidator, TControlPlane, TAgentRunManager, TKernel> = {
   narrativeService: TNarrativeService;
   scratchPolicy: TScratchPolicy;
   memoryConsolidator: TMemoryConsolidator;
   controlPlane: TControlPlane;
-  workerManager: TWorkerManager;
+  agentRunManager: TAgentRunManager;
   kernel: TKernel;
 };
 
@@ -106,7 +106,7 @@ export async function createAppServiceLayer<
   TScratchPolicy,
   TMemoryConsolidator,
   TControlPlane,
-  TWorkerManager,
+  TAgentRunManager,
   TKernel,
 >(input: {
   config: ConfigLike;
@@ -120,7 +120,7 @@ export async function createAppServiceLayer<
     stores: TStores;
     modelGateway: ModelGateway;
   }) => Promise<TControlPlane>;
-  createWorkerManager: (stores: TStores) => TWorkerManager;
+  createAgentRunManager: (stores: TStores) => TAgentRunManager;
   createKernel: (input: {
     stores: TStores;
     controlPlane: TControlPlane;
@@ -133,11 +133,11 @@ export async function createAppServiceLayer<
   TScratchPolicy,
   TMemoryConsolidator,
   TControlPlane,
-  TWorkerManager,
+  TAgentRunManager,
   TKernel
 >> {
   // 这里把 createAppContext 的“服务图”拆成稳定顺序：
-  // narrative/scratch/memory -> controlPlane -> workerManager -> kernel。
+  // narrative/scratch/memory -> controlPlane -> agentRunManager -> kernel。
   // 这样 kernel 总能拿到已经准备好的 control-plane 与 narrativeService。
   const narrativeService = input.createNarrativeService(input.stores);
   const scratchPolicy = input.createScratchPolicy();
@@ -147,7 +147,7 @@ export async function createAppServiceLayer<
     stores: input.stores,
     modelGateway: input.modelGateway,
   });
-  const workerManager = input.createWorkerManager(input.stores);
+  const agentRunManager = input.createAgentRunManager(input.stores);
   const kernel = input.createKernel({
     stores: input.stores,
     controlPlane,
@@ -169,7 +169,7 @@ export async function createAppServiceLayer<
     scratchPolicy,
     memoryConsolidator,
     controlPlane,
-    workerManager,
+    agentRunManager,
     kernel,
   };
 }

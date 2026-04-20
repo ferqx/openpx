@@ -45,7 +45,7 @@ describe("Runtime snapshot", () => {
       ],
       tasks: [],
       pendingApprovals: [],
-      workers: [],
+      agentRuns: [],
       events: [],
       fallbackLastEventSeq: 0,
       narrativeSummary: "Completed repo scan and isolated the runtime recovery path.",
@@ -60,7 +60,7 @@ describe("Runtime snapshot", () => {
     expect(snapshot.threads[0]?.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
     expect(snapshot.threads[0]?.pendingApprovalCount).toBe(1);
     expect(snapshot.threads[0]?.blockingReasonKind).toBe("human_recovery");
-    expect(snapshot.workers).toEqual([]);
+    expect(snapshot.agentRuns).toEqual([]);
   });
 
   test("prefers recovery facts and narrative state over loose event reconstruction", () => {
@@ -86,7 +86,7 @@ describe("Runtime snapshot", () => {
       ],
       tasks: [],
       pendingApprovals: [],
-      workers: [],
+      agentRuns: [],
       events: [],
       fallbackLastEventSeq: 0,
       activeThread: {
@@ -224,7 +224,7 @@ describe("Runtime snapshot", () => {
         },
       ],
       pendingApprovals: [],
-      workers: [],
+      agentRuns: [],
       events: [],
       fallbackLastEventSeq: 0,
     });

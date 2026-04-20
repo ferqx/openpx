@@ -32,7 +32,7 @@ describe("SessionKernel", () => {
           async listPendingByThread() { return []; },
           async get() { return undefined; },
         },
-        workerStore: {
+        agentRunStore: {
           async save() {},
           async get() { return undefined; },
           async listByThread() { return []; },
@@ -107,7 +107,7 @@ describe("SessionKernel", () => {
           async listPendingByThread() { return []; },
           async get() { return undefined; },
         },
-        workerStore: {
+        agentRunStore: {
           async save() {},
           async get() { return undefined; },
           async listByThread() { return []; },
@@ -180,7 +180,7 @@ describe("SessionKernel", () => {
           async listPendingByThread() { return []; },
           async get() { return undefined; },
         },
-        workerStore: {
+        agentRunStore: {
           async save() {},
           async get() { return undefined; },
           async listByThread() { return []; },
@@ -260,7 +260,7 @@ describe("SessionKernel", () => {
           async listPendingByThread() { return [approval]; },
           async get() { return approval; },
         },
-        workerStore: {
+        agentRunStore: {
           async save() {},
           async get() { return undefined; },
           async listByThread() { return []; },
@@ -333,7 +333,7 @@ describe("SessionKernel", () => {
           async listPendingByThread() { return []; },
           async get() { return undefined; },
         },
-        workerStore: {
+        agentRunStore: {
           async save() {},
           async get() { return undefined; },
           async listByThread() { return []; },

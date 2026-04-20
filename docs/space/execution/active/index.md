@@ -59,4 +59,9 @@ OpenPX 当前不追求“计划很多”，而追求：
 
 ## 当前活跃计划
 
-- [agent-mode-agentrun-refactor.md](/Users/chenchao/Code/ai/openpx/docs/space/execution/active/agent-mode-agentrun-refactor.md)
+当前暂无活跃执行计划。
+
+上一轮 `Agent / Mode / AgentRun` 收束已完成并转入：
+
+- [completed/agent-mode-agentrun-refactor.md](/Users/chenchao/Code/ai/openpx/docs/space/execution/completed/agent-mode-agentrun-refactor.md)
+- [completed/agent-mode-agentrun-followup.md](/Users/chenchao/Code/ai/openpx/docs/space/execution/completed/agent-mode-agentrun-followup.md)

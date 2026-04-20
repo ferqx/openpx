@@ -6,7 +6,7 @@
  * protocol 层统一引用，确保运行时类型校验和类型推导的一致性。
  * 
  * 术语对照：thread=协作线，session=会话，run=执行尝试，
- * task=具体步骤，worker=工作单元，approval=审批，
+ * task=具体步骤，agentRun=运行实例，approval=审批，
  * namespace=命名空间
  */
 import { z } from "zod";
@@ -21,8 +21,8 @@ export const runStatusSchema = z.enum(["created", "running", "waiting_approval",
 export const runTriggerSchema = z.enum(["user_input", "approval_resume", "interrupt_resume", "system_resume"]);
 /** 具体步骤状态模式 */
 export const taskStatusSchema = z.enum(["queued", "running", "blocked", "completed", "failed", "cancelled"]);
-/** 工作单元状态模式 */
-export const workerStatusSchema = z.enum(["created", "starting", "running", "paused", "completed", "failed", "cancelled"]);
+/** 运行实例状态模式 */
+export const agentRunStatusSchema = z.enum(["created", "starting", "running", "paused", "completed", "failed", "cancelled"]);
 /** 审批状态模式：pending=待审批，approved=已批准，rejected=已拒绝，cancelled=已取消 */
 export const approvalStatusSchema = z.enum(["pending", "approved", "rejected", "cancelled"]);
 /** 记忆命名空间模式：thread=协作线级，durable=持久级，project=项目级 */

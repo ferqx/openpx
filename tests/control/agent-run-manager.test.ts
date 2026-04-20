@@ -1,19 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { createWorkerManager } from "../../src/control/workers/worker-manager";
-import type { Worker } from "../../src/domain/worker";
+import { createAgentRunManager } from "../../src/control/agent-runs/agent-run-manager";
+import type { AgentRunRecord } from "../../src/domain/agent-run";
 
-describe("WorkerManager", () => {
-  test("spawns an executor worker for a task", async () => {
+describe("AgentRunManager", () => {
+  test("spawns an executor agent run for a task", async () => {
     const starts: Array<{
-      workerId: string;
+      agentRunId: string;
       role: string;
       taskId: string;
       threadId: string;
       spawnReason: string;
       resumeToken?: string;
     }> = [];
-    const storedWorkers = new Map<string, Worker>();
-    const manager = createWorkerManager({
+    const storedAgentRuns = new Map<string, AgentRunRecord>();
+    const manager = createAgentRunManager({
       runtimeFactory(input) {
         return {
           async start() {
@@ -51,43 +51,43 @@ describe("WorkerManager", () => {
           },
         };
       },
-      workerStore: {
-        async save(worker) {
-          storedWorkers.set(worker.workerId, worker);
+      agentRunStore: {
+        async save(agentRun) {
+          storedAgentRuns.set(agentRun.agentRunId, agentRun);
         },
-        async get(workerId) {
-          return storedWorkers.get(workerId);
+        async get(agentRunId) {
+          return storedAgentRuns.get(agentRunId);
         },
         async listByThread(threadId) {
-          return [...storedWorkers.values()].filter((worker) => worker.threadId === threadId);
+          return [...storedAgentRuns.values()].filter((agentRun) => agentRun.threadId === threadId);
         },
         async listActiveByThread(threadId) {
-          return [...storedWorkers.values()].filter(
-            (worker) => worker.threadId === threadId && !["completed", "failed", "cancelled"].includes(worker.status),
+          return [...storedAgentRuns.values()].filter(
+            (agentRun) => agentRun.threadId === threadId && !["completed", "failed", "cancelled"].includes(agentRun.status),
           );
         },
         async close() {},
       },
     });
 
-    const worker = await manager.spawn({
+    const agentRun = await manager.spawn({
       role: "executor",
       taskId: "task_1",
       threadId: "thread_1",
       spawnReason: "execute patch",
     });
 
-    expect(worker.role).toBe("executor");
-    expect(worker.status).toBe("running");
-    expect(worker.workerId).toStartWith("worker_");
-    expect(worker.taskId).toBe("task_1");
-    expect(worker.threadId).toBe("thread_1");
-    expect(worker.spawnReason).toBe("execute patch");
-    expect(worker.startedAt).toBe("2026-04-06T00:00:00.000Z");
-    expect(worker.resumeToken).toBe("resume-started");
+    expect(agentRun.role).toBe("executor");
+    expect(agentRun.status).toBe("running");
+    expect(agentRun.agentRunId).toStartWith("agent_run_");
+    expect(agentRun.taskId).toBe("task_1");
+    expect(agentRun.threadId).toBe("thread_1");
+    expect(agentRun.spawnReason).toBe("execute patch");
+    expect(agentRun.startedAt).toBe("2026-04-06T00:00:00.000Z");
+    expect(agentRun.resumeToken).toBe("resume-started");
     expect(starts).toEqual([
       {
-        workerId: worker.workerId,
+        agentRunId: agentRun.agentRunId,
         role: "executor",
         taskId: "task_1",
         threadId: "thread_1",
@@ -97,18 +97,18 @@ describe("WorkerManager", () => {
     ]);
   });
 
-  test("creates distinct worker IDs when the timestamp collides", async () => {
+  test("creates distinct agent run IDs when the timestamp collides", async () => {
     const originalDateNow = Date.now;
     Date.now = () => 1234567890;
 
-    const starts: Array<{ workerId: string }> = [];
-    const storedWorkers = new Map<string, Worker>();
-    const manager = createWorkerManager({
+    const starts: Array<{ agentRunId: string }> = [];
+    const storedAgentRuns = new Map<string, AgentRunRecord>();
+    const manager = createAgentRunManager({
       runtimeFactory(input) {
         return {
           async start() {
             starts.push({
-              workerId: input.workerId,
+              agentRunId: input.agentRunId,
             });
             return {
               status: "running",
@@ -140,19 +140,19 @@ describe("WorkerManager", () => {
           },
         };
       },
-      workerStore: {
-        async save(worker) {
-          storedWorkers.set(worker.workerId, worker);
+      agentRunStore: {
+        async save(agentRun) {
+          storedAgentRuns.set(agentRun.agentRunId, agentRun);
         },
-        async get(workerId) {
-          return storedWorkers.get(workerId);
+        async get(agentRunId) {
+          return storedAgentRuns.get(agentRunId);
         },
         async listByThread(threadId) {
-          return [...storedWorkers.values()].filter((worker) => worker.threadId === threadId);
+          return [...storedAgentRuns.values()].filter((agentRun) => agentRun.threadId === threadId);
         },
         async listActiveByThread(threadId) {
-          return [...storedWorkers.values()].filter(
-            (worker) => worker.threadId === threadId && !["completed", "failed", "cancelled"].includes(worker.status),
+          return [...storedAgentRuns.values()].filter(
+            (agentRun) => agentRun.threadId === threadId && !["completed", "failed", "cancelled"].includes(agentRun.status),
           );
         },
         async close() {},
@@ -173,17 +173,17 @@ describe("WorkerManager", () => {
         spawnReason: "execute patch",
       });
 
-      expect(new Set([first.workerId, second.workerId]).size).toBe(2);
-      expect(new Set(starts.map((start) => start.workerId)).size).toBe(2);
+      expect(new Set([first.agentRunId, second.agentRunId]).size).toBe(2);
+      expect(new Set(starts.map((start) => start.agentRunId)).size).toBe(2);
     } finally {
       Date.now = originalDateNow;
     }
   });
 
-  test("inspects, resumes, cancels, and joins spawned workers", async () => {
+  test("inspects, resumes, cancels, and joins spawned agentRuns", async () => {
     const calls: string[] = [];
-    const storedWorkers = new Map<string, Worker>();
-    const manager = createWorkerManager({
+    const storedAgentRuns = new Map<string, AgentRunRecord>();
+    const manager = createAgentRunManager({
       runtimeFactory() {
         return {
           async start() {
@@ -225,19 +225,19 @@ describe("WorkerManager", () => {
           },
         };
       },
-      workerStore: {
-        async save(worker) {
-          storedWorkers.set(worker.workerId, worker);
+      agentRunStore: {
+        async save(agentRun) {
+          storedAgentRuns.set(agentRun.agentRunId, agentRun);
         },
-        async get(workerId) {
-          return storedWorkers.get(workerId);
+        async get(agentRunId) {
+          return storedAgentRuns.get(agentRunId);
         },
         async listByThread(threadId) {
-          return [...storedWorkers.values()].filter((worker) => worker.threadId === threadId);
+          return [...storedAgentRuns.values()].filter((agentRun) => agentRun.threadId === threadId);
         },
         async listActiveByThread(threadId) {
-          return [...storedWorkers.values()].filter(
-            (worker) => worker.threadId === threadId && !["completed", "failed", "cancelled"].includes(worker.status),
+          return [...storedAgentRuns.values()].filter(
+            (agentRun) => agentRun.threadId === threadId && !["completed", "failed", "cancelled"].includes(agentRun.status),
           );
         },
         async close() {},
@@ -250,16 +250,16 @@ describe("WorkerManager", () => {
       threadId: "thread_2",
       spawnReason: "execute patch",
     });
-    const inspected = await manager.inspect(spawned.workerId);
-    const resumed = await manager.resume(spawned.workerId);
-    const joined = await manager.join(spawned.workerId);
+    const inspected = await manager.inspect(spawned.agentRunId);
+    const resumed = await manager.resume(spawned.agentRunId);
+    const joined = await manager.join(spawned.agentRunId);
     const spawnedToCancel = await manager.spawn({
       role: "executor",
       taskId: "task_3",
       threadId: "thread_2",
       spawnReason: "execute patch",
     });
-    const cancelled = await manager.cancel(spawnedToCancel.workerId);
+    const cancelled = await manager.cancel(spawnedToCancel.agentRunId);
 
     expect(inspected?.status).toBe("paused");
     expect(inspected?.resumeToken).toBe("resume-paused");

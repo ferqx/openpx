@@ -37,14 +37,17 @@ describe("Remote Kernel", () => {
           ],
           pendingApprovals: [],
           answers: [],
-          workers: [
+          agentRuns: [
             {
-              workerId: "worker-1",
+              agentRunId: "agent-run-1",
               threadId: "thread-1",
               taskId: "task-1",
-              role: "planner",
+              roleKind: "legacy_internal",
+              roleId: "planner",
               status: "paused",
               spawnReason: "runtime recovery",
+              goalSummary: "runtime recovery",
+              visibilityPolicy: "hidden",
               startedAt: "2026-04-06T00:00:00.000Z",
               resumeToken: "resume-1",
             },
@@ -92,14 +95,17 @@ describe("Remote Kernel", () => {
       approvals: [],
       answers: [],
       messages: [],
-      workers: [
+      agentRuns: [
         {
-          workerId: "worker-1",
+          agentRunId: "agent-run-1",
           threadId: "thread-1",
           taskId: "task-1",
-          role: "planner",
+          roleKind: "legacy_internal",
+          roleId: "planner",
           status: "paused",
           spawnReason: "runtime recovery",
+          goalSummary: "runtime recovery",
+          visibilityPolicy: "hidden",
           startedAt: "2026-04-06T00:00:00.000Z",
           resumeToken: "resume-1",
         },
@@ -111,6 +117,7 @@ describe("Remote Kernel", () => {
         message: "Manual recovery required from snapshot.",
       },
       recommendationReason: undefined,
+      planDecision: undefined,
       narrativeSummary: undefined,
       threads: [],
     });
@@ -157,7 +164,7 @@ describe("Remote Kernel", () => {
           tasks: [],
           pendingApprovals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async sendCommand() {
@@ -206,7 +213,7 @@ describe("Remote Kernel", () => {
           tasks: [],
           pendingApprovals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async sendCommand() {
@@ -255,7 +262,7 @@ describe("Remote Kernel", () => {
           tasks: [],
           pendingApprovals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async sendCommand() {
@@ -300,7 +307,7 @@ describe("Remote Kernel", () => {
           tasks: [],
           pendingApprovals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async sendCommand() {
@@ -360,7 +367,7 @@ describe("Remote Kernel", () => {
           tasks: [],
           pendingApprovals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async sendCommand(command) {
@@ -402,7 +409,7 @@ describe("Remote Kernel", () => {
           tasks: [],
           pendingApprovals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async sendCommand(command) {
@@ -458,7 +465,7 @@ describe("Remote Kernel", () => {
           tasks: [],
           pendingApprovals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async sendCommand(command) {
@@ -516,7 +523,7 @@ describe("Remote Kernel", () => {
           tasks: [],
           pendingApprovals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async sendCommand(command) {
@@ -570,7 +577,7 @@ describe("Remote Kernel", () => {
           tasks: [],
           pendingApprovals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async sendCommand(command) {

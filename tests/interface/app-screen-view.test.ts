@@ -20,7 +20,7 @@ describe("app screen view builders", () => {
       approvals: [],
       answers: [],
       messages: [],
-      workers: [],
+      agentRuns: [],
       narrativeSummary: "summary",
       threads: [
         {
@@ -61,7 +61,7 @@ describe("app screen view builders", () => {
 
     expect(conversationView.showWelcome).toBe(true);
     expect(conversationView.modelStatus).toBe("responding");
-    expect(conversationView.workers).toEqual([]);
+    expect(conversationView.agentRuns).toEqual([]);
     expect(utilityView.selectedSessionThreadId).toBe("thread-1");
   });
 
@@ -79,7 +79,7 @@ describe("app screen view builders", () => {
         approvals: [],
         answers: [],
         messages: [],
-        workers: [],
+        agentRuns: [],
         blockingReason: { kind: "human_recovery", message: "Inspect workspace" },
         threads: [],
       },

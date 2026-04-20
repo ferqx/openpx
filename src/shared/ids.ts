@@ -6,7 +6,7 @@
  * 每个工厂函数接受可选的已有 ID（用于回填），未提供时自动生成新的 ULID。
  * 
  * 术语对照：threadId=协作线标识，runId=执行尝试标识，
- * taskId=具体步骤标识，workerId=工作单元标识，
+ * taskId=具体步骤标识，agentRunId=运行实例标识，
  * eventId=事件标识，approvalRequestId=审批请求标识，
  * memoryId=记忆标识，toolCallId=工具调用标识
  */
@@ -45,8 +45,8 @@ export function taskId(value?: string): Id {
   return value ? ensureId(value) : nextId();
 }
 
-/** 工作单元标识工厂 */
-export function workerId(value?: string): Id {
+/** 运行实例标识工厂 */
+export function agentRunId(value?: string): Id {
   return value ? ensureId(value) : nextId();
 }
 

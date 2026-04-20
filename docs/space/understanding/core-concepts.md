@@ -107,12 +107,13 @@
 
 - 中文含义：运行实例
 - 当前主要落点：
-  - `src/domain/worker.ts`
-  - `src/surfaces/tui/components/worker-panel.tsx`
+  - `src/domain/agent-run.ts`
+  - `src/control/agent-runs/agent-run-manager.ts`
+  - `src/surfaces/tui/components/agent-run-panel.tsx`
 - 它回答的问题：
   “当前有哪些内部执行实例真的被拉起，它们处于什么生命周期状态？”
 - 说明：
-  当前代码仍保留 `worker` 命名作为兼容层，但正式解释已经收敛到 `AgentRun`
+  `AgentRun` 已经同时成为对外和内部的正式运行实例语义；旧 `worker` 只应出现在历史设计文档里
 
 ## 概念关系
 
@@ -134,6 +135,6 @@
 - 不要用 `thread` 代替 `task` 状态
 - 不要把 `task` 当作长期上下文容器
 - 不要把 `Plan` 写成与 `Build` 对称的第二个主代理
-- 不要把 `worker` 面板解释为产品层 agent 面板
+- 不要把 `AgentRun` 面板解释为产品层 agent 面板
 - 不要让 TUI 发明第二套业务真相
 - 如果某个术语只能通过内部实现理解，应优先把它压回运行时内部

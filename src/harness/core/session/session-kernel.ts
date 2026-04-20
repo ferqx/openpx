@@ -24,7 +24,7 @@ import type { ContinuationEnvelope } from "../run-loop/continuation";
 import type { EventLogPort } from "../../../persistence/ports/event-log-port";
 import type { TaskStorePort } from "../../../persistence/ports/task-store-port";
 import type { ThreadStorePort } from "../../../persistence/ports/thread-store-port";
-import type { WorkerStorePort } from "../../../persistence/ports/worker-store-port";
+import type { AgentRunStorePort } from "../../../persistence/ports/agent-run-store-port";
 import type { RunStateStorePort } from "../../../persistence/ports/run-state-store";
 import { prefixedUuid } from "../../../shared/id-generators";
 import { createEventBus, type KernelEvent } from "../events/event-bus";
@@ -140,7 +140,7 @@ export function createSessionKernel(deps: {
       listPendingByThread(threadId: string): Promise<ApprovalRequest[]>;
       get(id: string): Promise<ApprovalRequest | undefined>;
     };
-    workerStore: WorkerStorePort;
+    agentRunStore: AgentRunStorePort;
     eventLog?: EventLogPort;
   };
   controlPlane: {
@@ -304,7 +304,7 @@ export function createSessionKernel(deps: {
   }): Promise<SessionCommandResult> {
     const stableArtifacts = buildStableSessionArtifacts({
       thread: input.thread,
-      workers: await deps.stores.workerStore.listByThread(input.thread.threadId),
+      agentRuns: await deps.stores.agentRunStore.listByThread(input.thread.threadId),
     });
 
     return projectSessionResult({
@@ -314,7 +314,7 @@ export function createSessionKernel(deps: {
       approvals: input.approvals,
       answers: stableArtifacts.answers,
       messages: stableArtifacts.messages,
-      workers: stableArtifacts.workers,
+      agentRuns: stableArtifacts.agentRuns,
       finalResponse: input.finalResponse,
       resumeDisposition: input.resumeDisposition,
       executionSummary: input.executionSummary,

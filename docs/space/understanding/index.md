@@ -38,7 +38,7 @@
 
 - `Build / plan mode / subagent / AgentRun` 各自是什么
 - 为什么 `Plan` 是 thread mode，而不是第二个主代理
-- 为什么 `worker` 现在应理解为兼容期内部实例术语
+- 为什么 `AgentRun` 是当前唯一正式运行实例术语
 
 ### `state-flows.md`
 

@@ -61,6 +61,14 @@
 - `plan_decision` continuation 会携带原始请求、所选方案与 continuation（继续执行说明），并回到 planner 重新生成可执行工作包
 - 普通寒暄或知识问答仍可走 `respond_only`，不应虚构文件改动
 
+`plan decision` 与 `approval` 的区别必须保持清楚：
+
+- `approval` 是风险控制与操作许可，回答“是否允许执行这个动作”
+- `plan decision` 是方案选择与路径决定，回答“接下来按哪个方案继续”
+
+两者都可能暂停 run，但 `plan decision` 不属于自动恢复边界；
+用户显式选择后才通过 `plan_decision` continuation 恢复原 run。
+
 ## Subagent Contracts
 
 当前已经有正式子代理合同，但它们首先是合同，不要求立刻都实体化成独立实例。
@@ -73,6 +81,26 @@
 代码落点：`src/control/agents/subagent-spec.ts`
 
 这些语义用于表达“Build 可以按需调用什么专业协作单元”，而不是表达当前 runtime 里是否已经起了一个实例。
+
+当前 `SubagentSpec` 已经是最小合同对象，包含：
+
+- `permissionPolicy`：权限边界
+- `visibilityPolicy`：实例可见性边界
+- `invocationPolicy`：调用边界
+- `costLabel`：成本归因标签
+
+四个默认合同固定为：
+
+- `Explore`：`readonly_search` / `hidden` / `automatic_only` / `explore`
+- `Verify`：`verification_only` / `visible_when_instance` / `hybrid` / `verify`
+- `Review`：`readonly_review` / `hidden` / `automatic_only` / `review`
+- `General`：`inherited_minimum` / `hidden` / `automatic_only` / `general`
+
+`Verify` 是当前第一个有明确实例化边界的 subagent：
+
+- 轻量、单轮、无需独立取消或观察的验证只是 run-loop 逻辑子阶段
+- 多轮、长耗时、需要独立取消、用户需要观察、成本显著，或失败后值得单独复盘的验证，应实例化为 `roleKind=subagent`, `roleId=verify`
+- 当前底层若通过 `verifier` runtime role 执行，也必须投影为正式的 `roleKind=subagent`, `roleId=verify`
 
 ## System Agent Contracts
 
@@ -96,13 +124,19 @@
 - 是否有 `resumeToken`
 - 为什么被拉起（`spawnReason`）
 
-当前代码仍保留 `worker` 命名作为兼容层：
+正式代码落点：
 
-- domain：`src/domain/worker.ts`
-- protocol：`RuntimeSnapshot.workers`
-- TUI 兼容组件：`src/surfaces/tui/components/worker-panel.tsx`
+- domain：`src/domain/agent-run.ts`
+- runtime role 适配：`src/control/agents/agent-run-adapter.ts`
+- 协议视图：`src/harness/protocol/views/agent-run-view.ts`
+- TUI 生命周期面板：`src/surfaces/tui/components/agent-run-panel.tsx`
 
-但在 UI 语义上，`worker-panel` 已经降级为内部 lifecycle（生命周期）面板，显示文案改为 `agent run`。
+当前协议边界是：
+
+- `RuntimeSnapshot` 和 `thread.view_updated` 正式提供 `agentRuns`
+- 新 UI 组件直接消费 `AgentRunView`
+- runtime protocol 的生命周期命令与事件使用 `agent_run_*` / `agent_run.*`
+- 内部 store、manager、SQLite 与 TUI 也统一使用 `agentRun*` 命名
 
 ## UI 分层
 
@@ -117,19 +151,19 @@
 - `Agent / Mode` 头部：`src/surfaces/tui/components/agent-mode-header.tsx`
 - thread 列表：`src/surfaces/tui/components/thread-panel.tsx`
 - sessions 面板：`src/surfaces/tui/components/utility-pane.tsx`
-- AgentRun 生命周期面板：`src/surfaces/tui/components/worker-panel.tsx`
+- AgentRun 生命周期面板：`src/surfaces/tui/components/agent-run-panel.tsx`
 
-因此不能再把 `worker` 面板当作产品层 agent 面板。
+因此不能再把 `AgentRun` 面板当作产品层 agent 面板。
 
-## 兼容策略
+## 当前边界
 
-当前仓库仍保留若干 `worker` 命名，原因是这轮重构优先先把 ontology（本体语义）落实到 truth / protocol / TUI，而不是一次性推倒所有 runtime 内部命名。
+当前仓库已经把运行实例主命名统一到 `AgentRun`。
 
 因此当前应这样理解：
 
-- `worker`
-  兼容期内部术语，主要表示旧的运行实例对象
 - `AgentRun`
-  新的正式解释，用来说明这些实例真正代表的是 runtime lifecycle，而不是 primary agent 本体
+  当前正式运行实例术语，用来说明这些实例真正代表的是 runtime lifecycle，而不是 primary agent 本体
+- `planner / executor / verifier / memory_maintainer`
+  当前保留的旧 runtime role 字面量，用来表达内部执行分工
 
-只要这条解释仍成立，就不应再把 `worker` 叙述成“用户当前选中的 agent”。
+只要这条解释仍成立，就不应再把 `AgentRun` 叙述成“用户当前选中的 agent”。

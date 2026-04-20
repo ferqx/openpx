@@ -5,7 +5,7 @@ import type { PartialSettingsConfig, SettingsConfigScope } from "./settings/conf
 import type { UtilityPaneSessionSnapshot } from "./components/utility-pane";
 import type { TaskSummary } from "./components/task-panel";
 import type { ApprovalSummary } from "./components/approval-panel";
-import type { WorkerSummary } from "./components/worker-panel";
+import type { AgentRunSummary } from "./components/agent-run-panel";
 import type { ConversationDisplayState } from "./app-state-support";
 
 /** 组装会话区视图：把 runtime truth 与本地 conversation 显示态拼成渲染模型 */
@@ -23,7 +23,7 @@ export function buildConversationView(input: {
     messages: input.conversationState.messages,
     tasks: (input.session?.tasks ?? []) as TaskSummary[],
     approvals: (input.session?.approvals ?? []) as ApprovalSummary[],
-    workers: (input.session?.workers ?? []) as WorkerSummary[],
+    agentRuns: (input.session?.agentRuns ?? []) as AgentRunSummary[],
     modelStatus: input.conversationState.modelStatus,
     performance: input.conversationState.performance,
     narrativeSummary: input.session?.narrativeSummary,

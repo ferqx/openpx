@@ -24,13 +24,13 @@ import { SqliteRunStateStore } from "../persistence/sqlite/sqlite-run-state-stor
 import { SqliteTaskStore } from "../persistence/sqlite/sqlite-task-store";
 import { SqliteThreadStore } from "../persistence/sqlite/sqlite-thread-store";
 import { SqliteExecutionLedger } from "../persistence/sqlite/sqlite-execution-ledger";
-import { SqliteWorkerStore } from "../persistence/sqlite/sqlite-worker-store";
+import { SqliteAgentRunStore } from "../persistence/sqlite/sqlite-agent-run-store";
 import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
 import { resolveConfig } from "../shared/config";
 import { createThreadNarrativeService } from "../control/context/thread-narrative-service";
-import { createWorkerScratchPolicy } from "../control/context/worker-scratch-policy";
-import { createWorkerManager } from "../control/workers/worker-manager";
-import { createPassiveWorkerRuntimeFactory } from "../control/workers/worker-runtime";
+import { createAgentRunScratchPolicy } from "../control/context/agent-run-scratch-policy";
+import { createAgentRunManager } from "../control/agent-runs/agent-run-manager";
+import { createPassiveAgentRunRuntimeFactory } from "../control/agent-runs/agent-run-runtime";
 import { MemoryConsolidator } from "../control/context/memory-consolidator";
 import { transitionThread } from "../domain/thread";
 import { createEvent } from "../domain/event";
@@ -44,7 +44,7 @@ import {
   buildExecutionArtifacts,
   buildExecutionInput,
   buildVerifierPrompt,
-} from "./worker-inputs";
+} from "./agent-run-inputs";
 import {
   buildFinalResponderPrompt,
   buildPlannerPrompt,
@@ -125,7 +125,7 @@ function createStores(path: string | ReturnType<typeof createSqlite>) {
     memoryStore: new SqliteMemoryStore(path),
     runStateStore: new SqliteRunStateStore(path),
     executionLedger: new SqliteExecutionLedger(path),
-    workerStore: new SqliteWorkerStore(path),
+    agentRunStore: new SqliteAgentRunStore(path),
   };
 }
 
@@ -1110,7 +1110,7 @@ export async function createAppContext(input: {
     scratchPolicy,
     memoryConsolidator,
     controlPlane,
-    workerManager,
+    agentRunManager,
     kernel,
   } = await createAppServiceLayer({
     config,
@@ -1120,14 +1120,14 @@ export async function createAppContext(input: {
       createThreadNarrativeService({
         threadStore: currentStores.threadStore,
       }),
-    createScratchPolicy: createWorkerScratchPolicy,
+    createScratchPolicy: createAgentRunScratchPolicy,
     createMemoryConsolidator: (currentStores, currentModelGateway) =>
       new MemoryConsolidator(currentStores.memoryStore, currentModelGateway),
     createControlPlane,
-    createWorkerManager: (currentStores) =>
-      createWorkerManager({
-        runtimeFactory: createPassiveWorkerRuntimeFactory(),
-        workerStore: currentStores.workerStore,
+    createAgentRunManager: (currentStores) =>
+      createAgentRunManager({
+        runtimeFactory: createPassiveAgentRunRuntimeFactory(),
+        agentRunStore: currentStores.agentRunStore,
       }),
     // kernel 是 runtime service 和 TUI 使用的稳定命令边界。
     // 它把更重的 control-plane 细节藏在简洁命令之后。
@@ -1159,7 +1159,7 @@ export async function createAppContext(input: {
     scratchPolicy,
     memoryConsolidator,
     modelGateway,
-    workerManager,
+    agentRunManager,
     close,
   };
 }

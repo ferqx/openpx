@@ -9,7 +9,7 @@
 import type { StreamEvent } from "../../../domain/stream-events";
 import type { Thread } from "../../../domain/thread";
 import type { ThreadMode } from "../../../control/agents/thread-mode";
-import type { WorkerView } from "../../protocol/views/worker-view";
+import type { AgentRunView } from "../../protocol/views/agent-run-view";
 import type { ProjectedSessionResult } from "../projection/session-view-projector";
 import type { ModelGatewayEvent, ModelStatus } from "../../../infra/model-gateway";
 
@@ -88,17 +88,17 @@ export type TaskFailedKernelEvent = {
   };
 };
 
-/** worker 生命周期事件。 */
-export type WorkerKernelEvent = {
+/** agent run 生命周期事件。 */
+export type AgentRunKernelEvent = {
   type:
-    | "worker.spawned"
-    | "worker.inspected"
-    | "worker.resumed"
-    | "worker.cancelled"
-    | "worker.completed"
-    | "worker.failed";
+    | "agent_run.spawned"
+    | "agent_run.inspected"
+    | "agent_run.resumed"
+    | "agent_run.cancelled"
+    | "agent_run.completed"
+    | "agent_run.failed";
   payload: {
-    worker: WorkerView;
+    agentRun: AgentRunView;
   };
 };
 
@@ -119,7 +119,7 @@ export type KernelEvent =
   | ThreadRecoveryResolvedKernelEvent
   | LoopKernelEvent
   | TaskFailedKernelEvent
-  | WorkerKernelEvent
+  | AgentRunKernelEvent
   | ModelStatusKernelEvent
   | ModelGatewayEvent;
 

@@ -276,7 +276,7 @@ export const realRunTraceSchema = z.object({
   threadId: z.string().min(1),
   runId: z.string().min(1),
   taskId: z.string().min(1),
-  workerId: z.string().min(1).optional(),
+  agentRunId: z.string().min(1).optional(),
   summary: z.string().min(1).optional(),
   rejectionReason: z.string().min(1).optional(),
   artifactContext: realRunArtifactContextSchema.optional(),

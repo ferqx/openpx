@@ -178,7 +178,7 @@ export class HarnessSession {
       : undefined;
     const tasks = activeThread ? await this.context.stores.taskStore.listByThread(activeThread.threadId) : [];
     const pendingApprovals = activeThread ? await this.context.stores.approvalStore.listPendingByThread(activeThread.threadId) : [];
-    const workers = activeThread ? await this.context.stores.workerStore.listByThread(activeThread.threadId) : [];
+    const agentRuns = activeThread ? await this.context.stores.agentRunStore.listByThread(activeThread.threadId) : [];
     const events = activeThread ? await this.context.stores.eventLog.listByThread(activeThread.threadId) : [];
     const narrative = activeThread ? await this.context.narrativeService.getNarrative(activeThread.threadId) : { summary: "", events: [], revision: 0, threadId: "" };
 
@@ -190,7 +190,7 @@ export class HarnessSession {
       runs,
       tasks,
       pendingApprovals,
-      workers,
+      agentRuns,
       events,
       fallbackLastEventSeq: this.liveSeq,
       narrativeSummary: narrative.summary || undefined,

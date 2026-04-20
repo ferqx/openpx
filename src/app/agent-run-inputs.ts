@@ -1,11 +1,11 @@
+import { isAbsolute, relative } from "node:path";
+import type { ToolExecuteRequest } from "../control/tools/tool-types";
 import type { ArtifactRecord } from "../runtime/artifacts/artifact-index";
 import type { PlannerResult } from "../runtime/planning/planner-result";
 import type { WorkPackage } from "../runtime/planning/work-package";
-import type { ToolExecuteRequest } from "../control/tools/tool-types";
-import { isAbsolute, relative } from "node:path";
 
-/** worker 输入构建选项：围绕当前 work package、artifact 与 planner 输出裁剪上下文 */
-type WorkerInputOptions = {
+/** AgentRun 输入构建选项：围绕当前 work package、artifact 与 planner 输出裁剪上下文。 */
+type AgentRunInputOptions = {
   input: string;
   currentWorkPackage?: WorkPackage;
   artifacts?: ArtifactRecord[];
@@ -19,8 +19,8 @@ type ExecutionArtifactOptions = {
   changedPath?: string;
 };
 
-/** 构造 executor 输入：优先让执行 worker 聚焦当前 work package objective */
-export function buildExecutionInput(options: WorkerInputOptions): string {
+/** 构造 executor 输入：优先让执行 AgentRun 聚焦当前 work package objective。 */
+export function buildExecutionInput(options: AgentRunInputOptions): string {
   const rawInput = options.input.trim();
   const objective = options.currentWorkPackage?.objective.trim();
   if (!objective) {
@@ -30,7 +30,7 @@ export function buildExecutionInput(options: WorkerInputOptions): string {
   const feedbackIndex = rawInput.indexOf("Verification failed:");
   if (feedbackIndex >= 0) {
     // verifier 失败后的重试需要保留失败反馈，
-    // 否则 executor 无法知道本轮修复目标。
+    // 否则 executor AgentRun 无法知道本轮修复目标。
     return `${objective}\n\n${rawInput.slice(feedbackIndex)}`.trim();
   }
 
@@ -38,7 +38,7 @@ export function buildExecutionInput(options: WorkerInputOptions): string {
 }
 
 /** 构造 verifier 提示词：把目标、产物、范围和验收标准压成稳定结构 */
-export function buildVerifierPrompt(options: WorkerInputOptions): string {
+export function buildVerifierPrompt(options: AgentRunInputOptions): string {
   const rawInput = options.input.trim();
   const objective = options.currentWorkPackage?.objective.trim();
   const artifacts = options.artifacts ?? [];

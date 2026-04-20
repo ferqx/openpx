@@ -76,14 +76,17 @@ describe("Runtime session contract", () => {
           content: "Completed repo scan and narrowed work to runtime recovery.",
         },
       ],
-      workers: [
+      agentRuns: [
         {
-          workerId: "worker-1",
+          agentRunId: "agent-run-1",
           threadId: "thread-1",
           taskId: "task-1",
-          role: "planner",
+          roleKind: "legacy_internal",
+          roleId: "planner",
           status: "running",
           spawnReason: "initial planning",
+          goalSummary: "initial planning",
+          visibilityPolicy: "hidden",
           startedAt: "2026-04-06T00:00:00.000Z",
           resumeToken: "resume-1",
         },
@@ -135,14 +138,17 @@ describe("Runtime session contract", () => {
           content: "Completed repo scan and narrowed work to runtime recovery.",
         },
       ],
-      workers: [
+      agentRuns: [
         {
-          workerId: "worker-1",
+          agentRunId: "agent-run-1",
           threadId: "thread-1",
           taskId: "task-1",
-          role: "planner",
+          roleKind: "legacy_internal",
+          roleId: "planner",
           status: "running",
           spawnReason: "initial planning",
+          goalSummary: "initial planning",
+          visibilityPolicy: "hidden",
           startedAt: "2026-04-06T00:00:00.000Z",
           resumeToken: "resume-1",
         },
@@ -154,6 +160,7 @@ describe("Runtime session contract", () => {
         message: "Manual recovery required from snapshot.",
       },
       recommendationReason: undefined,
+      planDecision: undefined,
       narrativeSummary: "Completed repo scan and narrowed work to runtime recovery.",
       threads: [
         {
@@ -208,7 +215,7 @@ describe("Runtime session contract", () => {
       pendingApprovals: [],
       answers: [],
       messages: [],
-      workers: [],
+      agentRuns: [],
     });
 
     expect(session.status).toBe("waiting_approval");
@@ -273,7 +280,7 @@ describe("Runtime session contract", () => {
       pendingApprovals: [],
       answers: [],
       messages: [],
-      workers: [],
+      agentRuns: [],
     });
 
     expect(session.status).toBe("completed");

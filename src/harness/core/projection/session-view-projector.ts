@@ -9,16 +9,16 @@
  * thread=协作线，run=执行尝试，task=具体步骤
  */
 import type { ApprovalRequest } from "../../../domain/approval";
+import type { AgentRunRecord } from "../../../domain/agent-run";
 import type { Run } from "../../../domain/run";
 import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
-import type { Worker } from "../../../domain/worker";
 import type { DerivedThreadView } from "../../../control/context/thread-compaction-types";
 import type { ThreadMode } from "../../../control/agents/thread-mode";
 import type { PlanDecisionRequest } from "../../../runtime/planning/planner-result";
+import { toAgentRunView, type AgentRunView } from "../../protocol/views/agent-run-view";
 import type { AnswerView } from "../../protocol/views/answer-view";
 import type { MessageView } from "../../protocol/views/message-view";
-import type { WorkerView } from "../../protocol/views/worker-view";
 
 /** 协作线摘要——用于 surface 线程面板显示 */
 export type SessionThreadSummary = {
@@ -49,23 +49,23 @@ export type ProjectedSessionResult = DerivedThreadView & {
   tasks?: Task[];
   answers?: AnswerView[];
   messages?: MessageView[];
-  workers?: WorkerView[];
+  agentRuns?: AgentRunView[];
   workspaceRoot?: string;
   projectId?: string;
   threads?: SessionThreadSummary[];
 };
 
-/** 从协作线恢复事实构建稳定的会话产物（答案、消息、工作单元） */
+/** 从协作线恢复事实构建稳定的会话产物（答案、消息、运行实例）。 */
 export function buildStableSessionArtifacts(input: {
   thread: {
     threadId: string;
     recoveryFacts?: DerivedThreadView["recoveryFacts"];
   };
-  workers?: Worker[];
+  agentRuns?: AgentRunRecord[];
 }): {
   answers: AnswerView[];
   messages: MessageView[];
-  workers: WorkerView[];
+  agentRuns: AgentRunView[];
 } {
   const latestAnswer = input.thread.recoveryFacts?.latestDurableAnswer;
   const answers: AnswerView[] = latestAnswer
@@ -85,22 +85,12 @@ export function buildStableSessionArtifacts(input: {
     content: message.content,
   }));
 
-  const workers: WorkerView[] = (input.workers ?? []).map((worker) => ({
-    workerId: worker.workerId,
-    threadId: worker.threadId,
-    taskId: worker.taskId,
-    role: worker.role,
-    status: worker.status,
-    spawnReason: worker.spawnReason,
-    startedAt: worker.startedAt,
-    endedAt: worker.endedAt,
-    resumeToken: worker.resumeToken,
-  }));
+  const agentRuns: AgentRunView[] = (input.agentRuns ?? []).map((agentRun) => toAgentRunView(agentRun));
 
   return {
     answers,
     messages,
-    workers,
+    agentRuns,
   };
 }
 
@@ -150,7 +140,7 @@ export async function projectSessionResult(input: {
   tasks?: Task[];
   answers?: AnswerView[];
   messages?: MessageView[];
-  workers?: WorkerView[];
+  agentRuns?: AgentRunView[];
   threads?: SessionThreadSummary[];
 }): Promise<ProjectedSessionResult> {
   return {
@@ -172,7 +162,7 @@ export async function projectSessionResult(input: {
     tasks: input.tasks,
     answers: input.answers,
     messages: input.messages,
-    workers: input.workers,
+    agentRuns: input.agentRuns,
     workspaceRoot: input.workspaceRoot,
     projectId: input.projectId,
     threads: input.threads,

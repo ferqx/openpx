@@ -1,15 +1,16 @@
 import type { ApprovalRequest } from "../../../domain/approval";
+import type { AgentRunRecord } from "../../../domain/agent-run";
 import type { Run } from "../../../domain/run";
 import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
 import type { Event } from "../../../domain/event";
-import type { WorkerRecord } from "../../../control/workers/worker-types";
 import { DEFAULT_THREAD_MODE } from "../../../control/agents/thread-mode";
 import type { HarnessSessionScope } from "../../server/harness-session-scope";
 import type { RuntimeSnapshot } from "../schemas/api-schema";
 import type { PlanDecisionRequest } from "../../../runtime/planning/planner-result";
 import { CURRENT_PROTOCOL_VERSION as PROTOCOL_VERSION } from "../schemas/protocol-version";
 import { getStoredEventSequence } from "../events/runtime-event-envelope";
+import { toAgentRunView } from "./agent-run-view";
 
 /** thread 列表项的内部扩展视图：补充 active run 与阻塞摘要 */
 type RuntimeThreadView = Thread & {
@@ -28,7 +29,7 @@ export function buildRuntimeSnapshot(input: {
   runs: Run[];
   tasks: Task[];
   pendingApprovals: ApprovalRequest[];
-  workers: WorkerRecord[];
+  agentRuns: AgentRunRecord[];
   events: Event[];
   fallbackLastEventSeq: number;
   narrativeSummary?: string;
@@ -153,16 +154,6 @@ export function buildRuntimeSnapshot(input: {
       role: message.role,
       content: message.content,
     })),
-    workers: input.workers.map((worker) => ({
-      workerId: worker.workerId,
-      threadId: worker.threadId,
-      taskId: worker.taskId,
-      role: worker.role,
-      status: worker.status,
-      spawnReason: worker.spawnReason,
-      startedAt: worker.startedAt,
-      endedAt: worker.endedAt,
-      resumeToken: worker.resumeToken,
-    })),
+    agentRuns: input.agentRuns.map((agentRun) => toAgentRunView(agentRun)),
   };
 }

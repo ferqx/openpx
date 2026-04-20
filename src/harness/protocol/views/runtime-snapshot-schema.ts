@@ -3,11 +3,11 @@ import { threadModeSchema } from "../../../control/agents/thread-mode";
 import { planDecisionRequestSchema } from "../../../runtime/planning/planner-result";
 import { answerViewSchema } from "./answer-view";
 import { approvalViewSchema } from "./approval-view";
+import { agentRunViewSchema } from "./agent-run-view";
 import { messageViewSchema } from "./message-view";
 import { runViewSchema } from "./run-view";
 import { taskBlockingReasonSchema, taskViewSchema } from "./task-view";
 import { threadViewSchema } from "./thread-view";
-import { workerViewSchema } from "./worker-view";
 import { protocolVersionSchema } from "../schemas/protocol-version";
 
 /** runtime snapshot 协议：客户端 hydration 时读取的完整稳定视图 */
@@ -34,7 +34,7 @@ export const runtimeSnapshotSchema = z.object({
   pendingApprovals: z.array(approvalViewSchema),
   answers: z.array(answerViewSchema),
   messages: z.array(messageViewSchema).optional(),
-  workers: z.array(workerViewSchema),
+  agentRuns: z.array(agentRunViewSchema),
 });
 
 export type RuntimeSnapshot = z.infer<typeof runtimeSnapshotSchema>;

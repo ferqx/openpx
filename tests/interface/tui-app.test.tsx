@@ -40,7 +40,7 @@ describe("TUI App", () => {
       approvals: [],
       answers: [],
       messages: [],
-      workers: [],
+      agentRuns: [],
       threads: [],
       ...overrides,
     };
@@ -319,7 +319,7 @@ describe("TUI App", () => {
           tasks: [],
           approvals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -1144,7 +1144,7 @@ describe("TUI App", () => {
           ],
           approvals: [],
           tasks: [],
-          workers: [],
+          agentRuns: [],
         },
       });
       await tick(10);
@@ -1210,7 +1210,7 @@ describe("TUI App", () => {
           ],
           approvals: [],
           tasks: [],
-          workers: [],
+          agentRuns: [],
         },
       });
       await tick(10);
@@ -1575,7 +1575,7 @@ describe("TUI App", () => {
             },
           ],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -1599,7 +1599,7 @@ describe("TUI App", () => {
     expect(frame).toMatch(/Confirm work\?.*\[Y\/n\]/);
   });
 
-  test("renders worker state from protocol truth and clears it when the next thread view omits workers", async () => {
+  test("renders agent run state from protocol truth and clears it when the next thread view omits agentRuns", async () => {
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
 
     const kernel: TuiKernel = {
@@ -1611,18 +1611,18 @@ describe("TUI App", () => {
       },
       async handleCommand() {
         return createCompletedSessionResult({
-          threadId: "thread-worker-ui",
+          threadId: "thread-agent-run-ui",
         });
       },
     };
 
     const { lastFrame, stdin } = render(<App kernel={kernel} />);
-    await typeAndSubmit(stdin, "start workerized task");
+    await typeAndSubmit(stdin, "start agent-run task");
 
     emit?.({
       type: "thread.view_updated",
       payload: {
-        threadId: "thread-worker-ui",
+        threadId: "thread-agent-run-ui",
         status: "completed",
         threadMode: "normal",
           finalResponse: "Workerized task in progress.",
@@ -1630,14 +1630,17 @@ describe("TUI App", () => {
         approvals: [],
         answers: [],
         messages: [],
-        workers: [
+        agentRuns: [
           {
-            workerId: "worker-ui-1",
-            threadId: "thread-worker-ui",
-            taskId: "task-worker-ui",
-            role: "planner",
+            agentRunId: "agent-run-ui-1",
+            threadId: "thread-agent-run-ui",
+            taskId: "task-agent-run-ui",
+            roleKind: "legacy_internal",
+            roleId: "planner",
             status: "running",
-            spawnReason: "hydrate worker block",
+            spawnReason: "hydrate agent run block",
+            goalSummary: "hydrate agent run block",
+            visibilityPolicy: "hidden",
           },
         ],
         workspaceRoot: "/tmp/workspace",
@@ -1646,14 +1649,14 @@ describe("TUI App", () => {
       },
     });
     await waitFor(
-      () => (lastFrame() ?? "").includes("hydrate worker block"),
-      "expected worker state to render from thread view protocol truth",
+      () => (lastFrame() ?? "").includes("hydrate agent run block"),
+      "expected agent run state to render from thread view protocol truth",
     );
 
     emit?.({
       type: "thread.view_updated",
       payload: {
-        threadId: "thread-worker-ui",
+        threadId: "thread-agent-run-ui",
         status: "completed",
         threadMode: "normal",
           finalResponse: "Workerized task complete.",
@@ -1667,8 +1670,8 @@ describe("TUI App", () => {
       },
     });
     await waitFor(
-      () => !(lastFrame() ?? "").includes("hydrate worker block"),
-      "expected worker block to clear when protocol truth omits workers",
+      () => !(lastFrame() ?? "").includes("hydrate agent run block"),
+      "expected agent run block to clear when protocol truth omits agentRuns",
     );
   });
 
@@ -1729,7 +1732,7 @@ describe("TUI App", () => {
         ],
         answers: [],
         messages: [],
-        workers: [],
+        agentRuns: [],
         threads: [],
       },
     });
@@ -1756,7 +1759,7 @@ describe("TUI App", () => {
             content: "Done.",
           },
         ],
-        workers: [],
+        agentRuns: [],
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
         threads: [],
@@ -1819,7 +1822,7 @@ describe("TUI App", () => {
             },
           ],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -1861,7 +1864,7 @@ describe("TUI App", () => {
           tasks: [],
           approvals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -1925,7 +1928,7 @@ describe("TUI App", () => {
           tasks: [],
           approvals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async handleCommand() {
@@ -1981,7 +1984,7 @@ describe("TUI App", () => {
           ],
           approvals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -2062,7 +2065,7 @@ describe("TUI App", () => {
         approvals: [],
         answers: [],
         messages: [],
-        workers: [],
+        agentRuns: [],
         threads: [],
       },
     });
@@ -2201,7 +2204,7 @@ describe("TUI App", () => {
         },
       ],
       answers: [],
-      workers: [],
+      agentRuns: [],
       threads: [],
     }));
 

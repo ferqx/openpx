@@ -1,5 +1,5 @@
-import type { RuntimeSnapshot } from "../../../harness/protocol/schemas/api-schema";
 import { DEFAULT_PRIMARY_AGENT_ID, type PrimaryAgentId } from "../../../control/agents/agent-spec";
+import type { RuntimeSnapshot } from "../../../harness/protocol/schemas/api-schema";
 import type { ThreadMode } from "../../../control/agents/thread-mode";
 import type { PlanDecisionRequest } from "../../../runtime/planning/planner-result";
 
@@ -21,7 +21,7 @@ export type RuntimeSessionState = {
   approvals: RuntimeSnapshot["pendingApprovals"];
   answers: RuntimeSnapshot["answers"];
   messages?: RuntimeSnapshot["messages"];
-  workers: RuntimeSnapshot["workers"];
+  agentRuns: RuntimeSnapshot["agentRuns"];
   workspaceRoot: string;
   projectId: string;
   blockingReason?: RuntimeSnapshot["blockingReason"];
@@ -129,7 +129,7 @@ export function deriveRuntimeSession(snapshot: RuntimeSnapshot): RuntimeSessionS
     approvals: snapshot.pendingApprovals,
     answers: snapshot.answers,
     messages: snapshot.messages ?? [],
-    workers: snapshot.workers,
+    agentRuns: snapshot.agentRuns,
     workspaceRoot: snapshot.workspaceRoot,
     projectId: snapshot.projectId,
     blockingReason,
