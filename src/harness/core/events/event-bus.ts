@@ -51,7 +51,7 @@ export type ThreadRecoveryResolvedKernelEvent = {
   type: "thread.recovery_resolved";
   payload: {
     threadId: string;
-    action: "restart_run" | "resubmit_intent" | "abandon_run";
+    action: "restart_run" | "abandon_run";
   };
 };
 

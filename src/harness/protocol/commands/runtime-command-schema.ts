@@ -7,7 +7,6 @@ export const runtimeCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("switch_thread"), threadId: z.string().min(1) }),
   z.object({ kind: z.literal("continue"), threadId: z.string().min(1).optional() }),
   z.object({ kind: z.literal("restart_run"), threadId: z.string().min(1) }),
-  z.object({ kind: z.literal("resubmit_intent"), threadId: z.string().min(1), content: z.string() }),
   z.object({ kind: z.literal("abandon_run"), threadId: z.string().min(1) }),
   z.object({ kind: z.literal("interrupt"), threadId: z.string().min(1).optional() }),
   z.object({

@@ -70,15 +70,15 @@ describe("Remote Kernel", () => {
     const hydrated = await kernel.hydrateSession?.();
 
     expect(hydrated).toEqual({
-      status: "blocked",
-      stage: "blocked",
+      status: "completed",
+      stage: "idle",
       primaryAgent: "build",
       threadMode: "normal",
       threadId: "thread-1",
       finalResponse: undefined,
       executionSummary: undefined,
       verificationSummary: undefined,
-      pauseSummary: "Manual recovery required from snapshot.",
+      pauseSummary: undefined,
       tasks: [
             {
               taskId: "task-1",
@@ -112,10 +112,6 @@ describe("Remote Kernel", () => {
       ],
       workspaceRoot: "/tmp/workspace",
       projectId: "project-1",
-      blockingReason: {
-        kind: "human_recovery",
-        message: "Manual recovery required from snapshot.",
-      },
       recommendationReason: undefined,
       planDecision: undefined,
       narrativeSummary: undefined,
@@ -497,63 +493,6 @@ describe("Remote Kernel", () => {
       {
         kind: "add_task",
         content: "ship it",
-      },
-    ]);
-  });
-
-  test("forwards blocked recovery input as resubmit_intent", async () => {
-    const sentCommands: unknown[] = [];
-    const client: Pick<RuntimeClient, "getSnapshot" | "sendCommand" | "subscribeEvents"> = {
-      async getSnapshot() {
-        return {
-          protocolVersion: "1.0.0",
-          workspaceRoot: "/tmp/workspace",
-          projectId: "project-1",
-          lastEventSeq: 12,
-          activeThreadId: "thread-1",
-          activeRunId: "run-1",
-          threadMode: "normal",
-          recommendationReason: undefined,
-          blockingReason: {
-            kind: "human_recovery",
-            message: "Manual recovery required.",
-          },
-          threads: [],
-          runs: [],
-          tasks: [],
-          pendingApprovals: [],
-          answers: [],
-          agentRuns: [],
-        };
-      },
-      async sendCommand(command) {
-        sentCommands.push(command);
-        return undefined;
-      },
-      subscribeEvents() {
-        return {
-          async *[Symbol.asyncIterator]() {
-            await new Promise(() => undefined);
-          },
-        };
-      },
-    };
-
-    const kernel = createRemoteKernel(client);
-
-    await kernel.handleCommand({
-      type: "resubmit_intent",
-      payload: {
-        threadId: "thread-1",
-        content: "继续基于当前状态执行",
-      },
-    });
-
-    expect(sentCommands).toEqual([
-      {
-        kind: "resubmit_intent",
-        threadId: "thread-1",
-        content: "继续基于当前状态执行",
       },
     ]);
   });

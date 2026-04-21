@@ -61,10 +61,6 @@ export type ScreenChromeView = {
   modelName?: string;
   thinkingLevel?: string;
   recommendationReason?: string;
-  blockingReason?: {
-    kind: "waiting_approval" | "plan_decision" | "human_recovery";
-    message: string;
-  };
   threads?: ThreadSummary[];
   showThreadPanel?: boolean;
   exitConfirmText?: string;
@@ -72,7 +68,7 @@ export type ScreenChromeView = {
 
 /** Screen composer 区视图 */
 export type ScreenComposerView = {
-  composerMode?: "input" | "confirm" | "blocked";
+  composerMode?: "input" | "confirm";
   onSubmit?: (text: string) => Promise<void> | void;
   onCommandMenuOpenChange?: (isOpen: boolean) => void;
   onComposerEscape?: () => Promise<void> | void;
@@ -188,7 +184,7 @@ const ScreenUtilityRegion = React.memo(
 
 const ScreenFooterRegion = React.memo(function ScreenFooterRegion(input: {
   activeUtilityPane?: UtilityPaneMode;
-  composerMode?: "input" | "confirm" | "blocked";
+  composerMode?: "input" | "confirm";
   onSubmit?: (text: string) => Promise<void> | void;
   onCommandMenuOpenChange?: (isOpen: boolean) => void;
   onComposerEscape?: () => Promise<void> | void;
@@ -238,7 +234,6 @@ export function Screen(input: {
     activeUtilityPane: input.utilityView.activeUtilityPane,
     composerMode: input.composerView.composerMode,
     recommendationReason: input.chromeView.recommendationReason,
-    blockingReason: input.chromeView.blockingReason,
     stage: input.chromeView.stage,
     showWelcome: input.conversationView.showWelcome,
   });
@@ -301,14 +296,6 @@ export function Screen(input: {
       {input.composerView.composerMode === "confirm" && input.chromeView.recommendationReason && (
         <Box key="recommendation" paddingX={1} marginBottom={1} borderStyle="round" borderColor="yellow">
           <Text color="yellow">{theme.symbols.warning} {input.chromeView.recommendationReason}</Text>
-        </Box>
-      )}
-
-      {input.chromeView.stage === "blocked" && input.chromeView.blockingReason && (
-        <Box key="blocked" paddingX={1} marginBottom={1} borderStyle="round" borderColor="yellow" flexDirection="column">
-          <Text color="yellow">{theme.symbols.warning} Session blocked: input will resubmit the intent.</Text>
-          {input.chromeView.blockingReason?.message ? <Text>{input.chromeView.blockingReason.message}</Text> : null}
-          <Text color={theme.colors.dim}>Review the warning, then type a new instruction to continue this thread.</Text>
         </Box>
       )}
 

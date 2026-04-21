@@ -85,7 +85,6 @@ type ControlPlane = {
   approveRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   rejectRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   restartRun(threadId: string): Promise<SessionControlPlaneResult>;
-  resubmitIntent(threadId: string, content: string): Promise<SessionControlPlaneResult>;
   abandonRun(threadId: string): Promise<SessionControlPlaneResult>;
   cancelThread(threadId: string, reason?: string): Promise<boolean>;
   attachKernelEventPublisher(
@@ -521,9 +520,7 @@ async function createControlPlane(input: {
       status:
         args.run.status === "waiting_approval"
           ? "waiting_approval"
-          : args.run.status === "blocked" || args.run.status === "interrupted"
-            ? "blocked"
-            : "completed",
+          : "completed",
       task,
       approvals,
       resumeDisposition: args.resumeDisposition,
@@ -856,7 +853,7 @@ async function createControlPlane(input: {
   });
 
   const controlPlane: ControlPlane = {
-    async startRootTask(threadId: string, inputValue: string | ContinuationEnvelope) {
+    async startRootTask(threadId: string, inputValue: string | ContinuationEnvelope): Promise<SessionControlPlaneResult> {
       const thread = await input.stores.threadStore.get(threadId);
       if (!thread) {
         throw new Error(`thread ${threadId} not found`);
@@ -910,7 +907,7 @@ async function createControlPlane(input: {
         }
       }
 
-      return finalizeRootTaskExecution(
+      const finalizationResult = await finalizeRootTaskExecution(
         {
           listPendingApprovals: (targetThreadId) => input.stores.approvalStore.listPendingByThread(targetThreadId),
           saveTaskStatus: (nextTask, status) => saveTaskStatus(input.stores, nextTask, status),
@@ -922,6 +919,10 @@ async function createControlPlane(input: {
         task,
         engineResult,
       );
+
+      return finalizationResult.status === "blocked"
+        ? { ...finalizationResult, status: "completed" as const }
+        : { ...finalizationResult, status: finalizationResult.status === "waiting_approval" ? "waiting_approval" as const : "completed" as const };
     },
 
     async resolvePlanDecision(decisionInput) {
@@ -1023,25 +1024,6 @@ async function createControlPlane(input: {
       });
 
       return controlPlane.startRootTask(threadId, run.inputText ?? task.summary);
-    },
-
-    async resubmitIntent(threadId: string, content: string) {
-      const { run, task } = await resolveBlockedRecoveryRun(threadId);
-      await cancelPendingApprovalsForRun(threadId, run.runId);
-      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
-        runId: run.runId,
-        reason: "resubmit_intent replaced this recovery chain",
-      });
-      await input.stores.runStateStore.deleteActiveRunState(run.runId);
-      await saveTaskStatus(input.stores, task, "cancelled");
-      await updateRunStatus(run, "interrupted", {
-        activeTaskId: task.taskId,
-        blockingReason: undefined,
-        endedAt: new Date().toISOString(),
-        resultSummary: "Manual recovery resolved by resubmit_intent",
-      });
-
-      return controlPlane.startRootTask(threadId, content);
     },
 
     async abandonRun(threadId: string) {

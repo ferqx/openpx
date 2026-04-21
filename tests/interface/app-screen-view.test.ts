@@ -68,7 +68,7 @@ describe("app screen view builders", () => {
   test("builds chrome and composer slices", () => {
     const chromeView = buildChromeView({
       session: {
-        status: "blocked",
+        status: "completed",
         pauseSummary: "blocked",
         primaryAgent: "build",
         threadMode: "plan",
@@ -80,11 +80,10 @@ describe("app screen view builders", () => {
         answers: [],
         messages: [],
         agentRuns: [],
-        blockingReason: { kind: "human_recovery", message: "Inspect workspace" },
         threads: [],
       },
       runtimeStatus: "connected",
-      stage: "blocked",
+      stage: "idle",
       showThreadPanel: true,
       modelName: "model",
       thinkingLevel: "default",
@@ -101,7 +100,7 @@ describe("app screen view builders", () => {
 
     expect(chromeView.primaryAgent).toBe("build");
     expect(chromeView.threadMode).toBe("plan");
-    expect(chromeView.stage).toBe("blocked");
+    expect(chromeView.stage).toBe("idle");
     expect(chromeView.showThreadPanel).toBe(true);
     expect(composerView.composerMode).toBe("input");
   });

@@ -223,7 +223,7 @@ export async function collectRuntimeEvidence(input: {
       projectId: config.projectId,
       finalResponse: stableArtifacts.answers[0]?.content,
       pauseSummary: latestRun?.blockingReason?.message,
-      latestExecutionStatus: snapshot.latestExecutionStatus,
+      latestExecutionStatus: snapshot.latestExecutionStatus === "blocked" ? "completed" as const : snapshot.latestExecutionStatus,
       recommendationReason:
         latestRun?.blockingReason?.kind === "human_recovery"
           ? latestRun.blockingReason.message

@@ -215,7 +215,7 @@ const threadBlockedPayloadSchema = z.object({
 
 const threadRecoveryResolvedPayloadSchema = z.object({
   threadId: z.string().min(1),
-  action: z.enum(["restart_run", "resubmit_intent", "abandon_run"]),
+  action: z.enum(["restart_run", "abandon_run"]),
 }).strict();
 
 const loopEventPayloadSchema = z.object({

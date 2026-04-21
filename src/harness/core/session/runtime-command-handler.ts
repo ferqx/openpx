@@ -220,7 +220,6 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
 
     if (
       command.kind === "restart_run"
-      || command.kind === "resubmit_intent"
       || command.kind === "abandon_run"
     ) {
       const thread = await deps.context.stores.threadStore.get(command.threadId);
@@ -235,12 +234,6 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
         return deps.context.kernel.handleCommand({
           type: "restart_run",
           payload: { threadId: thread.threadId },
-        });
-      }
-      if (command.kind === "resubmit_intent") {
-        return deps.context.kernel.handleCommand({
-          type: "resubmit_intent",
-          payload: { threadId: thread.threadId, content: command.content },
         });
       }
       return deps.context.kernel.handleCommand({

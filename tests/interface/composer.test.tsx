@@ -27,11 +27,11 @@ describe("Composer", () => {
     expect(frame).not.toContain("│");
   });
 
-  test("blocked mode keeps input editable and submit-capable", async () => {
+  test("input mode keeps input editable and submit-capable", async () => {
     let submitted: string | undefined;
     const { lastFrame, stdin } = render(
       <Composer
-        mode="blocked"
+        mode="input"
         onSubmit={(text) => {
           submitted = text;
         }}

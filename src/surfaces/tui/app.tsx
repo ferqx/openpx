@@ -661,7 +661,6 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
   }, [
     chromeModelConfig,
     runtimeStatus,
-    session?.blockingReason,
     session?.projectId,
     session?.recommendationReason,
     session?.threadId,

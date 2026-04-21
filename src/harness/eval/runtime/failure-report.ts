@@ -36,7 +36,7 @@ export function buildRuntimeFailureReport(input: {
     involvesApproval: input.replay.approvals.length > 0 || input.replay.suspensions.length > 0,
     recommendation:
       enteredHumanRecovery
-        ? "inspect -> restart_run / resubmit_intent / abandon_run"
+        ? "inspect -> restart_run / abandon_run"
         : externalSideEffectRisk === "possible"
           ? "inspect ledger before retrying"
           : "inspect replay timeline and validation verdict",

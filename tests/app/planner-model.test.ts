@@ -219,7 +219,7 @@ describe("planner model integration", () => {
 
     const result = await ctx.controlPlane.startRootTask(thread.threadId, "我要开发一个登录界面");
 
-    expect(result.status).toBe("blocked");
+    expect(result.status).toBe("completed");
     expect(result.planDecision?.question).toBe("请选择登录界面的实现方案");
     expect(result.planDecision?.sourceInput).toBe("我要开发一个登录界面");
     expect(result.finalResponse).toBeUndefined();

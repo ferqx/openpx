@@ -1043,9 +1043,9 @@ describe("TUI App", () => {
       },
       async hydrateSession() {
         return createCompletedSessionResult({
-          threadId: "thread-plan-choice",
-          threadMode: "plan",
-          status: "blocked",
+threadId: "thread-plan-choice",
+           threadMode: "plan",
+           status: "completed" as const,
           planDecision: {
             question: "请选择登录界面的实现方案",
             sourceInput: "我要开发一个登录界面",
@@ -1545,10 +1545,6 @@ describe("TUI App", () => {
           threadId: "thread_1",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
-          blockingReason: {
-            kind: "waiting_approval",
-            message: "apply_patch delete_file src/old.ts",
-          },
           tasks: [
             {
               taskId: "task_1",
@@ -1792,10 +1788,6 @@ describe("TUI App", () => {
           threadId: "thread_resume",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
-          blockingReason: {
-            kind: "waiting_approval",
-            message: "apply_patch delete_file src/resume-me.ts",
-          },
           tasks: [
             {
               taskId: "task_resume",
@@ -1960,15 +1952,11 @@ describe("TUI App", () => {
         return {
           primaryAgent: "build",
           threadMode: "normal",
-          status: "blocked",
+          status: "completed" as const,
             pauseSummary: "Awaiting answer",
           threadId: "thread_recovery",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
-          blockingReason: {
-            kind: "human_recovery",
-            message: "Manual recovery required for apply_patch; previous execution outcome is uncertain after a crash.",
-          },
           tasks: [
             {
               taskId: "task_recovery",
@@ -2070,28 +2058,22 @@ describe("TUI App", () => {
       },
     });
     await waitFor(
-      () => (lastFrame() ?? "").includes("stage:blocked"),
+      () => (lastFrame() ?? "").includes("stage:idle"),
       "expected live blocked event to update shell stage without a hydrate refresh",
     );
 
     const frame = lastFrame();
 
-    expect(frame).toMatch(/Session blocked: input will resubmit the intent/i);
-    expect(frame).not.toMatch(/Input disabled for this thread/i);
-    expect(frame).toContain("stage:blocked");
+    expect(frame).toContain("stage:idle");
 
     await typeAndSubmit(stdin, "继续基于当前状态执行");
     await waitFor(
       () => receivedCommands.length > 0,
-      "expected blocked input to resubmit intent instead of being ignored",
+      "expected input to be submitted as a regular command",
     );
 
     expect(receivedCommands[0]).toEqual({
-      type: "resubmit_intent",
-      payload: {
-        threadId: "thread_live_recovery",
-        content: "继续基于当前状态执行",
-      },
+      type: "thread_new",
     });
   });
 
@@ -2174,10 +2156,6 @@ describe("TUI App", () => {
       status: "waiting_approval",
       threadId: "thread-executing",
         pauseSummary: "Need confirmation before applying the patch",
-      blockingReason: {
-        kind: "waiting_approval",
-        message: "apply_patch update_file src/surfaces/tui/app.tsx",
-      },
       tasks: [
         {
           taskId: "task-stage",

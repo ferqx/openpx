@@ -48,7 +48,7 @@ export function buildUtilityView(input: {
   };
 }
 
-/** 组装 chrome 视图：顶部状态、线程面板与阻塞提示都从这里喂给 Screen */
+/** 组装 chrome 视图：顶部状态与线程面板 */
 export function buildChromeView(input: {
   session?: RuntimeSessionState;
   runtimeStatus: "connected" | "disconnected";
@@ -69,7 +69,6 @@ export function buildChromeView(input: {
     modelName: input.modelName,
     thinkingLevel: input.thinkingLevel,
     recommendationReason: input.session?.recommendationReason,
-    blockingReason: input.session?.blockingReason,
     threads: input.session?.threads,
     showThreadPanel: input.showThreadPanel,
     exitConfirmText: input.exitConfirmText,
@@ -78,7 +77,7 @@ export function buildChromeView(input: {
 
 /** 组装 composer 视图：只暴露 Screen 需要的交互句柄 */
 export function buildComposerView(input: {
-  composerMode: "input" | "confirm" | "blocked";
+  composerMode: "input" | "confirm";
   submit: (text: string) => Promise<void> | void;
   onCommandMenuOpenChange: (isOpen: boolean) => void;
   onComposerEscape: () => Promise<void> | void;

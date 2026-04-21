@@ -331,7 +331,7 @@ export function SettingsPane(input: {
           <Text>/history, /sessions, /help, /settings are local shell commands.</Text>
           <Text>Space toggles the selected config value. Enter saves the active scope.</Text>
           <Text>/ opens settings search. Esc closes settings.</Text>
-          <Text>Approval waits for user confirmation; blocked shows a warning and lets new input resubmit the intent.</Text>
+          <Text>Approval waits for user confirmation; interrupted runs can be continued with new input.</Text>
         </Box>
       ) : null}
 

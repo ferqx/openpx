@@ -48,8 +48,6 @@ function formatStage(stage?: SessionStage): { label: string; color: string } {
       return { label: "confirm", color: theme.colors.dim };
     case "executing":
       return { label: "run", color: theme.colors.dim };
-    case "blocked":
-      return { label: "blocked", color: theme.colors.dim };
     default:
       return { label: "idle", color: theme.colors.dim };
   }

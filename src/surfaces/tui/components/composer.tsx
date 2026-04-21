@@ -92,7 +92,7 @@ function isForwardDeleteKey(keyValue: string, key: { delete?: boolean }) {
 export function Composer(input: { 
   onSubmit?: (text: string) => Promise<void> | void;
   prompt?: string;
-  mode?: "input" | "confirm" | "blocked";
+  mode?: "input" | "confirm";
   onCommandMenuOpenChange?: (isOpen: boolean) => void;
   onEscape?: () => Promise<void> | void;
   isActive?: boolean;

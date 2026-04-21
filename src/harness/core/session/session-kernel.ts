@@ -36,7 +36,6 @@ import { createThreadStateProjector } from "../../../control/context/thread-stat
 import {
   resolveApprovalCommandContext,
   resolveSubmitCommandContext,
-  shouldShortCircuitBlockedSubmit,
 } from "./session-command-handler";
 import {
   buildStableSessionArtifacts,
@@ -87,13 +86,6 @@ export type RecoveryCommand =
       };
     }
   | {
-      type: "resubmit_intent";
-      payload: {
-        threadId: string;
-        content: string;
-      };
-    }
-  | {
       type: "abandon_run";
       payload: {
         threadId: string;
@@ -101,7 +93,7 @@ export type RecoveryCommand =
     };
 
 export type SessionControlPlaneResult = {
-  status: "completed" | "waiting_approval" | "blocked";
+  status: "completed" | "waiting_approval";
   task: Task;
   approvals: ApprovalRequest[];
   resumeDisposition?: "resumed" | "already_resolved" | "already_consumed" | "invalidated" | "not_resumable";
@@ -155,7 +147,6 @@ export function createSessionKernel(deps: {
     approveRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     rejectRequest: (approvalRequestId: string) => Promise<SessionControlPlaneResult>;
     restartRun: (threadId: string) => Promise<SessionControlPlaneResult>;
-    resubmitIntent: (threadId: string, content: string) => Promise<SessionControlPlaneResult>;
     abandonRun: (threadId: string) => Promise<SessionControlPlaneResult>;
   };
   narrativeService?: ThreadNarrativeService;
@@ -325,9 +316,7 @@ export function createSessionKernel(deps: {
           ? "completed"
           : input.status === "waiting_approval"
             ? "waiting_approval"
-            : input.status === "blocked"
-              ? "blocked"
-              : "running",
+            : "running",
       recommendationReason: input.recommendationReason,
       planDecision: input.planDecision,
       workspaceRoot: deps.workspaceRoot,
@@ -380,11 +369,10 @@ export function createSessionKernel(deps: {
     const planDecision = activeSuspension?.reasonKind === "waiting_plan_decision"
       ? activeSuspension.planDecision
       : undefined;
-    const blockedWithoutRun = !latestRun && shouldShortCircuitBlockedSubmit({ latestRun, thread, tasks });
 
     return buildSessionResult({
       thread,
-      status: blockedWithoutRun ? "blocked" : deriveProjectedExecutionStatus(latestRun, thread.status),
+      status: deriveProjectedExecutionStatus(latestRun, thread.status),
       tasks,
       approvals,
       planDecision,
@@ -413,17 +401,6 @@ export function createSessionKernel(deps: {
           ensureRevision: checkRevision,
         });
         const { thread } = submitContext;
-
-        if (submitContext.blocked) {
-          const threadList = await getThreadSummaries();
-          return buildSessionResult({
-            thread,
-            status: "blocked",
-            tasks: submitContext.tasks,
-            approvals: submitContext.approvals,
-            threadList,
-          });
-        }
 
         const threadWithUserMessage = await appendUserTranscriptMessage({
           thread,
@@ -535,7 +512,6 @@ export function createSessionKernel(deps: {
 
       if (
         command.type === "restart_run"
-        || command.type === "resubmit_intent"
         || command.type === "abandon_run"
       ) {
         const thread = await deps.stores.threadStore.get(command.payload.threadId);
@@ -551,9 +527,6 @@ export function createSessionKernel(deps: {
           execute: () => {
             if (command.type === "restart_run") {
               return deps.controlPlane.restartRun(thread.threadId);
-            }
-            if (command.type === "resubmit_intent") {
-              return deps.controlPlane.resubmitIntent(thread.threadId, command.payload.content);
             }
             return deps.controlPlane.abandonRun(thread.threadId);
           },

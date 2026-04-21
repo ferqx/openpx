@@ -25,7 +25,6 @@ export type ResolvedSubmitCommandContext = ThreadActivityContext & {
   thread: Thread;
   latestRun?: Run | undefined;
   startedNewThread: boolean;
-  blocked: boolean;
 };
 
 /** 解析后的审批命令上下文 */
@@ -53,13 +52,7 @@ export async function resolveSubmitTargetThread(input: {
     };
   }
 
-  if (latestRun?.status === "blocked") {
-    await input.ensureRevision(latestThread.threadId, input.expectedRevision);
-    return {
-      thread: latestThread,
-      startedNewThread: false,
-    };
-  }
+  await input.ensureRevision(latestThread.threadId, input.expectedRevision);
 
   if (latestThread.status !== "active") {
     const activeThread = transitionThread(latestThread, "active");
@@ -92,10 +85,9 @@ export function shouldShortCircuitBlockedSubmit(input: {
   thread: { recoveryFacts?: DerivedThreadView["recoveryFacts"] };
   tasks: Task[];
 }): boolean {
-  return input.latestRun?.status === "blocked" || hasDurableBlockingState({
-    thread: input.thread,
-    tasks: input.tasks,
-  });
+  // blocked 短路已移除：用户输入直接提交，不再因 blocked 状态被拦截。
+  // hasDurableBlockingState 保留供日志和审计判断使用。
+  return false;
 }
 
 /** 解析审批命令的目标协作线——确保审批请求存在并返回上下文 */
@@ -168,11 +160,6 @@ export async function resolveSubmitCommandContext(input: {
     thread: target.thread,
     latestRun,
     startedNewThread: target.startedNewThread,
-    blocked: shouldShortCircuitBlockedSubmit({
-      latestRun,
-      thread: target.thread,
-      tasks: activity.tasks,
-    }),
     ...activity,
   };
 }

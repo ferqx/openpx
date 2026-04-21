@@ -153,12 +153,6 @@ export function createRemoteKernel(client: RemoteRuntimeClient): TuiKernel {
           return hydrateSession();
         }
         await client.sendCommand({ kind: "continue", threadId });
-      } else if (command.type === "resubmit_intent") {
-        await client.sendCommand({
-          kind: "resubmit_intent",
-          threadId: command.payload.threadId,
-          content: command.payload.content,
-        });
       } else if (command.type === "thread_list") {
         const snapshot = await client.getSnapshot();
         const session = deriveRuntimeSession(snapshot);

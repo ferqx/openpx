@@ -48,16 +48,12 @@ function deriveMessagesFromRecoveryFacts(
   }));
 }
 
-/** 把 kernel/runtime 的状态枚举折叠成 TUI 关心的 completed/waiting_approval/blocked */
+/** 把 kernel/runtime 的状态枚举折叠成 TUI 关心的 completed/waiting_approval */
 function toRuntimeSessionStatus(
-  status: ProjectedSessionResult["status"] | RuntimeSessionState["status"] | RuntimeSessionState["threads"][number]["status"] | undefined,
+  status: ProjectedSessionResult["status"] | RuntimeSessionState["status"] | RuntimeSessionState["threads"][number]["status"] | "blocked" | undefined,
 ): RuntimeSessionState["status"] {
   if (status === "waiting_approval") {
     return "waiting_approval";
-  }
-
-  if (status === "blocked") {
-    return "blocked";
   }
 
   return "completed";
@@ -71,15 +67,6 @@ export function mergeThreadViewIntoSession(
   const status = toRuntimeSessionStatus(update.status);
   const workspaceRoot = update.workspaceRoot ?? current?.workspaceRoot ?? process.cwd();
   const projectId = update.projectId ?? current?.projectId ?? "unknown";
-  const taskBlockingReason = update.tasks?.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
-  const blockingReason = update.recoveryFacts?.blocking
-    ? {
-        kind: update.recoveryFacts.blocking.kind,
-        message: update.recoveryFacts.blocking.message,
-      }
-    : update.status === "blocked" || update.status === "waiting_approval"
-      ? taskBlockingReason
-      : undefined;
   // 线程列表始终以协议返回值为准，避免沿用过期的本地 UI 缓存。
   const threads = update.threads
     ? update.threads.map((thread, index) => {
@@ -106,7 +93,7 @@ export function mergeThreadViewIntoSession(
     primaryAgent: current?.primaryAgent ?? DEFAULT_PRIMARY_AGENT_ID,
     threadMode: update.threadMode,
     status,
-    stage: status === "waiting_approval" ? "awaiting_confirmation" : status === "blocked" ? "blocked" : "idle",
+    stage: status === "waiting_approval" ? "awaiting_confirmation" : "idle",
     threadId: update.threadId,
     finalResponse: update.finalResponse ?? current?.finalResponse,
     executionSummary: update.executionSummary ?? current?.executionSummary,
@@ -119,7 +106,6 @@ export function mergeThreadViewIntoSession(
     agentRuns: update.agentRuns ?? [],
     workspaceRoot,
     projectId,
-    blockingReason,
     recommendationReason: update.recommendationReason ?? current?.recommendationReason,
     planDecision: update.planDecision,
     narrativeSummary: update.narrativeState?.threadSummary ?? current?.narrativeSummary,

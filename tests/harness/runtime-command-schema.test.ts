@@ -15,18 +15,6 @@ describe("runtime command schema", () => {
 
     expect(
       runtimeCommandSchema.parse({
-        kind: "resubmit_intent",
-        threadId: "thread_1",
-        content: "retry with safer path",
-      }),
-    ).toEqual({
-      kind: "resubmit_intent",
-      threadId: "thread_1",
-      content: "retry with safer path",
-    });
-
-    expect(
-      runtimeCommandSchema.parse({
         kind: "abandon_run",
         threadId: "thread_1",
       }),

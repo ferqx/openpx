@@ -131,7 +131,7 @@ describe("session-sync", () => {
       {
         primaryAgent: "build",
         threadMode: "normal",
-        status: "blocked",
+        status: "completed",
         threadId: "thread-sync",
         pauseSummary: "Blocked summary",
         workspaceRoot: "/workspace",
@@ -141,10 +141,6 @@ describe("session-sync", () => {
         answers: [],
         messages: [],
         agentRuns: [],
-        blockingReason: {
-          kind: "human_recovery",
-          message: "Old blocked state",
-        },
         threads: [],
       },
       {
@@ -156,7 +152,6 @@ describe("session-sync", () => {
     );
 
     expect(merged.status).toBe("completed");
-    expect(merged.blockingReason).toBeUndefined();
     expect(merged.finalResponse).toBe("Recovered summary");
   });
 

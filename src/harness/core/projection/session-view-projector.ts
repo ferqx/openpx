@@ -34,7 +34,7 @@ export type SessionThreadSummary = {
 
 /** 投影后的会话结果——surface 消费的完整状态视图 */
 export type ProjectedSessionResult = DerivedThreadView & {
-  status: "idle" | "active" | "completed" | "waiting_approval" | "blocked" | "failed" | "interrupted";
+  status: "idle" | "active" | "completed" | "waiting_approval" | "failed" | "interrupted";
   threadId: string;
   threadMode: ThreadMode;
   resumeDisposition?: "resumed" | "already_resolved" | "already_consumed" | "invalidated" | "not_resumable";
@@ -42,7 +42,7 @@ export type ProjectedSessionResult = DerivedThreadView & {
   executionSummary?: string;
   verificationSummary?: string;
   pauseSummary?: string;
-  latestExecutionStatus?: "running" | "waiting_approval" | "blocked" | "completed";
+  latestExecutionStatus?: "running" | "waiting_approval" | "completed";
   recommendationReason?: string;
   planDecision?: PlanDecisionRequest;
   approvals?: ApprovalRequest[];
@@ -97,10 +97,13 @@ export function buildStableSessionArtifacts(input: {
 /** 根据最新运行状态推导会话投影的执行状态 */
 export function deriveProjectedExecutionStatus(
   latestRun: Run | undefined,
-  fallbackStatus: ProjectedSessionResult["status"] | Thread["status"],
+  fallbackStatus: ProjectedSessionResult["status"] | Thread["status"] | "blocked",
 ): ProjectedSessionResult["status"] {
   if (!latestRun) {
-    return fallbackStatus === "archived" ? "completed" : fallbackStatus;
+    if (fallbackStatus === "archived" || fallbackStatus === "blocked") {
+      return "completed";
+    }
+    return fallbackStatus as ProjectedSessionResult["status"];
   }
 
   switch (latestRun.status) {
@@ -109,9 +112,14 @@ export function deriveProjectedExecutionStatus(
       return "active";
     case "failed":
     case "interrupted":
-      return "blocked";
+    case "blocked":
+      return "completed";
+    case "waiting_approval":
+      return "waiting_approval";
+    case "completed":
+      return "completed";
     default:
-      return latestRun.status;
+      return "completed";
   }
 }
 

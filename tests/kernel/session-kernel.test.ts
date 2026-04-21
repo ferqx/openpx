@@ -58,7 +58,6 @@ describe("SessionKernel", () => {
         async approveRequest() { throw new Error("not implemented"); },
         async rejectRequest() { throw new Error("not implemented"); },
         async restartRun() { throw new Error("not implemented"); },
-        async resubmitIntent() { throw new Error("not implemented"); },
         async abandonRun() { throw new Error("not implemented"); },
       },
       workspaceRoot: "/workspace",
@@ -133,7 +132,6 @@ describe("SessionKernel", () => {
         async approveRequest() { throw new Error("not implemented"); },
         async rejectRequest() { throw new Error("not implemented"); },
         async restartRun() { throw new Error("not implemented"); },
-        async resubmitIntent() { throw new Error("not implemented"); },
         async abandonRun() { throw new Error("not implemented"); },
       },
       narrativeService,
@@ -193,7 +191,6 @@ describe("SessionKernel", () => {
         async approveRequest() { throw new Error("not implemented"); },
         async rejectRequest() { throw new Error("not implemented"); },
         async restartRun() { throw new Error("not implemented"); },
-        async resubmitIntent() { throw new Error("not implemented"); },
         async abandonRun() { throw new Error("not implemented"); },
       },
       workspaceRoot: "/workspace",
@@ -201,7 +198,7 @@ describe("SessionKernel", () => {
     });
 
     const hydrated = await kernel.hydrateSession();
-    expect(hydrated?.status).toBe("blocked");
+    expect(hydrated?.status).toBe("completed");
   });
 
   test("reject_request returns the current session view immediately and finalizes asynchronously", async () => {
@@ -287,7 +284,6 @@ describe("SessionKernel", () => {
           };
         },
         async restartRun() { throw new Error("not implemented"); },
-        async resubmitIntent() { throw new Error("not implemented"); },
         async abandonRun() { throw new Error("not implemented"); },
       },
       workspaceRoot: "/workspace",
@@ -353,7 +349,6 @@ describe("SessionKernel", () => {
         async approveRequest() { throw new Error("not implemented"); },
         async rejectRequest() { throw new Error("not implemented"); },
         async restartRun() { throw new Error("not implemented"); },
-        async resubmitIntent() { throw new Error("not implemented"); },
         async abandonRun() { throw new Error("not implemented"); },
       },
       workspaceRoot: "/workspace",

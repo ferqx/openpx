@@ -12,6 +12,7 @@ describe("Runtime session contract", () => {
       activeRunId: "run-1",
       threadMode: "plan",
       narrativeSummary: "Completed repo scan and narrowed work to runtime recovery.",
+      pauseSummary: "Manual recovery required from snapshot.",
       blockingReason: {
         kind: "human_recovery",
         message: "Manual recovery required from snapshot.",
@@ -94,8 +95,8 @@ describe("Runtime session contract", () => {
     });
 
     expect(session).toEqual({
-      status: "blocked",
-      stage: "blocked",
+      status: "completed",
+      stage: "idle",
       primaryAgent: "build",
       threadMode: "plan",
       threadId: "thread-1",
@@ -155,10 +156,6 @@ describe("Runtime session contract", () => {
       ],
       workspaceRoot: "/tmp/workspace",
       projectId: "project-1",
-      blockingReason: {
-        kind: "human_recovery",
-        message: "Manual recovery required from snapshot.",
-      },
       recommendationReason: undefined,
       planDecision: undefined,
       narrativeSummary: "Completed repo scan and narrowed work to runtime recovery.",
@@ -222,11 +219,7 @@ describe("Runtime session contract", () => {
     expect(session.stage).toBe("awaiting_confirmation");
     expect(session.primaryAgent).toBe("build");
     expect(session.threadMode).toBe("normal");
-    expect(session.blockingReason).toEqual({
-      kind: "waiting_approval",
-      message: "Need approval",
-    });
-    expect(session.pauseSummary).toBe("Need approval");
+    expect(session.pauseSummary).toBeUndefined();
   });
 
   test("ignores stale blocking reasons while the active run is running", () => {
@@ -285,7 +278,6 @@ describe("Runtime session contract", () => {
 
     expect(session.status).toBe("completed");
     expect(session.stage).toBe("idle");
-    expect(session.blockingReason).toBeUndefined();
     expect(session.pauseSummary).toBeUndefined();
   });
 
