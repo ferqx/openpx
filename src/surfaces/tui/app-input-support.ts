@@ -123,7 +123,7 @@ async function submitPlanDecisionInput(
 // 并协调 launch / utility pane 的本地 UI 状态。
 export async function ensureLaunchThreadForInput(deps: Pick<
   InputSupportDeps,
-  "launchState" | "onMarkLiveSessionActivity" | "onHandleCommand" | "onSetLaunchState" | "onApplyKernelResult"
+  "launchState" | "session" | "onMarkLiveSessionActivity" | "onHandleCommand" | "onSetLaunchState" | "onApplyKernelResult"
 >) {
   if (deps.launchState.hasCreatedThreadThisLaunch) {
     return;
@@ -220,6 +220,7 @@ export async function submitParsedComposerInput(
   deps: Pick<
     InputSupportDeps,
     | "launchState"
+    | "session"
     | "onMarkLiveSessionActivity"
     | "onAppendUserMessage"
     | "onSetActiveTaskIntent"
@@ -233,6 +234,7 @@ export async function submitParsedComposerInput(
   deps.onMarkLiveSessionActivity();
   await ensureLaunchThreadForInput({
     launchState: deps.launchState,
+    session: deps.session,
     onMarkLiveSessionActivity: deps.onMarkLiveSessionActivity,
     onHandleCommand: deps.onHandleCommand,
     onSetLaunchState: deps.onSetLaunchState,

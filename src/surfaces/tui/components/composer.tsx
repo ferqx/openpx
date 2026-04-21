@@ -86,7 +86,11 @@ function isBackwardDeleteKey(keyValue: string, key: { backspace?: boolean }) {
 }
 
 function isForwardDeleteKey(keyValue: string, key: { delete?: boolean }) {
-  return key.delete || keyValue === "\u001B[3~";
+  return keyValue === "\u001B[3~" || Boolean(key.delete && keyValue !== "");
+}
+
+function shouldTreatDeleteAsBackspace(keyValue: string, key: { delete?: boolean }) {
+  return Boolean(key.delete && keyValue === "");
 }
 
 export function Composer(input: { 
@@ -158,6 +162,7 @@ export function Composer(input: {
   }) => {
     const backwardDelete = isBackwardDeleteKey(keyValue, key);
     const forwardDelete = isForwardDeleteKey(keyValue, key);
+    const deleteActsAsBackspace = shouldTreatDeleteAsBackspace(keyValue, key);
     const activeMode = modeRef.current;
     const activeSuggestions = suggestionsRef.current;
     const suggestionMenuOpen = isSuggestionOpenRef.current;
@@ -177,11 +182,11 @@ export function Composer(input: {
         updateEditor(valueRef.current, 0);
       } else if (key.end || (key.ctrl && keyValue.toLowerCase() === "e")) {
         updateEditor(valueRef.current, valueRef.current.length);
-      } else if (backwardDelete) {
+      } else if (backwardDelete || deleteActsAsBackspace) {
         const next = deleteBackwardAtCursor(valueRef.current, cursorOffsetRef.current);
         updateEditor(next.value, next.cursorOffset);
       } else if (forwardDelete) {
-        const next = deleteBackwardAtCursor(valueRef.current, cursorOffsetRef.current);
+        const next = deleteForwardAtCursor(valueRef.current, cursorOffsetRef.current);
         updateEditor(next.value, next.cursorOffset);
       } else if (!(key.ctrl || key.meta || key.tab)) {
         const next = insertTextAtCursor(valueRef.current, cursorOffsetRef.current, keyValue);
@@ -249,8 +254,8 @@ export function Composer(input: {
       return;
     }
 
-    if (backwardDelete || forwardDelete) {
-      const next = backwardDelete || forwardDelete
+    if (backwardDelete || forwardDelete || deleteActsAsBackspace) {
+      const next = backwardDelete || deleteActsAsBackspace
         ? deleteBackwardAtCursor(valueRef.current, cursorOffsetRef.current)
         : deleteForwardAtCursor(valueRef.current, cursorOffsetRef.current);
       updateEditor(next.value, next.cursorOffset);

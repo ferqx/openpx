@@ -40,4 +40,32 @@ describe("Screen", () => {
     ).toBe(true);
     expect(firstNonEmptyLineIndex).toBeLessThanOrEqual(1);
   });
+
+  test("does not render agent mode header on the welcome shell", () => {
+    const { lastFrame } = render(
+      <Screen
+        conversationView={{
+          messages: [],
+          tasks: [],
+          approvals: [],
+          agentRuns: [],
+          showWelcome: true,
+        }}
+        utilityView={{}}
+        chromeView={{
+          workspaceRoot: "/Users/chenchao/Code/ai/openpx",
+          projectId: "openpx",
+          primaryAgent: "build",
+          threadMode: "normal",
+        }}
+        composerView={{}}
+      />,
+    );
+
+    const frame = lastFrame() ?? "";
+
+    expect(frame).toContain("OpenPX");
+    expect(frame).not.toContain("Agent: Build");
+    expect(frame).not.toContain("Mode: normal");
+  });
 });

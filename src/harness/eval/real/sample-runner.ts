@@ -171,6 +171,9 @@ function wrapModelGateway(
     async verify(input) {
       return baseGateway.verify(input);
     },
+    async execute(input) {
+      return baseGateway.execute(input);
+    },
     async respond(input) {
       return baseGateway.respond(input);
     },

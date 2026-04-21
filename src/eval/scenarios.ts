@@ -18,12 +18,21 @@ function createNoopHandlers() {
   return () => {};
 }
 
+/** deterministic eval 默认不执行真实工具，executor 合同仍返回结构化空调用。 */
+async function createNoopExecutorResult() {
+  return {
+    summary: "no executor tool calls",
+    toolCalls: [],
+  };
+}
+
 /** happy-path 专用测试 gateway */
 function createHappyPathGateway(): ModelGateway {
   return {
     async plan() {
       return { summary: "plan" };
     },
+    execute: createNoopExecutorResult,
     async verify() {
       return { summary: "verified", isValid: true };
     },
@@ -62,6 +71,7 @@ function createApprovalGateway(): ModelGateway {
         },
       };
     },
+    execute: createNoopExecutorResult,
     async verify() {
       return { summary: "verified", isValid: true };
     },
@@ -83,6 +93,7 @@ function createRejectionGateway(): ModelGateway {
     async plan(input: { prompt: string }) {
       return { summary: input.prompt };
     },
+    execute: createNoopExecutorResult,
     async verify() {
       return { summary: "verified", isValid: true };
     },
@@ -128,6 +139,7 @@ function createMultiPackageGateway(): ModelGateway {
         },
       };
     },
+    execute: createNoopExecutorResult,
     async verify() {
       return { summary: "verified", isValid: true };
     },

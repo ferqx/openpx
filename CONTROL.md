@@ -45,6 +45,25 @@ OpenPX 采用 harness-first（以 harness 为先）控制模型。
 - 旧 continuation 不得在恢复动作之后继续消费。
 - run-loop 审计记录默认保留 7 天；completed run 只删除 active state，不立即物理删除 suspension / continuation 审计记录。
 
+## Executor 工具执行合同
+
+executor（执行器）不是自然语言成功摘要，而是结构化工具调用计划。
+
+- `ModelGateway.execute()` 只能作为 executor 模型操作入口；其有效输出是 `toolCalls[]`。
+- 当前稳定工具集为 `apply_patch`、`exec`、`read_file`。
+- control plane 的 execute phase 必须把 `toolCalls[]` 逐个交给 `toolRegistry.execute()`，不得在没有真实工具执行时伪造 `patch:*` artifact。
+- 最终回答只能基于真实 `tool.executed` 事件和 artifact 声称文件已创建或修改；没有 tool call 或工具失败时，必须明确说明没有创建或修改文件。
+
+executor 的默认安全边界固定为当前 `workspaceRoot`：
+
+- executor 生成的相对路径一律解析为 `workspaceRoot` 下的路径。
+- 项目内低风险 `create_file / modify_file / read_file` 可直接执行。
+- 项目内 `delete_file`、敏感路径和写类 `exec` 继续走 approval。
+- 项目目录之外的读、写和 `exec cwd` 一律进入高风险 approval，不直接执行，也不静默拒绝。
+- 项目外 approval 摘要必须提示“项目目录之外”，并包含目标绝对路径。
+- approval 通过后，`executeApproved()` 仍必须校验工具存在、请求归属、execution ledger 幂等性，以及当前真实解析路径与已审批路径一致。
+- 符号链接、`../`、同前缀目录和外部 `cwd` 都不得绕过 `workspaceRoot` 边界。
+
 ## 最终回答真相约束
 
 面向用户的最终回答（final response）必须与中间运行摘要分离。

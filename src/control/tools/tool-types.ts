@@ -15,6 +15,7 @@ export type ToolExecuteRequest = {
   commandArgs?: string[];
   cwd?: string;
   timeoutMs?: number;
+  approvedOutsideWorkspaceTarget?: string;
   action?: PatchAction;
   changedFiles?: number;
 };
@@ -78,6 +79,10 @@ export function normalizeToolRequest(request: ToolExecuteRequest): ToolExecuteRe
       : undefined);
   const cwd = request.cwd ?? (typeof request.args.cwd === "string" ? request.args.cwd : undefined);
   const timeoutMs = request.timeoutMs ?? (typeof request.args.timeoutMs === "number" ? request.args.timeoutMs : undefined);
+  const approvedOutsideWorkspaceTarget = request.approvedOutsideWorkspaceTarget
+    ?? (typeof request.args.approvedOutsideWorkspaceTarget === "string"
+      ? request.args.approvedOutsideWorkspaceTarget
+      : undefined);
   return {
     ...request,
     path,
@@ -85,5 +90,6 @@ export function normalizeToolRequest(request: ToolExecuteRequest): ToolExecuteRe
     commandArgs,
     cwd,
     timeoutMs,
+    approvedOutsideWorkspaceTarget,
   };
 }

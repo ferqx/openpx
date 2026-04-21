@@ -9,6 +9,9 @@ describe("verifier model integration", () => {
       async plan() {
         return { summary: "plan" };
       },
+      async execute() {
+        return { summary: "no tools", toolCalls: [] };
+      },
       async verify() {
         verifyCalled = true;
         return { summary: "verified", isValid: true };

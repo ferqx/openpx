@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   createModelGateway,
+  parseExecutorModelOutput,
   parsePlannerModelOutput,
   type ModelGatewayEvent,
   type ModelStatus,
@@ -98,6 +99,49 @@ describe("createModelGateway", () => {
     expect(parsed).toEqual({
       summary: "Plan the work in one package.",
     });
+  });
+
+  test("parses structured executor tool calls", () => {
+    const parsed = parseExecutorModelOutput(
+      JSON.stringify({
+        summary: "创建登录组件",
+        toolCalls: [
+          {
+            toolCallId: "tool_login_create",
+            toolName: "apply_patch",
+            action: "create_file",
+            path: "components/LoginForm.jsx",
+            changedFiles: 1,
+            args: {
+              content: "export function LoginForm() { return <form />; }\n",
+            },
+          },
+          {
+            toolCallId: "tool_test",
+            toolName: "exec",
+            command: "bun",
+            commandArgs: ["test"],
+            cwd: ".",
+            timeoutMs: 120000,
+            args: {
+              command: "bun",
+              args: ["test"],
+              cwd: ".",
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(parsed.summary).toBe("创建登录组件");
+    expect(parsed.toolCalls).toHaveLength(2);
+    expect(parsed.toolCalls[0]).toMatchObject({
+      toolCallId: "tool_login_create",
+      toolName: "apply_patch",
+      action: "create_file",
+      path: "components/LoginForm.jsx",
+    });
+    expect(parsed.toolCalls[1]?.commandArgs).toEqual(["test"]);
   });
 
   test("suppresses telemetry events and usage collection when disabled", async () => {

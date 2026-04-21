@@ -240,13 +240,15 @@ export function Screen(input: {
 
   return (
     <Box flexDirection="column">
-      <ScreenThreadRegion
-        primaryAgent={input.chromeView.primaryAgent}
-        threadMode={input.chromeView.threadMode}
-        showThreadPanel={input.chromeView.showThreadPanel}
-        threads={input.chromeView.threads}
-        activeThreadId={input.chromeView.threadId}
-      />
+      {!input.conversationView.showWelcome ? (
+        <ScreenThreadRegion
+          primaryAgent={input.chromeView.primaryAgent}
+          threadMode={input.chromeView.threadMode}
+          showThreadPanel={input.chromeView.showThreadPanel}
+          threads={input.chromeView.threads}
+          activeThreadId={input.chromeView.threadId}
+        />
+      ) : null}
 
       <Box
         key="stream"
@@ -272,6 +274,7 @@ export function Screen(input: {
             performance={input.conversationView.performance}
             narrativeSummary={input.conversationView.narrativeSummary}
             viewportWidth={stdout?.columns ?? 80}
+            viewportHeight={layout.conversationRows}
             scrollOffset={input.conversationView.streamScrollOffset}
           />
         )}

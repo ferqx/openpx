@@ -1,4 +1,4 @@
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { ApprovalService } from "../policy/approval-service";
 import { createPolicyEngine, type PolicyDecision } from "../policy/policy-engine";
@@ -8,6 +8,15 @@ import { readFileExecutor } from "./executors/read-file";
 import type { ToolDefinition, ToolExecuteRequest, ToolExecutionOutcome } from "./tool-types";
 import { normalizeToolRequest, toPolicyRequest } from "./tool-types";
 import type { ExecutionLedgerPort, ExecutionLedgerEntry } from "../../persistence/ports/execution-ledger-port";
+
+type WorkspaceBoundaryCheck =
+  | {
+      kind: "inside";
+    }
+  | {
+      kind: "outside";
+      targetPath: string;
+    };
 
 /** 默认工具注册表：read_file / apply_patch / exec */
 function buildDefaultTools(): ToolDefinition[] {
@@ -74,6 +83,40 @@ function toStoredRequestPath(request: ToolExecuteRequest, workspaceRoot?: string
   return request.path.replace(/\\/g, "/");
 }
 
+/** cwd 也需要持久化成可恢复字段，项目内优先收敛成相对路径。 */
+function toStoredRequestCwd(request: ToolExecuteRequest, workspaceRoot?: string): string | undefined {
+  if (!request.cwd) {
+    return undefined;
+  }
+
+  if (!workspaceRoot || !isAbsolute(request.cwd)) {
+    return request.cwd.replace(/\\/g, "/");
+  }
+
+  const relativePath = relative(workspaceRoot, request.cwd);
+  if (relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath)) {
+    return relativePath.replace(/\\/g, "/");
+  }
+
+  return request.cwd.replace(/\\/g, "/");
+}
+
+/** 项目外访问不再直接拒绝，而是进入高风险审批。 */
+function createOutsideWorkspaceDecision(
+  request: ToolExecuteRequest,
+  targetPath: string,
+): Extract<PolicyDecision, { kind: "needs_approval" }> {
+  return {
+    kind: "needs_approval",
+    reason: `项目目录之外的工具目标需要用户二次确认：${targetPath}`,
+    risk: {
+      key: `${request.toolName}.outside_workspace`,
+      level: "high",
+      reason: `工具目标位于项目目录之外：${targetPath}`,
+    },
+  };
+}
+
 /** 创建工具注册表：负责工具发现、策略判定、审批创建与执行账本记录 */
 export function createToolRegistry(input: {
   policy: ReturnType<typeof createPolicyEngine>;
@@ -84,9 +127,14 @@ export function createToolRegistry(input: {
   const tools = new Map((input.tools ?? buildDefaultTools()).map((tool) => [tool.name, tool]));
   const workspaceRootPromise = realpath(input.policy.workspaceRoot).catch(() => resolve(input.policy.workspaceRoot));
 
-  /** Bun.file.exists 的小包装，方便未来替换实现 */
+  /** 文件和目录都需要能被识别，避免把不存在子路径误判为项目外。 */
   async function pathExists(path: string): Promise<boolean> {
-    return Bun.file(path).exists();
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function isContained(workspaceRoot: string, path: string): boolean {
@@ -98,46 +146,61 @@ export function createToolRegistry(input: {
   async function resolveRealTargetPath(path: string, action?: ToolExecuteRequest["action"]): Promise<string | undefined> {
     const resolvedPath = resolve(path);
 
-    if (action === "create_file") {
-      // create_file 允许目标文件尚不存在，但必须确保最近存在祖先目录仍在 workspace 内。
-      if (await pathExists(resolvedPath)) {
-        return realpath(resolvedPath);
-      }
-
-      let ancestorPath = dirname(resolvedPath);
-      while (!(await pathExists(ancestorPath))) {
-        const parentPath = dirname(ancestorPath);
-        if (parentPath === ancestorPath) {
-          return undefined;
-        }
-
-        ancestorPath = parentPath;
-      }
-
-      const realAncestorPath = await realpath(ancestorPath);
-      return resolve(realAncestorPath, relative(ancestorPath, resolvedPath));
-    }
-
     if (await pathExists(resolvedPath)) {
       return realpath(resolvedPath);
     }
 
-    return undefined;
+    // create/delete/modify/read 都可能遇到目标尚不存在或已删除的情况；
+    // 使用最近存在祖先的 realpath 保持 /var 与 /private/var 等别名路径一致。
+    void action;
+    let ancestorPath = dirname(resolvedPath);
+    while (!(await pathExists(ancestorPath))) {
+      const parentPath = dirname(ancestorPath);
+      if (parentPath === ancestorPath) {
+        return undefined;
+      }
+
+      ancestorPath = parentPath;
+    }
+
+    const realAncestorPath = await realpath(ancestorPath);
+    return resolve(realAncestorPath, relative(ancestorPath, resolvedPath));
   }
 
-  /** 路径型工具在真正执行前再次做真实文件系统边界检查 */
-  async function isFilesystemPathAllowed(request: ToolExecuteRequest, effect: ToolDefinition["effect"]): Promise<boolean> {
-    if (!request.path || (effect !== "read" && effect !== "apply_patch" && effect !== "sensitive_write")) {
-      return true;
-    }
-
+  /** 路径型工具和 exec cwd 在真正执行前再次做真实文件系统边界检查。 */
+  async function resolveWorkspaceBoundary(
+    request: ToolExecuteRequest,
+    effect: ToolDefinition["effect"],
+  ): Promise<WorkspaceBoundaryCheck> {
     const workspaceRoot = await workspaceRootPromise;
-    const targetPath = await resolveRealTargetPath(request.path, request.action);
-    if (!targetPath) {
-      return true;
+
+    if (request.path && (effect === "read" || effect === "apply_patch" || effect === "sensitive_write")) {
+      const requestedPath = isAbsolute(request.path)
+        ? request.path
+        : resolve(workspaceRoot, request.path);
+      const targetPath = (await resolveRealTargetPath(requestedPath, request.action)) ?? resolve(requestedPath);
+      if (!isContained(workspaceRoot, targetPath)) {
+        return {
+          kind: "outside",
+          targetPath,
+        };
+      }
     }
 
-    return isContained(workspaceRoot, targetPath);
+    if (effect === "exec" && request.cwd) {
+      const requestedCwd = isAbsolute(request.cwd)
+        ? request.cwd
+        : resolve(workspaceRoot, request.cwd);
+      const targetPath = (await resolveRealTargetPath(requestedCwd)) ?? resolve(requestedCwd);
+      if (!isContained(workspaceRoot, targetPath)) {
+        return {
+          kind: "outside",
+          targetPath,
+        };
+      }
+    }
+
+    return { kind: "inside" };
   }
 
   async function loadCompletedEffectfulOutcome(
@@ -193,21 +256,46 @@ export function createToolRegistry(input: {
         };
       }
 
-      if (!(await isFilesystemPathAllowed(normalizedRequest, tool.effect))) {
-        const decision: Extract<PolicyDecision, { kind: "deny" }> = {
-          kind: "deny",
-          reason: "resolved filesystem target is outside the workspace",
-          risk: {
-            key: `${normalizedRequest.toolName}.path_escape`,
-            level: "high",
-            reason: "real filesystem target escapes the workspace",
+      const boundary = await resolveWorkspaceBoundary(normalizedRequest, tool.effect);
+      if (boundary.kind === "outside") {
+        const decision = createOutsideWorkspaceDecision(normalizedRequest, boundary.targetPath);
+        const workspaceRoot = await workspaceRootPromise;
+        const approvalRequest = await input.approvals.createPending({
+          toolCallId: normalizedRequest.toolCallId,
+          threadId: normalizedRequest.threadId,
+          runId: normalizedRequest.runId,
+          taskId: normalizedRequest.taskId,
+          toolRequest: {
+            ...normalizedRequest,
+            runId: normalizedRequest.runId ?? normalizedRequest.taskId,
+            path: toStoredRequestPath(normalizedRequest, workspaceRoot),
+            cwd: toStoredRequestCwd(normalizedRequest, workspaceRoot),
+            approvedOutsideWorkspaceTarget: boundary.targetPath,
           },
-        };
+          summary: `项目目录之外：${summarizeRequest(normalizedRequest, workspaceRoot)} -> ${boundary.targetPath}`,
+          risk: decision.risk.key,
+        });
+
+        if (tool.isEffectful) {
+          await input.executionLedger.save({
+            executionId: `${normalizedRequest.toolCallId}:exec`,
+            threadId: normalizedRequest.threadId,
+            runId: normalizedRequest.runId,
+            taskId: normalizedRequest.taskId,
+            toolCallId: normalizedRequest.toolCallId,
+            toolName: normalizedRequest.toolName,
+            argsJson: JSON.stringify(normalizedRequest.args),
+            status: "planned",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
 
         return {
-          kind: "denied",
+          kind: "blocked",
           decision,
           reason: decision.reason,
+          approvalRequest,
         };
       }
 
@@ -231,6 +319,7 @@ export function createToolRegistry(input: {
             ...normalizedRequest,
             runId: normalizedRequest.runId ?? normalizedRequest.taskId,
             path: toStoredRequestPath(normalizedRequest, workspaceRoot),
+            cwd: toStoredRequestCwd(normalizedRequest, workspaceRoot),
           },
           summary: summarizeRequest(normalizedRequest, workspaceRoot),
           risk: decision.risk.key,
@@ -336,30 +425,62 @@ export function createToolRegistry(input: {
         };
       }
 
-      if (!(await isFilesystemPathAllowed(normalizedRequest, tool.effect))) {
+      const boundary = await resolveWorkspaceBoundary(normalizedRequest, tool.effect);
+      if (boundary.kind === "outside") {
+        const approvedTarget = normalizedRequest.approvedOutsideWorkspaceTarget;
+        if (!approvedTarget || approvedTarget !== boundary.targetPath) {
+          const decision: Extract<PolicyDecision, { kind: "deny" }> = {
+            kind: "deny",
+            reason: "approved outside-workspace target does not match resolved filesystem target",
+            risk: {
+              key: `${normalizedRequest.toolName}.approval_target_mismatch`,
+              level: "high",
+              reason: `已审批目标与当前真实目标不一致：${approvedTarget ?? "<missing>"} -> ${boundary.targetPath}`,
+            },
+          };
+
+          return {
+            kind: "denied",
+            decision,
+            reason: decision.reason,
+          };
+        }
+      }
+
+      if (boundary.kind === "inside") {
+        const evaluated = input.policy.evaluate(toPolicyRequest(tool, normalizedRequest));
+        if (evaluated.kind === "deny") {
+          return {
+            kind: "denied",
+            decision: evaluated,
+            reason: evaluated.reason,
+          };
+        }
+      }
+
+      const evaluated = boundary.kind === "outside"
+        ? {
+            kind: "allow",
+            reason: "approval granted for outside-workspace target",
+            risk: {
+              key: `${normalizedRequest.toolName}.outside_workspace_approved`,
+              level: "high",
+              reason: `用户已批准项目目录之外的目标：${boundary.targetPath}`,
+            },
+          } satisfies Extract<PolicyDecision, { kind: "allow" }>
+        : input.policy.evaluate(toPolicyRequest(tool, normalizedRequest));
+
+      if (evaluated.kind === "deny") {
         const decision: Extract<PolicyDecision, { kind: "deny" }> = {
           kind: "deny",
-          reason: "resolved filesystem target is outside the workspace",
-          risk: {
-            key: `${normalizedRequest.toolName}.path_escape`,
-            level: "high",
-            reason: "real filesystem target escapes the workspace",
-          },
+          reason: evaluated.reason,
+          risk: evaluated.risk,
         };
 
         return {
           kind: "denied",
           decision,
           reason: decision.reason,
-        };
-      }
-
-      const evaluated = input.policy.evaluate(toPolicyRequest(tool, normalizedRequest));
-      if (evaluated.kind === "deny") {
-        return {
-          kind: "denied",
-          decision: evaluated,
-          reason: evaluated.reason,
         };
       }
 

@@ -30,6 +30,7 @@ export interface InteractionStreamProps {
   performance?: { waitMs: number; genMs: number };
   narrativeSummary?: string;
   viewportWidth?: number;
+  viewportHeight?: number;
   scrollOffset?: number;
 }
 
@@ -90,6 +91,108 @@ function clampScrollOffset(offset: number, maxOffset: number): number {
   return Math.max(0, Math.min(offset, maxOffset));
 }
 
+function estimateAuxiliaryRows(input: {
+  tasks: TaskSummary[];
+  approvals: ApprovalSummary[];
+  agentRuns: AgentRunSummary[];
+  planDecision?: PlanDecisionRequest;
+  modelStatus?: string;
+  narrativeSummary?: string;
+  messages: Message[];
+  width: number;
+}): number {
+  const shouldRenderNarrativeFallback =
+    input.messages.length === 0
+    && input.approvals.length === 0
+    && !input.planDecision
+    && input.tasks.length === 0
+    && input.agentRuns.length === 0
+    && Boolean(input.narrativeSummary);
+
+  return (
+    (shouldRenderNarrativeFallback
+      ? estimateWrappedLines(input.narrativeSummary ?? "", input.width) + 2
+      : 0)
+    + (input.modelStatus === "thinking" || input.modelStatus === "responding" ? 2 : 0)
+    + (input.planDecision ? input.planDecision.options.length + 4 : 0)
+    + input.tasks.filter((task) => task.status === "running").length
+    + input.agentRuns.length
+    + input.approvals.length * 3
+  );
+}
+
+function resolveVisibleMessageWindow(input: {
+  messages: Message[];
+  width: number;
+  viewportHeight?: number;
+  scrollOffset: number;
+  reservedRows: number;
+}) {
+  if (input.viewportHeight === undefined) {
+    const pageSize = 10;
+    const overflow = input.messages.length > pageSize;
+    const maxScrollOffset = overflow
+      ? Math.max(0, input.messages.length - pageSize)
+      : 0;
+    const effectiveScrollOffset = clampScrollOffset(
+      input.scrollOffset,
+      maxScrollOffset,
+    );
+    const visibleMessages = overflow
+      ? input.messages.slice(
+          Math.max(0, input.messages.length - pageSize - effectiveScrollOffset),
+          input.messages.length - effectiveScrollOffset,
+        )
+      : input.messages;
+
+    return {
+      visibleMessages,
+      streamOverflowed: overflow,
+      canScrollUp: overflow,
+      canScrollDown: overflow && effectiveScrollOffset > 0,
+    };
+  }
+
+  const maxVisibleLines = Math.max(3, input.viewportHeight - input.reservedRows);
+  const endExclusive = Math.max(
+    0,
+    Math.min(input.messages.length, input.messages.length - Math.max(0, input.scrollOffset)),
+  );
+
+  let startInclusive = endExclusive;
+  let usedLines = 0;
+
+  while (startInclusive > 0) {
+    const candidate = input.messages[startInclusive - 1];
+    if (!candidate) {
+      break;
+    }
+
+    const candidateLines = estimateMessageLines(candidate, input.width);
+    if (usedLines > 0 && usedLines + candidateLines > maxVisibleLines) {
+      break;
+    }
+
+    usedLines += candidateLines;
+    startInclusive -= 1;
+
+    if (usedLines >= maxVisibleLines) {
+      break;
+    }
+  }
+
+  const visibleMessages = input.messages.slice(startInclusive, endExclusive);
+  const canScrollUp = startInclusive > 0;
+  const canScrollDown = endExclusive < input.messages.length;
+
+  return {
+    visibleMessages,
+    streamOverflowed: canScrollUp || canScrollDown,
+    canScrollUp,
+    canScrollDown,
+  };
+}
+
 export function InteractionStream({
   messages,
   tasks,
@@ -100,6 +203,7 @@ export function InteractionStream({
   performance,
   narrativeSummary,
   viewportWidth,
+  viewportHeight,
   scrollOffset = 0
 }: InteractionStreamProps) {
   const SpinnerComponent = Spinner as React.ComponentType<{ type?: string }>;
@@ -111,38 +215,28 @@ export function InteractionStream({
     agentRuns.length === 0 &&
     Boolean(narrativeSummary);
   const contentWidth = Math.max(24, (viewportWidth ?? 80) - 6);
-  const estimatedConversationLines =
-    messages.reduce(
-      (total, message) => total + estimateMessageLines(message, contentWidth),
-      0
-    ) +
-    (shouldRenderNarrativeFallback
-      ? estimateWrappedLines(narrativeSummary ?? '', contentWidth) + 2
-      : 0) +
-    (modelStatus === 'thinking' || modelStatus === 'responding' ? 2 : 0) +
-    (planDecision ? planDecision.options.length + 4 : 0) +
-    tasks.filter((task) => task.status === 'running').length +
-    agentRuns.length +
-    approvals.length * 3;
-  const pageSize = 10;
-  const messagesOverflow = messages.length > pageSize;
-  const maxScrollOffset = messagesOverflow
-    ? Math.max(0, messages.length - pageSize)
-    : 0;
-  const effectiveScrollOffset = clampScrollOffset(
+  const reservedRows = estimateAuxiliaryRows({
+    tasks,
+    approvals,
+    agentRuns,
+    planDecision,
+    modelStatus,
+    narrativeSummary,
+    messages,
+    width: contentWidth,
+  });
+  const {
+    visibleMessages,
+    streamOverflowed,
+    canScrollUp,
+    canScrollDown,
+  } = resolveVisibleMessageWindow({
+    messages,
+    width: contentWidth,
+    viewportHeight,
     scrollOffset,
-    maxScrollOffset
-  );
-  const streamOverflowed = messagesOverflow;
-  const visibleMessages = messagesOverflow
-    ? messages.slice(
-        Math.max(0, messages.length - pageSize - effectiveScrollOffset),
-        messages.length - effectiveScrollOffset
-      )
-    : messages;
-  const scrollIndicator = streamOverflowed ? buildScrollIndicator(8) : '';
-  const canScrollUp = streamOverflowed;
-  const canScrollDown = streamOverflowed && effectiveScrollOffset > 0;
+    reservedRows,
+  });
 
   return (
     <Box flexDirection="row" gap={1}>

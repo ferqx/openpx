@@ -39,10 +39,9 @@ export function createPolicyEngine(input: {
   additionalDirectories?: string[];
 }) {
   const workspaceRoot = resolve(input.workspaceRoot);
-  const allowedRoots = [
-    workspaceRoot,
-    ...(input.additionalDirectories ?? []).map((directory) => resolve(directory)),
-  ];
+  // executor 的安全边界只以当前项目目录为准；历史 additionalDirectories
+  // 配置保留兼容读取，但不再作为免审批执行范围。
+  const allowedRoots = [workspaceRoot];
   const permissionMode = input.permissionMode ?? "guarded";
 
   /** 路径是否仍在 workspace 内，防止 ../ 或同前缀目录逃逸 */
@@ -96,8 +95,8 @@ export function createPolicyEngine(input: {
       if ((request.effect === "apply_patch" || request.effect === "sensitive_write" || request.effect === "read") && request.path) {
         if (!isWithinAllowedRoots(request.path)) {
           return {
-            kind: "deny",
-            reason: "filesystem target is outside the allowed roots",
+            kind: "needs_approval",
+            reason: "filesystem target is outside the workspace and requires approval",
             risk,
           };
         }
@@ -105,8 +104,8 @@ export function createPolicyEngine(input: {
 
       if (request.effect === "exec" && request.cwd && !isWithinAllowedRoots(request.cwd)) {
         return {
-          kind: "deny",
-          reason: "terminal commands outside the allowed roots are denied",
+          kind: "needs_approval",
+          reason: "terminal command cwd is outside the workspace and requires approval",
           risk,
         };
       }
@@ -171,8 +170,8 @@ export function createPolicyEngine(input: {
         }
 
         return {
-          kind: "deny",
-          reason: "reads outside the allowed roots are denied",
+          kind: "needs_approval",
+          reason: "reads outside the workspace require approval",
           risk,
         };
       }

@@ -1,8 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createAppContext } from "../../src/app/bootstrap";
 import { createThread } from "../../src/domain/thread";
 
 describe("planner model integration", () => {
+  async function noExecutorToolCalls() {
+    return {
+      summary: "no executor tool calls",
+      toolCalls: [],
+    };
+  }
+
   test("routes planner work through the injected model gateway", async () => {
     const modelGateway = {
       async plan(input: { prompt: string }) {
@@ -10,6 +20,7 @@ describe("planner model integration", () => {
           summary: `model summary for: ${input.prompt}`,
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -64,6 +75,7 @@ describe("planner model integration", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -119,6 +131,7 @@ describe("planner model integration", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         verifyCalls += 1;
         return { summary: "verified", isValid: true };
@@ -189,6 +202,7 @@ describe("planner model integration", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         verifyCalls += 1;
         return { summary: "verified", isValid: true };
@@ -236,6 +250,157 @@ describe("planner model integration", () => {
     expect(respondCalls).toBe(0);
   });
 
+  test("does not fabricate file creation when implementation work has no concrete tool execution", async () => {
+    let verifyCalls = 0;
+    let respondCalls = 0;
+    const modelGateway = {
+      async plan() {
+        return {
+          summary: "实现登录界面组件。",
+          plannerResult: {
+            workPackages: [
+              {
+                id: "pkg_login_form",
+                objective: "创建 components/LoginForm.jsx 登录界面组件",
+                capabilityMarker: "implementation_work" as const,
+                capabilityFamily: "feature_implementation" as const,
+                requiresApproval: false,
+                allowedTools: ["read_file", "apply_patch"],
+                inputRefs: ["thread:goal"],
+                expectedArtifacts: ["patch:components/LoginForm.jsx"],
+              },
+            ],
+            acceptanceCriteria: ["登录组件文件存在"],
+            riskFlags: [],
+            approvalRequiredActions: [],
+            verificationScope: ["components/LoginForm.jsx"],
+          },
+        };
+      },
+      async verify() {
+        verifyCalls += 1;
+        return { summary: "verified", isValid: true };
+      },
+      async execute() {
+        return {
+          summary: "没有可执行工具调用",
+          toolCalls: [],
+        };
+      },
+      async respond() {
+        respondCalls += 1;
+        return { summary: "已创建登录界面组件 components/LoginForm.jsx。" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const workspaceRoot = "/tmp/planner-workspace-no-fake-file";
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir: ":memory:",
+      modelGateway,
+    });
+    const thread = createThread("thread-no-fake-file", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+
+    const result = await ctx.controlPlane.startRootTask(thread.threadId, "我需要开发一个登录界面");
+
+    expect(result.status).toBe("completed");
+    expect(result.finalResponse).toContain("没有创建文件");
+    expect(result.finalResponse).toContain("components/LoginForm.jsx");
+    expect(result.executionSummary).toContain("未执行文件修改");
+    expect(verifyCalls).toBe(0);
+    expect(respondCalls).toBe(0);
+    expect(await Bun.file(`${workspaceRoot}/components/LoginForm.jsx`).exists()).toBe(false);
+  });
+
+  test("creates files through structured executor tool calls", async () => {
+    let executeCalls = 0;
+    let verifyCalls = 0;
+    let respondCalls = 0;
+    const modelGateway = {
+      async plan() {
+        return {
+          summary: "实现登录界面组件。",
+          plannerResult: {
+            workPackages: [
+              {
+                id: "pkg_login_form",
+                objective: "创建 components/LoginForm.jsx 登录界面组件",
+                capabilityMarker: "implementation_work" as const,
+                capabilityFamily: "feature_implementation" as const,
+                requiresApproval: false,
+                allowedTools: ["read_file", "apply_patch"],
+                inputRefs: ["thread:goal"],
+                expectedArtifacts: ["patch:components/LoginForm.jsx"],
+              },
+            ],
+            acceptanceCriteria: ["登录组件文件存在"],
+            riskFlags: [],
+            approvalRequiredActions: [],
+            verificationScope: ["components/LoginForm.jsx"],
+          },
+        };
+      },
+      async execute() {
+        executeCalls += 1;
+        return {
+          summary: "创建登录组件文件",
+          toolCalls: [
+            {
+              toolCallId: "tool_create_login_form",
+              toolName: "apply_patch" as const,
+              action: "create_file" as const,
+              path: "components/LoginForm.jsx",
+              changedFiles: 1,
+              args: {
+                content: "export function LoginForm() {\n  return <form aria-label=\"登录表单\" />;\n}\n",
+              },
+            },
+          ],
+        };
+      },
+      async verify() {
+        verifyCalls += 1;
+        return { summary: "verified", isValid: true };
+      },
+      async respond() {
+        respondCalls += 1;
+        return { summary: "已创建登录界面组件 components/LoginForm.jsx。" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "planner-workspace-executor-create-"));
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir: ":memory:",
+      modelGateway,
+    });
+    const thread = createThread("thread-executor-create-file", workspaceRoot, ctx.config.projectId);
+    await ctx.stores.threadStore.save(thread);
+
+    const result = await ctx.controlPlane.startRootTask(thread.threadId, "我需要开发一个登录界面");
+
+    expect(result.status).toBe("completed");
+    expect(result.executionSummary).toContain("apply_patch create_file components/LoginForm.jsx");
+    expect(result.finalResponse).toContain("components/LoginForm.jsx");
+    expect(executeCalls).toBe(1);
+    expect(verifyCalls).toBe(1);
+    expect(respondCalls).toBe(1);
+    expect(await Bun.file(join(workspaceRoot, "components/LoginForm.jsx")).text()).toContain("LoginForm");
+  });
+
   test("normalizes approval-gated delete intent when planner returns only a plain summary", async () => {
     const modelGateway = {
       async plan() {
@@ -243,6 +408,7 @@ describe("planner model integration", () => {
           summary: "Delete the scoped file only after explicit approval.",
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -300,6 +466,7 @@ describe("planner model integration", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -358,6 +525,7 @@ describe("planner model integration", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -414,6 +582,7 @@ describe("planner model integration", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -473,6 +642,7 @@ describe("planner model integration", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -530,6 +700,7 @@ describe("planner model integration", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -586,6 +757,7 @@ describe("planner model integration", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },

@@ -264,7 +264,7 @@ describe("TUI App", () => {
     });
   });
 
-  test.skip("supports deleting text with backspace before submit", async () => {
+  test("supports deleting text with backspace before submit", async () => {
     let receivedCommand: SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand | undefined;
     const kernel: TuiKernel = {
       events: {
@@ -387,7 +387,7 @@ describe("TUI App", () => {
     }
   });
 
-  test("does not replay hydrated summary into a fresh launch after the first new message", async () => {
+  test("keeps hydrated narrative out of the launch shell and starts a new thread on first submit", async () => {
     const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
     const kernel: TuiKernel = {
@@ -418,7 +418,6 @@ describe("TUI App", () => {
             threadId: "thread_fresh",
           });
         }
-
         return createCompletedSessionResult({
           threadId: "thread_fresh",
           finalResponse: "Fresh answer for this launch only.",
@@ -638,6 +637,68 @@ describe("TUI App", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Done.");
     expect(frame).not.toContain("Generating answer");
+  });
+
+  test("clears running task loading when the background task fails without a thread view update", async () => {
+    let eventHandler: ((event: Parameters<TuiKernel["events"]["subscribe"]>[0] extends (event: infer TEvent) => void ? TEvent : never) => void) | undefined;
+    const kernel: TuiKernel = {
+      events: {
+        subscribe(handler) {
+          eventHandler = handler;
+          return () => {
+            eventHandler = undefined;
+          };
+        },
+      },
+      async handleCommand() {
+        return createCompletedSessionResult({
+          threadId: "thread_failed_task",
+        });
+      },
+    };
+
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
+    await tick(80);
+
+    await typeAndSubmit(stdin, "我需要开发一个登录页面");
+    await waitFor(
+      () => !(lastFrame() ?? "").includes("OpenPX"),
+      "expected first submission to leave the welcome shell",
+    );
+
+    eventHandler?.({
+      type: "session.updated",
+      payload: createCompletedSessionResult({
+        threadId: "thread_failed_task",
+        tasks: [
+          {
+            taskId: "task_failed_task",
+            threadId: "thread_failed_task",
+            runId: "run-failed-task",
+            status: "running",
+            summary: "我需要开发一个登录页面",
+          },
+        ],
+      }),
+    });
+    await waitFor(
+      () => (lastFrame() ?? "").includes("我需要开发一个登录页面..."),
+      "expected running task indicator while the task is active",
+    );
+
+    eventHandler?.({ type: "model.status", payload: { status: "idle" } });
+    eventHandler?.({
+      type: "task.failed",
+      payload: {
+        threadId: "thread_failed_task",
+        error: "planner failed after choosing Add password reset link",
+      },
+    });
+    await tick(30);
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("任务失败：planner failed after choosing Add password reset link");
+    expect(frame).not.toContain("我需要开发一个登录页面...");
   });
 
   test("creates a new thread before submitting the first input of this launch", async () => {
@@ -1025,12 +1086,13 @@ describe("TUI App", () => {
 
     await typeAndSubmit(stdin, "/clear");
     await waitFor(
-      () => !(lastFrame() ?? "").includes("Most recent answer from the current thread."),
-      "expected clear to dismiss utility pane content",
+      () => !(lastFrame() ?? "").includes("esc to close"),
+      "expected clear to dismiss the history utility pane",
       60,
     );
 
     expect(lastFrame()).toContain("OpenPX");
+    expect(lastFrame()).not.toContain("history");
   });
 
   test("renders a plan decision card and submits the selected option by number", async () => {
@@ -1041,33 +1103,39 @@ describe("TUI App", () => {
           return () => undefined;
         },
       },
-      async hydrateSession() {
-        return createCompletedSessionResult({
-threadId: "thread-plan-choice",
-           threadMode: "plan",
-           status: "completed" as const,
-          planDecision: {
-            question: "请选择登录界面的实现方案",
-            sourceInput: "我要开发一个登录界面",
-            options: [
-              {
-                id: "simple",
-                label: "简洁表单",
-                description: "只包含账号、密码和提交按钮。",
-                continuation: "按简洁表单方案实现登录界面。",
-              },
-              {
-                id: "brand",
-                label: "品牌化登录页",
-                description: "增加品牌区、辅助说明和更完整的视觉层次。",
-                continuation: "按品牌化登录页方案实现登录界面。",
-              },
-            ],
-          },
-        });
-      },
       async handleCommand(command) {
         receivedCommands.push(command);
+        if (command.type === "thread_new") {
+          return createCompletedSessionResult({
+            threadId: "thread-plan-choice",
+            threadMode: "plan",
+          });
+        }
+        if (command.type === "submit_input") {
+          return createCompletedSessionResult({
+            threadId: "thread-plan-choice",
+            threadMode: "plan",
+            status: "completed" as const,
+            planDecision: {
+              question: "请选择登录界面的实现方案",
+              sourceInput: "我要开发一个登录界面",
+              options: [
+                {
+                  id: "simple",
+                  label: "简洁表单",
+                  description: "只包含账号、密码和提交按钮。",
+                  continuation: "按简洁表单方案实现登录界面。",
+                },
+                {
+                  id: "brand",
+                  label: "品牌化登录页",
+                  description: "增加品牌区、辅助说明和更完整的视觉层次。",
+                  continuation: "按品牌化登录页方案实现登录界面。",
+                },
+              ],
+            },
+          });
+        }
         return createCompletedSessionResult({
           threadId: "thread-plan-choice",
           finalResponse: "已选择品牌化登录页。",
@@ -1077,19 +1145,31 @@ threadId: "thread-plan-choice",
 
     const { lastFrame, stdin } = render(<App kernel={kernel} />);
     await waitFor(
+      () => (lastFrame() ?? "").includes("Ask openpx... Press / for commands"),
+      "expected welcome shell on launch",
+      120,
+    );
+
+    await typeAndSubmit(stdin, "我要开发一个登录界面");
+    await waitFor(
       () => (lastFrame() ?? "").includes("品牌化登录页"),
-      "expected plan decision options to render",
+      "expected plan decision options to render after current-launch submit",
       120,
     );
 
     await typeAndSubmit(stdin, "2");
 
-    expect(receivedCommands).toHaveLength(1);
-    expect(receivedCommands[0]?.type).toBe("resolve_plan_decision");
-    expect((receivedCommands[0] as PlanDecisionCommand | undefined)?.payload.optionId).toBe("brand");
-    expect((receivedCommands[0] as PlanDecisionCommand | undefined)?.payload.input).toContain("我要开发一个登录界面");
-    expect((receivedCommands[0] as PlanDecisionCommand | undefined)?.payload.input).toContain("品牌化登录页");
-    expect((receivedCommands[0] as PlanDecisionCommand | undefined)?.payload.input).toContain("按品牌化登录页方案实现登录界面。");
+    expect(receivedCommands).toHaveLength(3);
+    expect(receivedCommands[0]).toEqual({ type: "thread_new" });
+    expect(receivedCommands[1]).toEqual({
+      type: "submit_input",
+      payload: { text: "我要开发一个登录界面" },
+    });
+    expect(receivedCommands[2]?.type).toBe("resolve_plan_decision");
+    expect((receivedCommands[2] as PlanDecisionCommand | undefined)?.payload.optionId).toBe("brand");
+    expect((receivedCommands[2] as PlanDecisionCommand | undefined)?.payload.input).toContain("我要开发一个登录界面");
+    expect((receivedCommands[2] as PlanDecisionCommand | undefined)?.payload.input).toContain("品牌化登录页");
+    expect((receivedCommands[2] as PlanDecisionCommand | undefined)?.payload.input).toContain("按品牌化登录页方案实现登录界面。");
   });
 
   test("shows a scroll indicator when the interaction stream overflows the viewport", async () => {
@@ -1823,7 +1903,7 @@ threadId: "thread-plan-choice",
       },
     };
 
-    const { lastFrame, stdin } = render(<App kernel={kernel} />);
+    const { lastFrame } = render(<App kernel={kernel} />);
     await waitFor(
       () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell to render before showing hydrated approval state",
@@ -1953,7 +2033,7 @@ threadId: "thread-plan-choice",
           primaryAgent: "build",
           threadMode: "normal",
           status: "completed" as const,
-            pauseSummary: "Awaiting answer",
+          pauseSummary: "Manual recovery required for apply_patch; previous execution outcome is uncertain after a crash.",
           threadId: "thread_recovery",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
@@ -1992,6 +2072,158 @@ threadId: "thread-plan-choice",
     expect(frame).toContain("OpenPX");
     expect(frame).not.toContain("Manual recovery required for apply_patch");
     expect(frame).not.toMatch(/Input disabled for this thread/i);
+  });
+
+  test("renders the final response after choosing a plan option on the current launch", async () => {
+    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
+    let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
+    const phase: { current: "greeting" | "plan_decision" | "completed" } = { current: "greeting" };
+    const kernel: TuiKernel = {
+      events: {
+        subscribe(handler) {
+          emit = handler;
+          return () => undefined;
+        },
+      },
+      async handleCommand(command) {
+        receivedCommands.push(command);
+        if (command.type === "thread_new") {
+          return createCompletedSessionResult({
+            threadId: "thread_current_launch",
+          });
+        }
+
+        if (command.type === "submit_input" && command.payload.text === "你好") {
+          phase.current = "plan_decision";
+          return createCompletedSessionResult({
+            threadId: "thread_current_launch",
+            finalResponse: "你好！很高兴为你提供帮助。",
+            answers: [
+              {
+                answerId: "answer-greeting",
+                threadId: "thread_current_launch",
+                content: "你好！很高兴为你提供帮助。",
+              },
+            ],
+          });
+        }
+
+        if (command.type === "submit_input" && command.payload.text === "我要开发一个登录界面") {
+          return createCompletedSessionResult({
+            threadId: "thread_current_launch",
+            planDecision: {
+              question: "请选择登录界面的实现方案",
+              sourceInput: "我要开发一个登录界面",
+              options: [
+                {
+                  id: "simple",
+                  label: "HTML/CSS only",
+                  description: "只输出静态界面，不接业务逻辑。",
+                  continuation: "按 HTML/CSS only 方案实现登录界面。",
+                },
+                {
+                  id: "react",
+                  label: "React 组件版",
+                  description: "拆成组件并预留交互状态。",
+                  continuation: "按 React 组件版方案实现登录界面。",
+                },
+              ],
+            },
+          });
+        }
+
+        phase.current = "completed";
+        return createCompletedSessionResult({
+          threadId: "thread_current_launch",
+        });
+      },
+    };
+
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
+
+    await waitFor(
+      () => (lastFrame() ?? "").includes("Ask openpx... Press / for commands"),
+      "expected welcome shell on launch",
+    );
+
+    await typeAndSubmit(stdin, "你好");
+    await waitFor(
+      () => receivedCommands.some((command) => command.type === "submit_input" && command.payload.text === "你好"),
+      "expected greeting submission to be sent",
+    );
+
+    emit?.({
+      type: "thread.view_updated",
+      payload: {
+        threadId: "thread_current_launch",
+        status: "completed",
+        threadMode: "normal",
+        finalResponse: "你好！很高兴为你提供帮助。",
+        answers: [
+          {
+            answerId: "answer-greeting",
+            threadId: "thread_current_launch",
+            content: "你好！很高兴为你提供帮助。",
+          },
+        ],
+      },
+    });
+    await waitFor(
+      () => (lastFrame() ?? "").includes("你好！很高兴为你提供帮助。"),
+      "expected greeting response to render",
+    );
+
+    await typeAndSubmit(stdin, "我要开发一个登录界面");
+    await waitFor(
+      () => (lastFrame() ?? "").includes("HTML/CSS only"),
+      "expected plan decision options to render after the second prompt",
+    );
+
+    await typeAndSubmit(stdin, "1");
+    emit?.({ type: "model.status", payload: { status: "thinking" } });
+    emit?.({ type: "model.status", payload: { status: "idle" } });
+    emit?.({
+      type: "thread.view_updated",
+      payload: {
+        threadId: "thread_current_launch",
+        status: "completed",
+        threadMode: "normal",
+        finalResponse: "已按 HTML/CSS only 方案输出登录界面骨架。",
+        answers: [
+          {
+            answerId: "answer-login",
+            threadId: "thread_current_launch",
+            content: "已按 HTML/CSS only 方案输出登录界面骨架。",
+          },
+        ],
+      },
+    });
+
+    await waitFor(
+      () => (lastFrame() ?? "").includes("已按 HTML/CSS only 方案输出登录界面骨架。"),
+      "expected final response to render after selecting a plan option",
+    );
+
+    expect(phase.current).toBe("completed");
+    expect(receivedCommands).toEqual([
+      { type: "thread_new" },
+      { type: "submit_input", payload: { text: "你好" } },
+      { type: "submit_input", payload: { text: "我要开发一个登录界面" } },
+      {
+        type: "resolve_plan_decision",
+        payload: {
+          optionId: "simple",
+          optionLabel: "HTML/CSS only",
+          input: [
+            "我要开发一个登录界面",
+            "",
+            "已选择方案：HTML/CSS only",
+            "只输出静态界面，不接业务逻辑。",
+            "按 HTML/CSS only 方案实现登录界面。",
+          ].join("\n"),
+        },
+      },
+    ]);
   });
 
   test("reacts to live blocked recovery events without a hydrate refresh", async () => {
@@ -2068,13 +2300,17 @@ threadId: "thread-plan-choice",
 
     await typeAndSubmit(stdin, "继续基于当前状态执行");
     await waitFor(
-      () => receivedCommands.length > 0,
-      "expected input to be submitted as a regular command",
+      () => receivedCommands.length === 2,
+      "expected first launch input to create a thread and then submit the command",
     );
 
-    expect(receivedCommands[0]).toEqual({
-      type: "thread_new",
-    });
+    expect(receivedCommands).toEqual([
+      { type: "thread_new" },
+      {
+        type: "submit_input",
+        payload: { text: "继续基于当前状态执行" },
+      },
+    ]);
   });
 
   test("shows the planning stage while a planning task is being submitted", async () => {

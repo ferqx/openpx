@@ -28,7 +28,9 @@ export function buildConversationView(input: {
     performance: input.conversationState.performance,
     narrativeSummary: input.session?.narrativeSummary,
     planDecision: input.session?.planDecision,
-    showWelcome: !input.hasCreatedThreadThisLaunch && !input.session?.planDecision,
+    // launch welcome 只由“本次启动是否已显式进入会话”决定；
+    // hydrate 出来的历史 thread 不应自动顶替欢迎页。
+    showWelcome: !input.hasCreatedThreadThisLaunch,
     streamScrollOffset: input.conversationState.streamScrollOffset,
   };
 }

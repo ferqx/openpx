@@ -76,6 +76,7 @@ export function resolveAppModelGateway(input: {
     };
     return {
       plan: fail,
+      execute: fail,
       verify: fail,
       respond: fail,
       onStatusChange() {

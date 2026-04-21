@@ -21,7 +21,7 @@ function createTestModelGateway() {
       return { summary: "plan" };
     },
     async execute() {
-      return { kind: "no_tool" as const, summary: "executed" };
+      return { summary: "executed", toolCalls: [] };
     },
     async verify() {
       return { summary: "verified", isValid: true };
@@ -35,6 +35,13 @@ function createTestModelGateway() {
     onEvent() {
       return () => {};
     },
+  };
+}
+
+async function noExecutorToolCalls() {
+  return {
+    summary: "no executor tool calls",
+    toolCalls: [],
   };
 }
 
@@ -239,6 +246,7 @@ describe("createAppContext", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -318,6 +326,7 @@ describe("createAppContext", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -385,6 +394,7 @@ describe("createAppContext", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },
@@ -654,6 +664,7 @@ describe("createAppContext", () => {
           },
         };
       },
+      execute: noExecutorToolCalls,
       async verify() {
         return { summary: "verified", isValid: true };
       },

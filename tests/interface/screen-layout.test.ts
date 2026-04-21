@@ -11,6 +11,7 @@ describe("screen layout", () => {
         composerMode: "input",
       }),
     ).toEqual({
+      conversationRows: 20,
       hasOverlayPane: false,
       overlayRows: 0,
       useAdaptiveWelcomeHeight: true,
@@ -28,6 +29,7 @@ describe("screen layout", () => {
 
     expect(layout.hasOverlayPane).toBe(true);
     expect(layout.overlayRows).toBeGreaterThanOrEqual(16);
+    expect(layout.conversationRows).toBeGreaterThanOrEqual(6);
     expect(layout.useAdaptiveWelcomeHeight).toBe(false);
   });
 });

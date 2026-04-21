@@ -28,7 +28,7 @@ describe("PolicyEngine", () => {
     expect(decision.kind).toBe("needs_approval");
   });
 
-  test("denies sibling paths that only share the workspace prefix", () => {
+  test("requires approval for sibling paths that only share the workspace prefix", () => {
     const policy = createPolicyEngine({ workspaceRoot: "/repo" });
     const decision = policy.evaluate({
       toolName: "apply_patch",
@@ -38,7 +38,7 @@ describe("PolicyEngine", () => {
       changedFiles: 1,
     });
 
-    expect(decision.kind).toBe("deny");
+    expect(decision.kind).toBe("needs_approval");
   });
 
   test("allows read-only exec commands within the workspace", () => {
@@ -66,7 +66,7 @@ describe("PolicyEngine", () => {
     expect(decision.kind).toBe("needs_approval");
   });
 
-  test("denies exec commands outside the workspace", () => {
+  test("requires approval for exec commands outside the workspace", () => {
     const policy = createPolicyEngine({ workspaceRoot: "/repo" });
     const decision = policy.evaluate({
       toolName: "exec",
@@ -75,10 +75,10 @@ describe("PolicyEngine", () => {
       cwd: "/tmp",
     });
 
-    expect(decision.kind).toBe("deny");
+    expect(decision.kind).toBe("needs_approval");
   });
 
-  test("allows write-like exec and delete actions in full_access mode within allowed roots", () => {
+  test("allows write-like exec in full_access mode within the workspace", () => {
     const policy = createPolicyEngine({
       workspaceRoot: "/repo",
       permissionMode: "full_access",
@@ -92,19 +92,10 @@ describe("PolicyEngine", () => {
       commandArgs: ["tmp.txt"],
       cwd: "/repo",
     });
-    const deleteDecision = policy.evaluate({
-      toolName: "apply_patch",
-      effect: "apply_patch",
-      action: "delete_file",
-      path: "/tmp/openpx-scratch/cache.txt",
-      changedFiles: 1,
-    });
-
     expect(execDecision.kind).toBe("allow");
-    expect(deleteDecision.kind).toBe("allow");
   });
 
-  test("still denies paths outside the allowed roots in full_access mode", () => {
+  test("still requires approval for paths outside the workspace in full_access mode", () => {
     const policy = createPolicyEngine({
       workspaceRoot: "/repo",
       permissionMode: "full_access",
@@ -119,6 +110,6 @@ describe("PolicyEngine", () => {
       changedFiles: 1,
     });
 
-    expect(decision.kind).toBe("deny");
+    expect(decision.kind).toBe("needs_approval");
   });
 });

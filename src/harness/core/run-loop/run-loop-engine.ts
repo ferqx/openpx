@@ -333,7 +333,22 @@ export function createRunLoopEngine(input: {
       }
     }
 
-    throw new Error("run-loop step budget exhausted");
+    const blockedState: RunLoopState = {
+      ...state,
+      pauseSummary:
+        state.pauseSummary
+        ?? "run-loop 没有取得进展，已暂停以避免无限循环。请检查 planner、executor 或 verifier 的输出。",
+      recommendationReason:
+        state.recommendationReason
+        ?? "run-loop reached its step budget without reaching a terminal or resumable state.",
+    };
+    await input.runStateStore.saveState(blockedState);
+    emitLoopEvent({
+      type: "loop.step_failed",
+      state: blockedState,
+      failureReason: blockedState.pauseSummary,
+    });
+    return projectEngineResult({ state: blockedState, status: "blocked" });
   }
 
   return {

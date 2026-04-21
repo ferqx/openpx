@@ -103,7 +103,7 @@ describe("ToolRegistry", () => {
     expect(await Bun.file(filePath).text()).toBe("keep\n");
   });
 
-  test("denies unsafe outside-workspace apply_patch requests", async () => {
+  test("approval-gates outside-workspace apply_patch requests", async () => {
     const workspaceRoot = await createWorkspace();
     const outsideFile = `${workspaceRoot}-evil/outside.ts`;
 
@@ -121,19 +121,25 @@ describe("ToolRegistry", () => {
     const result = await registry.execute({
       toolCallId: "tool_3",
       threadId: "thread_1",
+      runId: "run_1",
       taskId: "task_1",
       toolName: "apply_patch",
-      action: "modify_file",
+      action: "create_file",
       path: outsideFile,
       changedFiles: 1,
       args: { content: "nope\n" },
     });
 
-    expect(result.kind).toBe("denied");
+    expect(result.kind).toBe("blocked");
+    if (result.kind === "blocked") {
+      expect(result.approvalRequest.summary).toContain("项目目录之外");
+      expect(result.approvalRequest.summary).toContain(outsideFile);
+      expect(result.approvalRequest.toolRequest.path).toBe(outsideFile);
+    }
     expect(await Bun.file(outsideFile).exists()).toBe(false);
   });
 
-  test("denies symlink escapes that resolve outside the workspace", async () => {
+  test("approval-gates symlink escapes that resolve outside the workspace", async () => {
     const workspaceRoot = await createWorkspace();
     const outsideRoot = await createWorkspace();
     const outsideFile = join(outsideRoot, "escaped.ts");
@@ -156,6 +162,7 @@ describe("ToolRegistry", () => {
     const result = await registry.execute({
       toolCallId: "tool_symlink",
       threadId: "thread_1",
+      runId: "run_1",
       taskId: "task_1",
       toolName: "apply_patch",
       action: "modify_file",
@@ -164,8 +171,123 @@ describe("ToolRegistry", () => {
       args: { content: "after\n" },
     });
 
-    expect(result.kind).toBe("denied");
+    expect(result.kind).toBe("blocked");
+    if (result.kind === "blocked") {
+      expect(result.approvalRequest.summary).toContain("项目目录之外");
+      expect(result.approvalRequest.summary).toContain(outsideFile);
+    }
     expect(await Bun.file(outsideFile).text()).toBe("before\n");
+  });
+
+  test("approval-gates outside-workspace reads and exec cwd", async () => {
+    const workspaceRoot = await createWorkspace();
+    const outsideRoot = await createWorkspace();
+    const outsideFile = join(outsideRoot, "secret.txt");
+    await Bun.write(outsideFile, "secret\n");
+
+    const policy = createPolicyEngine({ workspaceRoot });
+    const approvals = createApprovalService();
+    const executionLedger = {
+      async save() {},
+      async get() { return undefined },
+      async listByThread() { return [] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
+    const registry = createToolRegistry({ policy, approvals, executionLedger });
+
+    const readResult = await registry.execute({
+      toolCallId: "tool_outside_read",
+      threadId: "thread_1",
+      runId: "run_1",
+      taskId: "task_1",
+      toolName: "read_file",
+      path: outsideFile,
+      args: { path: outsideFile },
+    });
+    const execResult = await registry.execute({
+      toolCallId: "tool_outside_exec",
+      threadId: "thread_1",
+      runId: "run_1",
+      taskId: "task_1",
+      toolName: "exec",
+      command: "pwd",
+      cwd: outsideRoot,
+      args: { command: "pwd", cwd: outsideRoot },
+    });
+
+    expect(readResult.kind).toBe("blocked");
+    expect(execResult.kind).toBe("blocked");
+    const pending = await approvals.listPendingByThread("thread_1");
+    expect(pending).toHaveLength(2);
+    expect(pending.map((approval) => approval.summary).join("\n")).toContain("项目目录之外");
+  });
+
+  test("approved outside-workspace requests execute once through ledger idempotency", async () => {
+    const workspaceRoot = await createWorkspace();
+    const outsideRoot = await createWorkspace();
+    const outsideFile = join(outsideRoot, "approved.txt");
+
+    const policy = createPolicyEngine({ workspaceRoot });
+    const approvals = createApprovalService();
+    const ledgerEntries = new Map<string, ExecutionLedgerEntry>();
+    const executionLedger = {
+      async save(entry: ExecutionLedgerEntry) {
+        ledgerEntries.set(entry.executionId, entry);
+      },
+      async get(executionId: string) {
+        return ledgerEntries.get(executionId);
+      },
+      async listByThread() { return [...ledgerEntries.values()] },
+      async findUncertain() { return [] },
+      async close() {},
+    };
+    const registry = createToolRegistry({ policy, approvals, executionLedger });
+
+    const request = {
+      toolCallId: "tool_outside_approved",
+      threadId: "thread_outside_approved",
+      runId: "run_outside_approved",
+      taskId: "task_outside_approved",
+      toolName: "apply_patch",
+      action: "create_file" as const,
+      path: outsideFile,
+      changedFiles: 1,
+      args: { content: "approved\n" },
+    };
+
+    const blocked = await registry.execute(request);
+    expect(blocked.kind).toBe("blocked");
+    expect(await Bun.file(outsideFile).exists()).toBe(false);
+    if (blocked.kind !== "blocked") {
+      throw new Error("expected outside workspace request to be approval-blocked");
+    }
+
+    const approvedToolRequest = blocked.approvalRequest.toolRequest;
+    const approvedRequest = {
+      toolCallId: approvedToolRequest.toolCallId,
+      threadId: approvedToolRequest.threadId,
+      runId: approvedToolRequest.runId,
+      taskId: approvedToolRequest.taskId,
+      toolName: approvedToolRequest.toolName,
+      args: approvedToolRequest.args,
+      path: approvedToolRequest.path,
+      command: approvedToolRequest.command,
+      commandArgs: approvedToolRequest.commandArgs,
+      cwd: approvedToolRequest.cwd,
+      timeoutMs: approvedToolRequest.timeoutMs,
+      approvedOutsideWorkspaceTarget: approvedToolRequest.approvedOutsideWorkspaceTarget,
+      action: approvedToolRequest.action === "create_file" ? "create_file" as const : undefined,
+      changedFiles: approvedToolRequest.changedFiles,
+    };
+
+    const first = await registry.executeApproved(approvedRequest);
+    const second = await registry.executeApproved(approvedRequest);
+
+    expect(first.kind).toBe("executed");
+    expect(second.kind).toBe("executed");
+    expect(await Bun.file(outsideFile).text()).toBe("approved\n");
+    expect([...ledgerEntries.values()].filter((entry) => entry.status === "completed")).toHaveLength(1);
   });
 
   test("executes in-workspace read_file requests when the path is provided in args", async () => {

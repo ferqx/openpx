@@ -365,6 +365,7 @@ export async function smokePlanner(
             ],
             operationTimeoutMs: {
               plan: deps.timeoutMs,
+              execute: deps.timeoutMs,
               verify: deps.timeoutMs,
               respond: deps.timeoutMs,
             },

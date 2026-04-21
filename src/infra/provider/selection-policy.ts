@@ -1,7 +1,7 @@
 import type { ResolvedProviderBinding } from "./profile";
 
-/** 模型操作类型：对应 gateway 暴露的三类稳定入口。 */
-export type ModelOperation = "plan" | "verify" | "respond";
+/** 模型操作类型：对应 gateway 暴露的稳定入口。 */
+export type ModelOperation = "plan" | "execute" | "verify" | "respond";
 
 /** 模型层级：默认模型与轻量模型。 */
 export type ModelTier = "default" | "small";
@@ -23,11 +23,12 @@ export type ResolvedModelSlots = {
   small: ResolvedModelSlot;
 };
 
-/** M3 默认策略：plan/verify 走默认模型，respond 走小模型。 */
+/** M3 默认策略：plan/execute/verify 走默认模型，respond 走小模型。 */
 export function createDefaultModelSelectionPolicy(): ModelSelectionPolicy {
   return {
     operationModelOverride: {
       plan: "default",
+      execute: "default",
       verify: "default",
       respond: "small",
     },

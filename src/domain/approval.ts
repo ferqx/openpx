@@ -39,6 +39,16 @@ export type ApprovalToolRequest = {
   args: Record<string, unknown>;
   /** path——受影响的文件或目录路径（可选） */
   path?: string;
+  /** command——终端命令名称（可选） */
+  command?: string;
+  /** commandArgs——终端命令参数（可选） */
+  commandArgs?: string[];
+  /** cwd——终端命令工作目录（可选） */
+  cwd?: string;
+  /** timeoutMs——终端命令超时时间，单位毫秒（可选） */
+  timeoutMs?: number;
+  /** approvedOutsideWorkspaceTarget——已审批的项目外真实目标路径（可选） */
+  approvedOutsideWorkspaceTarget?: string;
   /** action——工具动作类型描述，如 "write"、"delete"（可选） */
   action?: string;
   /** changedFiles——变更文件数量估算（可选） */
@@ -89,6 +99,11 @@ export function createApprovalRequest(input: {
     toolName: string;
     args: Record<string, unknown>;
     path?: string;
+    command?: string;
+    commandArgs?: string[];
+    cwd?: string;
+    timeoutMs?: number;
+    approvedOutsideWorkspaceTarget?: string;
     action?: string;
     changedFiles?: number;
   };
@@ -111,6 +126,11 @@ export function createApprovalRequest(input: {
       toolName: input.toolRequest.toolName,
       args: input.toolRequest.args,
       path: input.toolRequest.path,
+      command: input.toolRequest.command,
+      commandArgs: input.toolRequest.commandArgs,
+      cwd: input.toolRequest.cwd,
+      timeoutMs: input.toolRequest.timeoutMs,
+      approvedOutsideWorkspaceTarget: input.toolRequest.approvedOutsideWorkspaceTarget,
       action: input.toolRequest.action,
       changedFiles: input.toolRequest.changedFiles,
     },

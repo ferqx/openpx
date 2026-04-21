@@ -1,10 +1,11 @@
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import type { Database } from "bun:sqlite";
 import { createApprovalService, type ApprovalService, type CreateApprovalInput } from "../control/policy/approval-service";
 import { createPolicyEngine } from "../control/policy/policy-engine";
 import { createTaskManager } from "../control/tasks/task-manager";
 import { createControlTask, type ControlTask } from "../control/tasks/task-types";
 import { createToolRegistry } from "../control/tools/tool-registry";
+import type { ToolExecuteRequest } from "../control/tools/tool-types";
 import type { ContinuationEnvelope } from "../harness/core/run-loop/continuation";
 import {
   isApprovalResolutionContinuation,
@@ -37,6 +38,7 @@ import { createEvent } from "../domain/event";
 import { createRun, transitionRun, type Run } from "../domain/run";
 import { prefixedUuid } from "../shared/id-generators";
 import { normalizePlannerOutput } from "../runtime/planning/planner-normalization";
+import type { ExecutorToolCall } from "../runtime/execution/executor-result";
 import type { PlanDecisionRequest } from "../runtime/planning/planner-result";
 import type { WorkPackage } from "../runtime/planning/work-package";
 import {
@@ -409,6 +411,132 @@ function resolveArtifactsForCurrentWorkPackage(state: {
   );
 }
 
+function resolveExpectedMutationRefs(workPackage?: WorkPackage): string[] {
+  return (workPackage?.expectedArtifacts ?? []).filter((artifact) =>
+    artifact.startsWith("patch:")
+    || artifact.startsWith("file:")
+    || artifact.startsWith("artifact:"),
+  );
+}
+
+function resolveWorkspacePath(workspaceRoot: string, path?: string): string | undefined {
+  if (!path) {
+    return undefined;
+  }
+
+  return isAbsolute(path) ? path : resolve(workspaceRoot, path);
+}
+
+function resolveWorkspaceCwd(workspaceRoot: string, cwd?: string): string {
+  if (!cwd) {
+    return workspaceRoot;
+  }
+
+  return isAbsolute(cwd) ? cwd : resolve(workspaceRoot, cwd);
+}
+
+function pathInsideWorkspace(workspaceRoot: string, path: string): boolean {
+  const relativePath = relative(workspaceRoot, path);
+  return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+}
+
+function renderToolRequestSummary(request: ToolExecuteRequest, workspaceRoot: string): string {
+  if (request.toolName === "exec" && request.command) {
+    return ["exec", request.command, ...(request.commandArgs ?? [])].join(" ").trim();
+  }
+
+  const requestPath = request.path;
+  const renderedPath = requestPath && isAbsolute(requestPath) && pathInsideWorkspace(workspaceRoot, requestPath)
+    ? relative(workspaceRoot, requestPath).replace(/\\/g, "/")
+    : requestPath?.replace(/\\/g, "/");
+  const target = renderedPath ? ` ${renderedPath}` : "";
+  return `${request.toolName} ${request.action ?? "execute"}${target}`;
+}
+
+function artifactPathForToolRequest(request: ToolExecuteRequest, workspaceRoot: string): string | undefined {
+  if (!request.path) {
+    return undefined;
+  }
+
+  if (!isAbsolute(request.path)) {
+    return request.path.replace(/\\/g, "/");
+  }
+
+  if (pathInsideWorkspace(workspaceRoot, request.path)) {
+    return relative(workspaceRoot, request.path).replace(/\\/g, "/");
+  }
+
+  return request.path.replace(/\\/g, "/");
+}
+
+function buildToolExecuteRequest(input: {
+  toolCall: ExecutorToolCall;
+  workspaceRoot: string;
+  threadId: string;
+  runId?: string;
+  taskId: string;
+}): ToolExecuteRequest {
+  const args = input.toolCall.args;
+  const pathFromArgs = typeof args.path === "string" ? args.path : undefined;
+  const commandFromArgs = typeof args.command === "string" ? args.command : undefined;
+  const cwdFromArgs = typeof args.cwd === "string" ? args.cwd : undefined;
+
+  return {
+    toolCallId: input.toolCall.toolCallId,
+    threadId: input.threadId,
+    runId: input.runId,
+    taskId: input.taskId,
+    toolName: input.toolCall.toolName,
+    args,
+    path: resolveWorkspacePath(input.workspaceRoot, input.toolCall.path ?? pathFromArgs),
+    command: input.toolCall.command ?? commandFromArgs,
+    commandArgs: input.toolCall.commandArgs,
+    cwd: input.toolCall.toolName === "exec"
+      ? resolveWorkspaceCwd(input.workspaceRoot, input.toolCall.cwd ?? cwdFromArgs)
+      : undefined,
+    timeoutMs: input.toolCall.timeoutMs,
+    action: input.toolCall.action,
+    changedFiles: input.toolCall.changedFiles,
+  };
+}
+
+function buildExecutorPrompt(input: {
+  executionInput: string;
+  workspaceRoot: string;
+  currentWorkPackage?: WorkPackage;
+  plannerResult?: RunLoopState["plannerResult"];
+}): string {
+  const sections = [
+    `Execution request:\n${input.executionInput}`,
+    `Workspace root:\n${input.workspaceRoot}`,
+    [
+      "Executor contract:",
+      "- 只输出结构化 toolCalls；不要用自然语言声明文件已创建。",
+      "- 相对路径一律表示 workspace root 下的路径。",
+      "- 需要创建或修改文件时使用 apply_patch，并把文件内容放在 args.content。",
+      "- 需要读取文件时使用 read_file；需要运行命令时使用 exec。",
+    ].join("\n"),
+  ];
+
+  if (input.currentWorkPackage) {
+    sections.push(
+      [
+        "Current work package:",
+        `- id: ${input.currentWorkPackage.id}`,
+        `- objective: ${input.currentWorkPackage.objective}`,
+        `- expectedArtifacts: ${input.currentWorkPackage.expectedArtifacts.join(", ")}`,
+      ].join("\n"),
+    );
+  }
+
+  const acceptanceCriteria = input.plannerResult?.acceptanceCriteria ?? [];
+  if (acceptanceCriteria.length > 0) {
+    sections.push(`Acceptance criteria:\n${acceptanceCriteria.map((item) => `- ${item}`).join("\n")}`);
+  }
+
+  return sections.join("\n\n");
+}
+
 async function createControlPlane(input: {
   config: ReturnType<typeof resolveConfig>;
   stores: AppStores;
@@ -742,86 +870,234 @@ async function createControlPlane(input: {
       const deleteRequest = normalizedMarker === "respond_only"
         ? undefined
         : parseDeleteRequest(executionInput, input.config.workspaceRoot);
-      if (!deleteRequest || !threadId || !taskId) {
-        const summary = `Executed request: ${executionInput}`;
-        return {
-          executionSummary: summary,
-          approvedApprovalRequestId,
-          latestArtifacts: buildExecutionArtifacts({
-            summary: useLegacyObjectiveFallback ? `${summary} (legacy objective fallback)` : summary,
-            currentWorkPackage,
-          }),
-          nextStep: "verify" as const,
-        };
-      }
+      const currentTask = taskId ? await input.stores.taskStore.get(taskId) : undefined;
 
-      const currentTask = await input.stores.taskStore.get(taskId);
+      if (deleteRequest && threadId && taskId) {
+        const outcome = await toolRegistry.execute({
+          toolCallId: `${taskId}:apply_patch`,
+          threadId,
+          runId: currentTask?.runId,
+          taskId,
+          toolName: "apply_patch",
+          action: "delete_file",
+          path: deleteRequest.absolutePath,
+          changedFiles: 1,
+          args: {},
+        });
 
-      const outcome = await toolRegistry.execute({
-        toolCallId: `${taskId}:apply_patch`,
-        threadId,
-        runId: currentTask?.runId,
-        taskId,
-        toolName: "apply_patch",
-        action: "delete_file",
-        path: deleteRequest.absolutePath,
-        changedFiles: 1,
-        args: {},
-      });
+        if (outcome.kind === "blocked") {
+          const summary = `Approval required before deleting ${deleteRequest.relativePath}`;
+          return {
+            executionSummary: summary,
+            approvedApprovalRequestId,
+            pendingToolCallId: `${taskId}:apply_patch`,
+            pendingToolName: "apply_patch",
+            pendingApproval: {
+              summary,
+              approvalRequestId: outcome.approvalRequest.approvalRequestId,
+            },
+            nextStep: "waiting_approval" as const,
+          };
+        }
 
-      if (outcome.kind === "blocked") {
-        const summary = `Approval required before deleting ${deleteRequest.relativePath}`;
-        return {
-          executionSummary: summary,
-          approvedApprovalRequestId,
-          pendingToolCallId: `${taskId}:apply_patch`,
-          pendingToolName: "apply_patch",
-          pendingApproval: {
-            summary,
-            approvalRequestId: outcome.approvalRequest.approvalRequestId,
-          },
-          nextStep: "waiting_approval" as const,
-        };
-      }
+        if (outcome.kind === "executed") {
+          const summary = `Deleted ${deleteRequest.relativePath}`;
 
-      if (outcome.kind === "executed") {
-        const summary = `Deleted ${deleteRequest.relativePath}`;
-        
+          await input.stores.eventLog.append({
+            eventId: `event_${crypto.randomUUID()}`,
+            threadId,
+            taskId,
+            type: "tool.executed",
+            payload: { summary, output: outcome.output },
+            createdAt: new Date().toISOString(),
+          });
+          return {
+            executionSummary: summary,
+            approvedApprovalRequestId,
+            latestArtifacts: buildExecutionArtifacts({
+              summary,
+              currentWorkPackage,
+              changedPath: deleteRequest.relativePath,
+            }),
+            lastCompletedToolCallId: `${taskId}:apply_patch`,
+            lastCompletedToolName: "apply_patch",
+            nextStep: "verify" as const,
+          };
+        }
+
+        const errorSummary = `Unable to delete ${deleteRequest.relativePath}: ${outcome.reason}`;
         await input.stores.eventLog.append({
           eventId: `event_${crypto.randomUUID()}`,
-          threadId: threadId!,
+          threadId,
           taskId,
-          type: "tool.executed",
-          payload: { summary, output: outcome.output },
+          type: "tool.failed",
+          payload: { summary: errorSummary },
           createdAt: new Date().toISOString(),
         });
         return {
-          executionSummary: summary,
+          executionSummary: errorSummary,
           approvedApprovalRequestId,
-          latestArtifacts: buildExecutionArtifacts({
-            summary,
-            currentWorkPackage,
-            changedPath: deleteRequest.relativePath,
-          }),
-          lastCompletedToolCallId: `${taskId}:apply_patch`,
-          lastCompletedToolName: "apply_patch",
+          nextStep: "respond" as const,
+        };
+      }
+
+      if (normalizedMarker === "implementation_work") {
+        const expectedMutationRefs = resolveExpectedMutationRefs(currentWorkPackage);
+        const expectedPaths = expectedMutationRefs
+          .map((ref) => ref.split(":").slice(1).join(":"))
+          .filter((ref) => ref.length > 0);
+        const targetText = expectedPaths.length > 0 ? expectedPaths.join(", ") : expectedMutationRefs.join(", ");
+
+        if (!threadId || !taskId) {
+          const summary = targetText
+            ? `未执行文件修改：缺少 thread/task 上下文，因此没有创建文件 ${targetText}。`
+            : "未执行工具调用：缺少 thread/task 上下文，因此没有创建或修改文件。";
+          return {
+            executionSummary: summary,
+            finalResponse: summary,
+            nextStep: "done" as const,
+          };
+        }
+
+        const executorPrompt = buildExecutorPrompt({
+          executionInput,
+          workspaceRoot: input.config.workspaceRoot,
+          currentWorkPackage,
+          plannerResult,
+        });
+        const executorResult = typeof input.modelGateway.execute === "function"
+          ? await input.modelGateway.execute({
+              prompt: executorPrompt,
+              threadId,
+              taskId,
+              signal: getAbortSignal(threadId),
+            })
+          : {
+              summary: "model gateway does not expose executor operation",
+              toolCalls: [],
+            };
+
+        const toolCalls = executorResult.toolCalls ?? [];
+        if (toolCalls.length === 0) {
+          const summary = targetText
+            ? `未执行文件修改：executor 没有返回真实工具调用，因此没有创建文件 ${targetText}。`
+            : "未执行工具调用：executor 没有返回 toolCalls，因此没有创建或修改文件。";
+          return {
+            executionSummary: summary,
+            finalResponse: `${summary}\n\n最终回答只能基于真实 tool.executed 和 artifact；本轮没有可用产物。`,
+            nextStep: "done" as const,
+          };
+        }
+
+        const summaries: string[] = [];
+        const latestArtifacts: NonNullable<RunLoopState["latestArtifacts"]> = [];
+        let lastCompletedToolCallId: string | undefined;
+        let lastCompletedToolName: string | undefined;
+
+        for (const toolCall of toolCalls) {
+          const toolRequest = buildToolExecuteRequest({
+            toolCall,
+            workspaceRoot: input.config.workspaceRoot,
+            threadId,
+            runId: currentTask?.runId,
+            taskId,
+          });
+          const toolSummary = renderToolRequestSummary(toolRequest, input.config.workspaceRoot);
+          let outcome: Awaited<ReturnType<typeof toolRegistry.execute>>;
+          try {
+            outcome = await toolRegistry.execute(toolRequest);
+          } catch (error) {
+            const errorSummary = `工具执行失败：${toolSummary}: ${String(error)}`;
+            await input.stores.eventLog.append({
+              eventId: `event_${crypto.randomUUID()}`,
+              threadId,
+              taskId,
+              type: "tool.failed",
+              payload: { summary: errorSummary },
+              createdAt: new Date().toISOString(),
+            });
+            return {
+              executionSummary: errorSummary,
+              finalResponse: `${errorSummary}\n\n没有完成后续文件创建或修改。`,
+              approvedApprovalRequestId,
+              nextStep: "done" as const,
+            };
+          }
+
+          if (outcome.kind === "blocked") {
+            return {
+              executionSummary: outcome.reason,
+              approvedApprovalRequestId,
+              pendingToolCallId: toolRequest.toolCallId,
+              pendingToolName: toolRequest.toolName,
+              pendingApproval: {
+                summary: outcome.approvalRequest.summary,
+                approvalRequestId: outcome.approvalRequest.approvalRequestId,
+              },
+              nextStep: "waiting_approval" as const,
+            };
+          }
+
+          if (outcome.kind === "denied") {
+            const errorSummary = `工具请求被拒绝：${toolSummary}: ${outcome.reason}`;
+            await input.stores.eventLog.append({
+              eventId: `event_${crypto.randomUUID()}`,
+              threadId,
+              taskId,
+              type: "tool.failed",
+              payload: { summary: errorSummary },
+              createdAt: new Date().toISOString(),
+            });
+            return {
+              executionSummary: errorSummary,
+              finalResponse: `${errorSummary}\n\n没有创建或修改文件。`,
+              approvedApprovalRequestId,
+              nextStep: "done" as const,
+            };
+          }
+
+          summaries.push(toolSummary);
+          lastCompletedToolCallId = toolRequest.toolCallId;
+          lastCompletedToolName = toolRequest.toolName;
+          await input.stores.eventLog.append({
+            eventId: `event_${crypto.randomUUID()}`,
+            threadId,
+            taskId,
+            type: "tool.executed",
+            payload: { summary: toolSummary, output: outcome.output },
+            createdAt: new Date().toISOString(),
+          });
+
+          if (toolRequest.toolName === "apply_patch") {
+            latestArtifacts.push(
+              ...buildExecutionArtifacts({
+                summary: toolSummary,
+                currentWorkPackage,
+                changedPath: artifactPathForToolRequest(toolRequest, input.config.workspaceRoot),
+              }),
+            );
+          }
+        }
+
+        return {
+          executionSummary: summaries.join("\n"),
+          approvedApprovalRequestId,
+          latestArtifacts,
+          lastCompletedToolCallId,
+          lastCompletedToolName,
           nextStep: "verify" as const,
         };
       }
 
-      const errorSummary = `Unable to delete ${deleteRequest.relativePath}: ${outcome.reason}`;
-      await input.stores.eventLog.append({
-        eventId: `event_${crypto.randomUUID()}`,
-        threadId: threadId!,
-        taskId,
-        type: "tool.failed",
-        payload: { summary: errorSummary },
-        createdAt: new Date().toISOString(),
-      });
+      const summary = `Executed request: ${executionInput}`;
       return {
-        executionSummary: errorSummary,
+        executionSummary: summary,
         approvedApprovalRequestId,
-        nextStep: "respond" as const,
+        latestArtifacts: buildExecutionArtifacts({
+          summary: useLegacyObjectiveFallback ? `${summary} (legacy objective fallback)` : summary,
+          currentWorkPackage,
+        }),
+        nextStep: "verify" as const,
       };
     },
     responder: async (state) => {

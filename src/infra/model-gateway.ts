@@ -1,4 +1,5 @@
 import { plannerResultSchema, type PlannerResult } from "../runtime/planning/planner-result";
+import { executorResultSchema, type ExecutorResult } from "../runtime/execution/executor-result";
 import {
   createDefaultFallbackPolicy,
   shouldFallbackToNextProvider,
@@ -45,6 +46,15 @@ export type PlannerModelOutput = {
   summary: string;
   plannerResult?: PlannerResult;
 };
+
+export type ExecutorModelInput = {
+  prompt: string;
+  threadId?: string;
+  taskId?: string;
+  signal?: AbortSignal;
+};
+
+export type ExecutorModelOutput = ExecutorResult;
 
 export type VerifierModelInput = {
   prompt: string;
@@ -103,6 +113,7 @@ type ModelMessage = ["system" | "user", string];
 
 type OperationInput =
   | PlannerModelInput
+  | ExecutorModelInput
   | VerifierModelInput
   | RespondModelInput;
 
@@ -114,6 +125,7 @@ type LegacyModelProviderConfig = {
 
 export type ModelGateway = {
   plan(input: PlannerModelInput): Promise<PlannerModelOutput>;
+  execute(input: ExecutorModelInput): Promise<ExecutorModelOutput>;
   verify(input: VerifierModelInput): Promise<VerifierModelOutput>;
   respond(input: RespondModelInput): Promise<RespondModelOutput>;
   onStatusChange(handler: (status: ModelStatus) => void): () => void;
@@ -193,6 +205,17 @@ export function parsePlannerModelOutput(text: string): PlannerModelOutput {
   } catch {
     return {
       summary: text.trim(),
+    };
+  }
+}
+
+export function parseExecutorModelOutput(text: string): ExecutorModelOutput {
+  try {
+    return executorResultSchema.parse(parseJsonObject(text));
+  } catch {
+    return {
+      summary: text.trim(),
+      toolCalls: [],
     };
   }
 }
@@ -287,6 +310,7 @@ function coerceGatewayOptions(
         ...createDefaultRetryPolicy(),
         operationTimeoutMs: {
           plan: config.timeoutMs,
+          execute: config.timeoutMs,
           verify: config.timeoutMs,
           respond: config.timeoutMs,
         },
@@ -545,6 +569,31 @@ class OpenAICompatibleModelGateway implements ModelGateway {
       requireJsonMode: true,
       allowPromptJsonFallback: true,
       parse: parsePlannerModelOutput,
+    });
+  }
+
+  async execute(input: ExecutorModelInput): Promise<ExecutorModelOutput> {
+    return this.invokeWithPolicies({
+      operation: "execute",
+      messages: [
+        [
+          "system",
+          [
+            "You are the executor agent run.",
+            "Return JSON only with this exact shape:",
+            '{"summary":"<brief execution plan summary>","toolCalls":[{"toolCallId":"tool_unique_id","toolName":"apply_patch|exec|read_file","args":{},"path":"relative/or/absolute/path","action":"create_file|modify_file|delete_file","changedFiles":1,"command":"bun","commandArgs":["test"],"cwd":".","timeoutMs":120000}]}',
+            "Use apply_patch for file creation, file modification, and file deletion; read_file for file reads; and exec for terminal commands.",
+            "Prefer relative paths under the current project. Do not claim work is complete unless it is represented as a toolCall.",
+          ].join(" "),
+        ],
+        ["user", input.prompt],
+      ],
+      signal: input.signal,
+      threadId: input.threadId,
+      taskId: input.taskId,
+      requireJsonMode: true,
+      allowPromptJsonFallback: true,
+      parse: parseExecutorModelOutput,
     });
   }
 

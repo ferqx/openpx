@@ -16,6 +16,7 @@ export function createDefaultRetryPolicy(): RetryPolicy {
     backoffMs: 250,
     operationTimeoutMs: {
       plan: 120_000,
+      execute: 120_000,
       verify: 60_000,
       respond: 90_000,
     },

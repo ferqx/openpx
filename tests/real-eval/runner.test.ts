@@ -88,6 +88,9 @@ function createDeterministicModelGateway(): ModelGateway {
         },
       };
     },
+    async execute() {
+      return { summary: "no executor tool calls", toolCalls: [] };
+    },
     async verify() {
       return { summary: "verified", isValid: true };
     },

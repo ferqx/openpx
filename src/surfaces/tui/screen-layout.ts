@@ -5,6 +5,7 @@ import type { SessionStage } from "./runtime/runtime-session";
 export type ScreenLayout = {
   hasOverlayPane: boolean;
   overlayRows: number;
+  conversationRows: number;
   useAdaptiveWelcomeHeight: boolean;
 };
 
@@ -21,6 +22,9 @@ export function computeScreenLayout(input: {
   const headerRows = 0;
   const threadPanelRows = input.showThreadPanel ? 4 : 0;
   const statusRows = 1;
+  const composerRows = input.activeUtilityPane === "settings" ? 0 : 3;
+  const recommendationRows =
+    input.composerMode === "confirm" && input.recommendationReason ? 3 : 0;
   const overlayRows =
     input.activeUtilityPane === "settings"
       // settings pane 通常更高，需要尽量吃满剩余终端高度。
@@ -28,12 +32,24 @@ export function computeScreenLayout(input: {
       : input.activeUtilityPane && input.activeUtilityPane !== "none"
         ? 10
         : 0;
+  const conversationRows = Math.max(
+    6,
+    input.terminalRows - (
+      headerRows
+      + threadPanelRows
+      + overlayRows
+      + composerRows
+      + statusRows
+      + recommendationRows
+    ),
+  );
   const hasOverlayPane = Boolean(input.activeUtilityPane && input.activeUtilityPane !== "none");
   const useAdaptiveWelcomeHeight = Boolean(input.showWelcome && !hasOverlayPane);
 
   return {
     hasOverlayPane,
     overlayRows,
+    conversationRows,
     useAdaptiveWelcomeHeight,
   };
 }

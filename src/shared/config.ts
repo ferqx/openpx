@@ -118,6 +118,7 @@ function buildRetryPolicy(config: OpenPXConfig): RetryPolicy {
       ? defaults.operationTimeoutMs
       : {
           plan: timeoutMs,
+          execute: timeoutMs,
           verify: timeoutMs,
           respond: timeoutMs,
         },

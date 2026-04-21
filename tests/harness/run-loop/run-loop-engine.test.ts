@@ -488,6 +488,76 @@ describe("run-loop engine", () => {
     expect(plannerCalls).toBe(2);
   });
 
+  test("验证持续失败且执行没有进展时受控阻塞", async () => {
+    const store = createMemoryRunStateStore();
+    const engine = createRunLoopEngine({
+      runStateStore: store,
+      planner: async () => ({
+        nextStep: "execute",
+        plannerResult: {
+          workPackages: [
+            {
+              id: "pkg_login",
+              objective: "实现登录页面",
+              allowedTools: ["apply_patch"],
+              inputRefs: ["thread:goal"],
+              expectedArtifacts: ["patch:login"],
+            },
+          ],
+          acceptanceCriteria: ["登录页面完成"],
+          riskFlags: [],
+          approvalRequiredActions: [],
+          verificationScope: ["ui smoke"],
+        },
+        workPackages: [
+          {
+            id: "pkg_login",
+            objective: "实现登录页面",
+            allowedTools: ["apply_patch"],
+            inputRefs: ["thread:goal"],
+            expectedArtifacts: ["patch:login"],
+          },
+        ],
+      }),
+      executor: async () => ({
+        nextStep: "verify",
+        executionSummary: "Executed request: 实现登录页面",
+        latestArtifacts: [
+          {
+            ref: "patch:login",
+            kind: "patch",
+            summary: "模拟执行产物",
+            workPackageId: "pkg_login",
+          },
+        ],
+      }),
+      verifier: async () => ({
+        nextStep: "respond",
+        verificationReport: {
+          summary: "未发现实际文件变更",
+          passed: false,
+          feedback: "executor 没有产生新的可验证变更",
+        },
+      }),
+      responder: async () => ({
+        nextStep: "done",
+        finalResponse: "不应进入最终回复",
+      }),
+    });
+
+    const result = await engine.start({
+      threadId: "thread_stalled_verify",
+      runId: "run_stalled_verify",
+      taskId: "task_stalled_verify",
+      input: "我需要开发一个登录页面",
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.pauseSummary).toContain("run-loop");
+    expect(result.pauseSummary).toContain("没有取得进展");
+    expect(result.verificationSummary).toBe("未发现实际文件变更");
+  });
+
   test("等待审批后可通过 continuation 恢复执行", async () => {
     const store = createMemoryRunStateStore();
     let executorCalls = 0;

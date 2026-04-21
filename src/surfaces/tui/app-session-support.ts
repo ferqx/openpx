@@ -30,6 +30,53 @@ type KernelEventDeps = SessionSyncDeps & {
   onApplyStreamTextChunk: (chunkContent: string) => void;
 };
 
+function mergeTaskFailureIntoSession(
+  current: RuntimeSessionState | undefined,
+  failure: Extract<TuiKernelEvent, { type: "task.failed" }>["payload"],
+): RuntimeSessionState | undefined {
+  const threadId = failure.threadId;
+  if (!current || !threadId || current.threadId !== threadId) {
+    return current;
+  }
+
+  const failedTask = current.tasks.find(
+    (task) => task.threadId === threadId && task.status === "running",
+  );
+  const failureContent = `任务失败：${failure.error}`;
+  const currentMessages = current.messages ?? [];
+  const hasFailureMessage = currentMessages.some(
+    (message) => message.role === "assistant" && message.content === failureContent,
+  );
+  const messages = hasFailureMessage
+    ? currentMessages
+    : [
+        ...currentMessages,
+        {
+          messageId: `task_failed_${failedTask?.taskId ?? threadId}`,
+          threadId,
+          role: "assistant" as const,
+          content: failureContent,
+        },
+      ];
+
+  return {
+    ...current,
+    status: "completed",
+    stage: "idle",
+    tasks: current.tasks.map((task) =>
+      task.threadId === threadId && task.status === "running"
+        ? {
+            ...task,
+            status: "failed" as const,
+            summary: task.summary || failureContent,
+          }
+        : task,
+    ),
+    messages,
+    pauseSummary: failureContent,
+  };
+}
+
 // 会话同步支持层：
 // 只负责把 kernel/session event 翻译成 TUI 的会话状态变化，
 // 不处理输入命令，也不拥有界面本身的布局逻辑。
@@ -89,6 +136,21 @@ export function applyKernelEventToApp(event: TuiKernelEvent, deps: KernelEventDe
     deps.onMarkLiveSessionActivity();
     deps.onSetModelStatus("idle");
     deps.onClearActiveTaskIntent();
+    return;
+  }
+
+  if (event.type === "task.failed") {
+    const nextSession = mergeTaskFailureIntoSession(deps.session, event.payload);
+    deps.onSetModelStatus("idle");
+    deps.onUpdateThinking(null);
+    deps.onClearActiveTaskIntent();
+    if (nextSession) {
+      syncSessionStateIntoApp({
+        ...deps,
+        result: nextSession,
+        source: "event",
+      });
+    }
     return;
   }
 

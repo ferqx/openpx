@@ -136,6 +136,13 @@ export function resolveApprovalToolRequest(
       path: approval.toolRequest.path
         ? resolve(workspaceRoot, approval.toolRequest.path)
         : undefined,
+      command: approval.toolRequest.command,
+      commandArgs: approval.toolRequest.commandArgs,
+      cwd: approval.toolRequest.cwd
+        ? resolve(workspaceRoot, approval.toolRequest.cwd)
+        : undefined,
+      timeoutMs: approval.toolRequest.timeoutMs,
+      approvedOutsideWorkspaceTarget: approval.toolRequest.approvedOutsideWorkspaceTarget,
       action: approval.toolRequest.action as ToolExecuteRequest["action"],
       changedFiles: approval.toolRequest.changedFiles,
     };
@@ -333,6 +340,7 @@ export function buildFinalResponderPrompt(input: {
       "Treat the recent conversation transcript as authoritative context for identity, prior answers, and follow-up questions.",
       "If the user asks a conversational follow-up such as recalling a name, answer from the transcript instead of restarting with a generic greeting.",
       "Only summarize the durable final outcome; do not present verification, approval, or execution notes as separate final answers.",
+      "Only claim files were created or modified when Completed artifacts are present; if no artifact is present, explicitly say no file was created or modified.",
       "Be concise and mention important changed artifacts when they are known.",
     ].join("\n"),
   );
