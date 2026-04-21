@@ -36,6 +36,43 @@ describe("SqliteThreadStore Scope", () => {
     expect(reloaded?.status).toBe("idle");
   });
 
+  test("persists thread mode and defaults legacy rows to normal", async () => {
+    const thread = {
+      ...createThread("thread-mode"),
+      workspaceRoot: "/path/to/workspace",
+      projectId: "project-1",
+      revision: 1,
+      threadMode: "plan" as const,
+    };
+
+    await store.save(thread);
+
+    const reloaded = await store.get("thread-mode");
+    expect(reloaded?.threadMode).toBe("plan");
+
+    db.run(
+      `INSERT INTO threads (
+         thread_id,
+         workspace_root,
+         project_id,
+         revision,
+         status,
+         updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        "legacy-thread-mode",
+        "/path/to/workspace",
+        "project-1",
+        1,
+        "active",
+        new Date().toISOString(),
+      ],
+    );
+
+    const legacyReloaded = await store.get("legacy-thread-mode");
+    expect(legacyReloaded?.threadMode).toBe("normal");
+  });
+
   test("increments revision on save", async () => {
     const thread = {
       ...createThread("thread-1"),

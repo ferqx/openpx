@@ -3,6 +3,7 @@ import { deriveBaseSessionStage, type RuntimeSessionState, type SessionStage } f
 import { parseApprovalDecision } from "./app-state-support";
 import type { TuiSessionResult } from "./hooks/use-kernel";
 import type { TuiLaunchState } from "./view-state";
+import type { PlanDecisionRequest } from "../../runtime/planning/planner-result";
 
 type InputSupportDeps = {
   launchState: TuiLaunchState;
@@ -21,6 +22,7 @@ type InputSupportDeps = {
     | { type: "thread_new" }
     | { type: "approve_request"; payload: { approvalRequestId: string } }
     | { type: "reject_request"; payload: { approvalRequestId: string } }
+    | { type: "resolve_plan_decision"; payload: { optionId: string; optionLabel: string; input: string } }
     | { type: "plan_input"; payload: { text: string } }
     | { type: "submit_input"; payload: { text: string } }
   ) => Promise<TuiSessionResult>;
@@ -29,12 +31,14 @@ type InputSupportDeps = {
 
 export function resolveComposerMode(
   session: RuntimeSessionState | undefined,
-): "input" | "confirm" | "blocked" {
+): "input" | "confirm" {
+  if (session?.planDecision) {
+    return "input";
+  }
+
   return session?.status === "waiting_approval"
     ? "confirm"
-    : session?.status === "blocked"
-      ? "blocked"
-      : "input";
+    : "input";
 }
 
 export function deriveInteractiveStage(input: {
@@ -60,6 +64,58 @@ export function deriveInteractiveStage(input: {
   }
 
   return "idle";
+}
+
+function resolvePlanDecisionOption(decision: PlanDecisionRequest, text: string) {
+  const value = text.trim();
+  const numeric = Number.parseInt(value, 10);
+  if (Number.isInteger(numeric) && String(numeric) === value) {
+    return decision.options[numeric - 1];
+  }
+
+  return decision.options.find((option) => option.id === value || option.label === value);
+}
+
+function buildPlanDecisionContinuation(decision: PlanDecisionRequest, option: PlanDecisionRequest["options"][number]): string {
+  return [
+    decision.sourceInput ?? decision.question,
+    "",
+    `已选择方案：${option.label}`,
+    option.description,
+    option.continuation,
+  ].join("\n");
+}
+
+async function submitPlanDecisionInput(
+  deps: Pick<
+    InputSupportDeps,
+    "session" | "onMarkLiveSessionActivity" | "onAppendUserMessage" | "onSetActiveTaskIntent" | "onHandleCommand" | "onApplyKernelResult"
+  >,
+  text: string,
+) {
+  const decision = deps.session?.planDecision;
+  if (!decision) {
+    return false;
+  }
+
+  const option = resolvePlanDecisionOption(decision, text);
+  if (!option) {
+    return true;
+  }
+
+  deps.onMarkLiveSessionActivity();
+  deps.onAppendUserMessage(`选择方案：${option.label}`);
+  deps.onSetActiveTaskIntent("execute");
+  const result = await deps.onHandleCommand({
+    type: "resolve_plan_decision",
+    payload: {
+      optionId: option.id,
+      optionLabel: option.label,
+      input: buildPlanDecisionContinuation(decision, option),
+    },
+  });
+  deps.onApplyKernelResult(result, "command");
+  return true;
 }
 
 // 输入支持层：
@@ -204,10 +260,6 @@ export async function submitComposerInput(
   text: string,
 ) {
   const composerMode = resolveComposerMode(deps.session);
-  if (composerMode === "blocked") {
-    return;
-  }
-
   if (composerMode === "confirm") {
     await submitApprovalInput(deps, text);
     return;
@@ -215,6 +267,10 @@ export async function submitComposerInput(
 
   const value = text.trim();
   if (!value) {
+    return;
+  }
+
+  if (await submitPlanDecisionInput(deps, value)) {
     return;
   }
 

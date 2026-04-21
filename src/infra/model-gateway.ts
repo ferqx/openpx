@@ -531,9 +531,10 @@ class OpenAICompatibleModelGateway implements ModelGateway {
         [
           "system",
           [
-            "You are the planning worker.",
+            "You are the planning agent run.",
             "Return JSON with this exact shape:",
-            '{"summary":"<concise plan summary>","plannerResult":{"workPackages":[{"id":"pkg_id","objective":"...","capabilityMarker":"respond_only","capabilityFamily":"approval_gated_delete","requiresApproval":false,"allowedTools":["read_file"],"inputRefs":["thread:goal"],"expectedArtifacts":["patch:file"]}],"acceptanceCriteria":["..."],"riskFlags":[],"approvalRequiredActions":[],"verificationScope":["..."]}}',
+            '{"summary":"<concise plan summary>","plannerResult":{"workPackages":[{"id":"pkg_id","objective":"...","capabilityMarker":"implementation_work","capabilityFamily":"feature_implementation","requiresApproval":false,"allowedTools":["read_file","apply_patch"],"inputRefs":["thread:goal"],"expectedArtifacts":["patch:file"]}],"acceptanceCriteria":["..."],"riskFlags":[],"approvalRequiredActions":[],"verificationScope":["..."],"decisionRequest":{"question":"<question when user choice is required>","options":[{"id":"option_a","label":"...","description":"...","continuation":"..."},{"id":"option_b","label":"...","description":"...","continuation":"..."}]}}}',
+            "Use implementation_work for actionable feature/build/change requests, respond_only for pure conversation, and decisionRequest with 2-4 concrete options when a decision is required before execution.",
           ].join(" "),
         ],
         ["user", input.prompt],

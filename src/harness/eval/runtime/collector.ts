@@ -2,19 +2,20 @@ import { createSqlite } from "../../../persistence/sqlite/sqlite-client";
 import { closeSqliteHandle } from "../../../persistence/sqlite/sqlite-client";
 import { migrateSqlite } from "../../../persistence/sqlite/sqlite-migrator";
 import { SqliteApprovalStore } from "../../../persistence/sqlite/sqlite-approval-store";
+import { SqliteAgentRunStore } from "../../../persistence/sqlite/sqlite-agent-run-store";
 import { SqliteEventLog } from "../../../persistence/sqlite/sqlite-event-log";
 import { SqliteExecutionLedger } from "../../../persistence/sqlite/sqlite-execution-ledger";
 import { SqliteRunStateStore } from "../../../persistence/sqlite/sqlite-run-state-store";
 import { SqliteRunStore } from "../../../persistence/sqlite/sqlite-run-store";
 import { SqliteTaskStore } from "../../../persistence/sqlite/sqlite-task-store";
 import { SqliteThreadStore } from "../../../persistence/sqlite/sqlite-thread-store";
-import { SqliteWorkerStore } from "../../../persistence/sqlite/sqlite-worker-store";
 import type { ApprovalRequest } from "../../../domain/approval";
+import type { AgentRunRecord } from "../../../domain/agent-run";
 import type { Event } from "../../../domain/event";
 import type { Run } from "../../../domain/run";
 import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
-import type { ApprovalSuspension } from "../../core/run-loop/approval-suspension";
+import type { RunSuspension } from "../../core/run-loop/approval-suspension";
 import type { ContinuationEnvelope } from "../../core/run-loop/continuation";
 import type { RunLoopState } from "../../core/run-loop/step-types";
 import { buildRuntimeSnapshot } from "../../protocol/views/runtime-snapshot-builder";
@@ -27,7 +28,6 @@ import {
   type SessionThreadSummary,
 } from "../../core/projection/session-view-projector";
 import { resolveConfig } from "../../../shared/config";
-import type { WorkerRecord } from "../../../control/workers/worker-types";
 
 type ContinuationRow = {
   payload_json: string;
@@ -46,10 +46,10 @@ export type RuntimeCollectedEvidence = {
   tasks: Task[];
   approvals: ApprovalRequest[];
   pendingApprovals: ApprovalRequest[];
-  workers: WorkerRecord[];
+  agentRuns: AgentRunRecord[];
   events: Event[];
   ledgerEntries: Awaited<ReturnType<SqliteExecutionLedger["listByThread"]>>;
-  suspensions: ApprovalSuspension[];
+  suspensions: RunSuspension[];
   continuations: ContinuationEnvelope[];
   snapshot?: RuntimeSnapshot;
   sessionProjection?: ProjectedSessionResult;
@@ -85,7 +85,7 @@ export async function collectRuntimeEvidence(input: {
   const runStore = new SqliteRunStore(db);
   const taskStore = new SqliteTaskStore(db);
   const approvalStore = new SqliteApprovalStore(db);
-  const workerStore = new SqliteWorkerStore(db);
+  const agentRunStore = new SqliteAgentRunStore(db);
   const eventLog = new SqliteEventLog(db);
   const executionLedger = new SqliteExecutionLedger(db);
   const runStateStore = new SqliteRunStateStore(db);
@@ -118,7 +118,7 @@ export async function collectRuntimeEvidence(input: {
         tasks: [],
         approvals: [],
         pendingApprovals: [],
-        workers: [],
+        agentRuns: [],
         events: [],
         ledgerEntries: [],
         suspensions: [],
@@ -127,12 +127,12 @@ export async function collectRuntimeEvidence(input: {
       };
     }
 
-    const [runs, tasks, approvals, pendingApprovals, workers, events, ledgerEntries, suspensions] = await Promise.all([
+    const [runs, tasks, approvals, pendingApprovals, agentRuns, events, ledgerEntries, suspensions] = await Promise.all([
       runStore.listByThread(activeThread.threadId),
       taskStore.listByThread(activeThread.threadId),
       approvalStore.listByThread(activeThread.threadId),
       approvalStore.listPendingByThread(activeThread.threadId),
-      workerStore.listByThread(activeThread.threadId),
+      agentRunStore.listByThread(activeThread.threadId),
       eventLog.listByThread(activeThread.threadId),
       executionLedger.listByThread(activeThread.threadId),
       runStateStore.listSuspensionsByThread(activeThread.threadId),
@@ -157,6 +157,7 @@ export async function collectRuntimeEvidence(input: {
         return {
           threadId: thread.threadId,
           status: thread.status,
+          threadMode: thread.threadMode,
           activeRunId: latestRun?.runId,
           activeRunStatus: latestRun?.status,
           narrativeSummary: thread.narrativeState?.threadSummary,
@@ -194,7 +195,7 @@ export async function collectRuntimeEvidence(input: {
       runs,
       tasks,
       pendingApprovals,
-      workers,
+      agentRuns,
       events,
       fallbackLastEventSeq: 0,
       narrativeSummary: activeThread.narrativeState?.threadSummary,
@@ -205,13 +206,14 @@ export async function collectRuntimeEvidence(input: {
         threadId: activeThread.threadId,
         recoveryFacts: activeThread.recoveryFacts,
       },
-      workers,
+      agentRuns,
     });
 
     const sessionProjection = await projectSessionResult({
       thread: {
         threadId: activeThread.threadId,
         status: activeThread.status,
+        threadMode: activeThread.threadMode,
         recoveryFacts: activeThread.recoveryFacts,
         narrativeState: activeThread.narrativeState,
         workingSetWindow: activeThread.workingSetWindow,
@@ -221,7 +223,7 @@ export async function collectRuntimeEvidence(input: {
       projectId: config.projectId,
       finalResponse: stableArtifacts.answers[0]?.content,
       pauseSummary: latestRun?.blockingReason?.message,
-      latestExecutionStatus: snapshot.latestExecutionStatus,
+      latestExecutionStatus: snapshot.latestExecutionStatus === "blocked" ? "completed" as const : snapshot.latestExecutionStatus,
       recommendationReason:
         latestRun?.blockingReason?.kind === "human_recovery"
           ? latestRun.blockingReason.message
@@ -230,7 +232,7 @@ export async function collectRuntimeEvidence(input: {
       tasks,
       answers: stableArtifacts.answers,
       messages: stableArtifacts.messages,
-      workers: stableArtifacts.workers,
+      agentRuns: stableArtifacts.agentRuns,
       threads: threadSummaries,
     });
 
@@ -246,7 +248,7 @@ export async function collectRuntimeEvidence(input: {
       tasks,
       approvals,
       pendingApprovals,
-      workers,
+      agentRuns,
       events,
       ledgerEntries,
       suspensions,
@@ -260,7 +262,7 @@ export async function collectRuntimeEvidence(input: {
     await runStore.close();
     await taskStore.close();
     await approvalStore.close();
-    await workerStore.close();
+    await agentRunStore.close();
     await eventLog.close();
     await executionLedger.close();
     await runStateStore.close();

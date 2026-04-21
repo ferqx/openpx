@@ -11,7 +11,7 @@ export type ControlTask = {
   summary: string;
   status: ControlTaskStatus;
   blockingReason?: {
-    kind: "waiting_approval" | "human_recovery";
+    kind: "waiting_approval" | "plan_decision" | "human_recovery";
     message: string;
   };
 };
@@ -29,7 +29,7 @@ export function createControlTask(input: {
   summary: string;
   status?: ControlTaskStatus;
   blockingReason?: {
-    kind: "waiting_approval" | "human_recovery";
+    kind: "waiting_approval" | "plan_decision" | "human_recovery";
     message: string;
   };
 }): ControlTask {

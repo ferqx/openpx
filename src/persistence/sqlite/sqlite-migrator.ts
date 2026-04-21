@@ -74,6 +74,7 @@ export function migrateSqlite(db: Database): void {
       project_id TEXT,
       revision INTEGER DEFAULT 1,
       status TEXT NOT NULL,
+      thread_mode TEXT DEFAULT 'normal',
       updated_at TEXT,
       recommendation_reason TEXT,
       narrative_summary TEXT,
@@ -102,6 +103,7 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "threads", "workspace_root", "TEXT");
   ensureColumn(db, "threads", "project_id", "TEXT");
   ensureColumn(db, "threads", "revision", "INTEGER DEFAULT 1");
+  ensureColumn(db, "threads", "thread_mode", "TEXT DEFAULT 'normal'");
   ensureColumn(db, "threads", "recommendation_reason", "TEXT");
   ensureColumn(db, "threads", "narrative_summary", "TEXT");
   ensureColumn(db, "threads", "narrative_revision", "INTEGER DEFAULT 0");
@@ -112,8 +114,8 @@ export function migrateSqlite(db: Database): void {
   ensureColumn(db, "approvals", "run_id", "TEXT");
 
   db.run(`
-    CREATE TABLE IF NOT EXISTS workers (
-      worker_id TEXT PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      agent_run_id TEXT PRIMARY KEY,
       thread_id TEXT NOT NULL,
       task_id TEXT NOT NULL,
       role TEXT NOT NULL,
@@ -149,7 +151,7 @@ export function migrateSqlite(db: Database): void {
   db.run("CREATE INDEX IF NOT EXISTS idx_memories_thread_id ON memories (thread_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_events_thread_sequence ON events (thread_id, sequence)");
   db.run("CREATE INDEX IF NOT EXISTS idx_approvals_thread_id ON approvals (thread_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_workers_thread_id ON workers (thread_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_agent_runs_thread_id ON agent_runs (thread_id)");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS run_loop_states (

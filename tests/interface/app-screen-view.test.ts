@@ -10,6 +10,8 @@ describe("app screen view builders", () => {
   test("builds conversation and utility slices from app state", () => {
     const session = {
       status: "completed" as const,
+      primaryAgent: "build" as const,
+      threadMode: "normal" as const,
       finalResponse: "Awaiting answer",
       threadId: "thread-1",
       workspaceRoot: "/tmp/workspace",
@@ -18,7 +20,7 @@ describe("app screen view builders", () => {
       approvals: [],
       answers: [],
       messages: [],
-      workers: [],
+      agentRuns: [],
       narrativeSummary: "summary",
       threads: [
         {
@@ -27,6 +29,7 @@ describe("app screen view builders", () => {
           projectId: "project-1",
           revision: 1,
           status: "active" as const,
+          threadMode: "normal" as const,
         },
       ],
     };
@@ -58,15 +61,17 @@ describe("app screen view builders", () => {
 
     expect(conversationView.showWelcome).toBe(true);
     expect(conversationView.modelStatus).toBe("responding");
-    expect(conversationView.workers).toEqual([]);
+    expect(conversationView.agentRuns).toEqual([]);
     expect(utilityView.selectedSessionThreadId).toBe("thread-1");
   });
 
   test("builds chrome and composer slices", () => {
     const chromeView = buildChromeView({
       session: {
-        status: "blocked",
+        status: "completed",
         pauseSummary: "blocked",
+        primaryAgent: "build",
+        threadMode: "plan",
         threadId: "thread-1",
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
@@ -74,12 +79,11 @@ describe("app screen view builders", () => {
         approvals: [],
         answers: [],
         messages: [],
-        workers: [],
-        blockingReason: { kind: "human_recovery", message: "Inspect workspace" },
+        agentRuns: [],
         threads: [],
       },
       runtimeStatus: "connected",
-      stage: "blocked",
+      stage: "idle",
       showThreadPanel: true,
       modelName: "model",
       thinkingLevel: "default",
@@ -94,7 +98,9 @@ describe("app screen view builders", () => {
       onSettingsClose: () => undefined,
     });
 
-    expect(chromeView.stage).toBe("blocked");
+    expect(chromeView.primaryAgent).toBe("build");
+    expect(chromeView.threadMode).toBe("plan");
+    expect(chromeView.stage).toBe("idle");
     expect(chromeView.showThreadPanel).toBe(true);
     expect(composerView.composerMode).toBe("input");
   });

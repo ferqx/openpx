@@ -607,9 +607,10 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
     session?.tasks,
     session?.finalResponse,
     session?.pauseSummary,
+    session?.planDecision,
     session?.verificationSummary,
     session?.executionSummary,
-    session?.workers,
+    session?.agentRuns,
   ]);
 
   const utilityView = useMemo<ScreenUtilityView>(() => {
@@ -660,7 +661,6 @@ export function App(input: { kernel: TuiKernel; settingsStore?: SettingsConfigSt
   }, [
     chromeModelConfig,
     runtimeStatus,
-    session?.blockingReason,
     session?.projectId,
     session?.recommendationReason,
     session?.threadId,

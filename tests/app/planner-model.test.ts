@@ -94,6 +94,148 @@ describe("planner model integration", () => {
     expect(result.executionSummary).toBe("Executed request: Update startup message copy");
   });
 
+  test("continues after planning when the thread is in plan mode", async () => {
+    let verifyCalls = 0;
+    let respondCalls = 0;
+    const modelGateway = {
+      async plan() {
+        return {
+          summary: "先梳理 runtime truth，再拆协议投影，最后补 UI 显示。",
+          plannerResult: {
+            workPackages: [
+              {
+                id: "pkg_truth",
+                objective: "梳理 thread truth 与持久化字段",
+                capabilityMarker: "respond_only" as const,
+                allowedTools: ["read_file"],
+                inputRefs: ["thread:goal"],
+                expectedArtifacts: ["summary:pkg_truth"],
+              },
+            ],
+            acceptanceCriteria: ["threadMode 可持久化且默认 normal"],
+            riskFlags: ["避免把 /plan 继续当作文本前缀 hack"],
+            approvalRequiredActions: [],
+            verificationScope: ["tests/runtime/runtime-snapshot.test.ts"],
+          },
+        };
+      },
+      async verify() {
+        verifyCalls += 1;
+        return { summary: "verified", isValid: true };
+      },
+      async respond() {
+        respondCalls += 1;
+        return { summary: "responded" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const workspaceRoot = "/tmp/planner-workspace-plan-mode";
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir: ":memory:",
+      modelGateway,
+    });
+    const thread = {
+      ...createThread("thread-plan-mode", workspaceRoot, ctx.config.projectId),
+      threadMode: "plan" as const,
+    };
+    await ctx.stores.threadStore.save(thread);
+
+    const result = await ctx.controlPlane.startRootTask(thread.threadId, "把 agent/mode 语义拆清楚");
+
+    expect(result.status).toBe("completed");
+    expect(result.finalResponse).toBe("responded");
+    expect(result.executionSummary).toBe("Executed request: 梳理 thread truth 与持久化字段");
+    expect(verifyCalls).toBe(1);
+    expect(respondCalls).toBe(1);
+  });
+
+  test("pauses for a plan decision without executing when planner asks for user choice", async () => {
+    let verifyCalls = 0;
+    let respondCalls = 0;
+    const modelGateway = {
+      async plan() {
+        return {
+          summary: "ASK_USER_DECISION: 登录界面有两种可行方向。",
+          plannerResult: {
+            workPackages: [],
+            acceptanceCriteria: ["用户选择方案后再实现"],
+            riskFlags: [],
+            approvalRequiredActions: [],
+            verificationScope: ["选择后继续执行"],
+            decisionRequest: {
+              question: "请选择登录界面的实现方案",
+              options: [
+                {
+                  id: "simple",
+                  label: "简洁表单",
+                  description: "只包含账号、密码和提交按钮。",
+                  continuation: "按简洁表单方案实现登录界面。",
+                },
+                {
+                  id: "brand",
+                  label: "品牌化登录页",
+                  description: "增加品牌区、辅助说明和更完整的视觉层次。",
+                  continuation: "按品牌化登录页方案实现登录界面。",
+                },
+              ],
+            },
+          },
+        };
+      },
+      async verify() {
+        verifyCalls += 1;
+        return { summary: "verified", isValid: true };
+      },
+      async respond() {
+        respondCalls += 1;
+        return { summary: "responded" };
+      },
+      onStatusChange() {
+        return () => {};
+      },
+      onEvent() {
+        return () => {};
+      },
+    };
+
+    const workspaceRoot = "/tmp/planner-workspace-plan-decision";
+    const ctx = await createAppContext({
+      workspaceRoot,
+      dataDir: ":memory:",
+      modelGateway,
+    });
+    const thread = {
+      ...createThread("thread-plan-decision", workspaceRoot, ctx.config.projectId),
+      threadMode: "plan" as const,
+    };
+    await ctx.stores.threadStore.save(thread);
+
+    const result = await ctx.controlPlane.startRootTask(thread.threadId, "我要开发一个登录界面");
+
+    expect(result.status).toBe("completed");
+    expect(result.planDecision?.question).toBe("请选择登录界面的实现方案");
+    expect(result.planDecision?.sourceInput).toBe("我要开发一个登录界面");
+    expect(result.finalResponse).toBeUndefined();
+    const latestRun = await ctx.stores.runStore.getLatestByThread(thread.threadId);
+    const activeSuspension = latestRun ? await ctx.stores.runStateStore.loadActiveSuspensionByRun(latestRun.runId) : undefined;
+    const hydrated = await ctx.kernel.hydrateSession();
+    expect(latestRun?.status).toBe("blocked");
+    expect(latestRun?.blockingReason?.kind).toBe("plan_decision");
+    expect(result.task.blockingReason?.kind).toBe("plan_decision");
+    expect(activeSuspension?.reasonKind).toBe("waiting_plan_decision");
+    expect(hydrated?.recoveryFacts?.blocking?.kind).toBe("plan_decision");
+    expect(hydrated?.planDecision?.question).toBe("请选择登录界面的实现方案");
+    expect(verifyCalls).toBe(0);
+    expect(respondCalls).toBe(0);
+  });
+
   test("normalizes approval-gated delete intent when planner returns only a plain summary", async () => {
     const modelGateway = {
       async plan() {

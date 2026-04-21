@@ -9,7 +9,25 @@
 - 它回答的问题：
   “我们在哪条持续的工作线上？”
 - 主要职责：
-  保存长期上下文、恢复事实、项目归属与叙事状态
+  保存长期上下文、恢复事实、项目归属、叙事状态，以及当前 `thread mode`
+
+## Primary Agent
+
+- 中文含义：主代理
+- 定义位置：`src/control/agents/agent-spec.ts`
+- 它回答的问题：
+  “当前线程默认由哪个产品层代理承担主要工作？”
+- 当前正式值：
+  `Build`
+
+## Thread Mode
+
+- 中文含义：线程模式
+- 定义位置：`src/control/agents/thread-mode.ts`
+- 它回答的问题：
+  “当前主代理在这条 thread 上按什么方式工作？”
+- 当前正式值：
+  `normal | plan`
 
 ## Run
 
@@ -69,16 +87,46 @@
 - 它回答的问题：
   “runtime 与外部 client/TUI 之间如何交换命令、事件和视图？”
 
+## Subagent
+
+- 中文含义：子代理合同
+- 定义位置：`src/control/agents/subagent-spec.ts`
+- 它回答的问题：
+  “主代理按需可调用哪些专业协作单元？”
+- 当前正式值：
+  `Explore / Verify / Review / General`
+
+## System Agent
+
+- 中文含义：系统代理合同
+- 定义位置：`src/control/agents/system-agent-spec.ts`
+- 它回答的问题：
+  “哪些代理只服务系统内部维护，而不是直接作为用户工作对象？”
+
+## AgentRun
+
+- 中文含义：运行实例
+- 当前主要落点：
+  - `src/domain/agent-run.ts`
+  - `src/control/agent-runs/agent-run-manager.ts`
+  - `src/surfaces/tui/components/agent-run-panel.tsx`
+- 它回答的问题：
+  “当前有哪些内部执行实例真的被拉起，它们处于什么生命周期状态？”
+- 说明：
+  `AgentRun` 已经同时成为对外和内部的正式运行实例语义；旧 `worker` 只应出现在历史设计文档里
+
 ## 概念关系
 
 当前最稳定的外部模型是：
 
-`thread -> run -> task -> tool -> approval`
+`primary agent(Build) -> thread(mode) -> run -> task -> tool -> approval`
 
 其中：
 
-- `worker`
-  当前是内部运行时概念，不是主要产品概念
+- `subagent`
+  是产品/合同层协作单元，不等于一定已经实例化
+- `AgentRun`
+  是内部运行实例，不等于 primary agent 本体
 - `planner / executor / verifier / run-loop / step`
   当前是实现机制，不是用户面向的主要架构词汇
 
@@ -86,5 +134,7 @@
 
 - 不要用 `thread` 代替 `task` 状态
 - 不要把 `task` 当作长期上下文容器
+- 不要把 `Plan` 写成与 `Build` 对称的第二个主代理
+- 不要把 `AgentRun` 面板解释为产品层 agent 面板
 - 不要让 TUI 发明第二套业务真相
 - 如果某个术语只能通过内部实现理解，应优先把它压回运行时内部

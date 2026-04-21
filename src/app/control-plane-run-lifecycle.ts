@@ -48,6 +48,7 @@ export type RootTaskFinalizationResult = {
   verificationSummary?: string;
   pauseSummary?: string;
   recommendationReason?: string;
+  planDecision?: RunLoopEngineResult["planDecision"];
   lastCompletedToolCallId?: string;
   lastCompletedToolName?: string;
   pendingToolCallId?: string;
@@ -70,7 +71,11 @@ export async function prepareRootTaskExecution(
       throw new Error(`no run found for thread ${threadId} to resume`);
     }
 
-    const run = await deps.updateRunStatus(latestRun, "running");
+    const run = await deps.updateRunStatus(latestRun, "running", {
+      blockingReason: undefined,
+      endedAt: undefined,
+      resultSummary: undefined,
+    });
     const tasks = await deps.listTasksByThread(threadId);
     const lastTask = tasks[tasks.length - 1];
     if (!lastTask) {
@@ -136,10 +141,6 @@ export async function finalizeRootTaskExecution(
         ? "waiting_approval"
         : "completed";
 
-  const finalTask = await deps.saveTaskStatus(
-    task,
-    status === "completed" ? "completed" : "blocked",
-  );
   const recommendationReason =
     status !== "completed" && approvals.length === 0
       ? engineResult.recommendationReason
@@ -154,22 +155,35 @@ export async function finalizeRootTaskExecution(
         ?? "Execution paused.",
       )
     : undefined;
+  const blockingKind: "waiting_approval" | "plan_decision" | "human_recovery" =
+    status === "waiting_approval" && approvals.length > 0
+      ? "waiting_approval"
+      : engineResult.planDecision
+        ? "plan_decision"
+        : "human_recovery";
+  const taskBlockingReason = status !== "completed"
+    ? {
+        kind: blockingKind,
+        message: pauseSummary ?? "Execution paused.",
+      }
+    : undefined;
+  const finalTask = await deps.saveTaskStatus(
+    {
+      ...task,
+      blockingReason: taskBlockingReason,
+    },
+    status === "completed" ? "completed" : "blocked",
+  );
 
   // run 的 blockingReason 代表“为什么现在不能继续自动推进”。
-  // 有审批时标记 waiting_approval；否则说明进入了人工恢复场景。
+  // 有审批时标记 waiting_approval；有方案选择时标记 plan_decision；否则说明进入人工恢复场景。
   await deps.updateRunStatus(
     run,
     status === "completed" ? "completed" : status === "waiting_approval" ? "waiting_approval" : "blocked",
     {
       activeTaskId: finalTask.taskId,
       resultSummary: finalResponse,
-      blockingReason:
-        status !== "completed"
-          ? {
-            kind: status === "waiting_approval" && approvals.length > 0 ? "waiting_approval" : "human_recovery",
-            message: pauseSummary ?? "Execution paused.",
-          }
-        : undefined,
+      blockingReason: taskBlockingReason,
       endedAt: status === "completed" ? new Date().toISOString() : undefined,
     },
   );
@@ -184,6 +198,7 @@ export async function finalizeRootTaskExecution(
     verificationSummary,
     pauseSummary,
     recommendationReason,
+    planDecision: engineResult.planDecision,
     lastCompletedToolCallId: engineResult.lastCompletedToolCallId,
     lastCompletedToolName: engineResult.lastCompletedToolName,
     pendingToolCallId: engineResult.pendingToolCallId,

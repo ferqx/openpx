@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createWorkerScratchPolicy } from "../../src/control/context/worker-scratch-policy";
+import { createAgentRunScratchPolicy } from "../../src/control/context/agent-run-scratch-policy";
 
-describe("WorkerScratchPolicy", () => {
-  test("marks worker scratch as non-durable by default", () => {
-    const policy = createWorkerScratchPolicy();
+describe("AgentRunScratchPolicy", () => {
+  test("marks scratch as non-durable by default", () => {
+    const policy = createAgentRunScratchPolicy();
     const entry = {
       kind: "scratch",
       content: "Temporary research note",
@@ -14,7 +14,7 @@ describe("WorkerScratchPolicy", () => {
   });
 
   test("allows persistence only if explicitly marked for promotion", () => {
-    const policy = createWorkerScratchPolicy();
+    const policy = createAgentRunScratchPolicy();
     const scratchEntry = {
       kind: "scratch",
       content: "Hidden internal detail",

@@ -7,7 +7,7 @@ import { render } from "ink-testing-library";
 import { main } from "../../src/app/main";
 import { App } from "../../src/surfaces/tui/app";
 import type { TuiKernel } from "../../src/surfaces/tui/hooks/use-kernel";
-import type { ApprovalCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../../src/surfaces/tui/commands";
+import type { ApprovalCommand, PlanDecisionCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../../src/surfaces/tui/commands";
 import type { RuntimeSessionState } from "../../src/surfaces/tui/runtime/runtime-session";
 import type { ResolvedSettingsConfig } from "../../src/surfaces/tui/settings/config-resolver";
 import { getPrimaryModelName, resolveConfig } from "../../src/shared/config";
@@ -30,6 +30,8 @@ describe("TUI App", () => {
 
   function createCompletedSessionResult(overrides: Partial<RuntimeSessionState> = {}): RuntimeSessionState {
     return {
+      primaryAgent: "build",
+      threadMode: "normal",
       status: "completed",
       finalResponse: "Awaiting answer",
       workspaceRoot: "/tmp/workspace",
@@ -38,7 +40,7 @@ describe("TUI App", () => {
       approvals: [],
       answers: [],
       messages: [],
-      workers: [],
+      agentRuns: [],
       threads: [],
       ...overrides,
     };
@@ -151,7 +153,7 @@ describe("TUI App", () => {
   }
 
   test.skip("renders the core task shell regions and submits composer input", async () => {
-    let receivedCommand: SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand | undefined;
+    let receivedCommand: SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand | undefined;
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -192,7 +194,7 @@ describe("TUI App", () => {
   });
 
   test.skip("supports moving the composer cursor and inserting text in the middle of input", async () => {
-    let receivedCommand: SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand | undefined;
+    let receivedCommand: SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand | undefined;
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -228,7 +230,7 @@ describe("TUI App", () => {
   });
 
   test.skip("supports multiline composer input via ctrl+j", async () => {
-    let receivedCommand: SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand | undefined;
+    let receivedCommand: SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand | undefined;
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -263,7 +265,7 @@ describe("TUI App", () => {
   });
 
   test.skip("supports deleting text with backspace before submit", async () => {
-    let receivedCommand: SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand | undefined;
+    let receivedCommand: SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand | undefined;
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -306,6 +308,8 @@ describe("TUI App", () => {
       },
       async hydrateSession() {
         return {
+          primaryAgent: "build",
+          threadMode: "normal",
           status: "completed",
             finalResponse: "Previous thread summary should stay out of the main stream on launch.",
           threadId: "thread_previous",
@@ -315,7 +319,7 @@ describe("TUI App", () => {
           tasks: [],
           approvals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -384,7 +388,7 @@ describe("TUI App", () => {
   });
 
   test("does not replay hydrated summary into a fresh launch after the first new message", async () => {
-    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand> = [];
+    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
     const kernel: TuiKernel = {
       events: {
@@ -442,6 +446,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread_fresh",
         status: "completed",
+        threadMode: "normal",
         finalResponse: "Fresh answer for this launch only.",
       },
     });
@@ -460,7 +465,7 @@ describe("TUI App", () => {
   });
 
   test("does not flash the previous assistant answer when submitting a second prompt", async () => {
-    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand> = [];
+    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
     let submitCount = 0;
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
 
@@ -526,6 +531,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-repeat",
         status: "completed",
+        threadMode: "normal",
         finalResponse: "First answer.",
       },
     });
@@ -547,6 +553,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-repeat",
         status: "completed",
+        threadMode: "normal",
           finalResponse: "Second answer.",
       },
     });
@@ -608,6 +615,7 @@ describe("TUI App", () => {
       payload: {
         status: "completed",
         threadId: "thread_1",
+        threadMode: "normal",
           finalResponse: "Done.",
         tasks: [
           {
@@ -633,7 +641,7 @@ describe("TUI App", () => {
   });
 
   test("creates a new thread before submitting the first input of this launch", async () => {
-    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand> = [];
+    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -677,7 +685,7 @@ describe("TUI App", () => {
   });
 
   test("shows a local sessions pane without mutating runtime state", async () => {
-    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand> = [];
+    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -694,6 +702,7 @@ describe("TUI App", () => {
               projectId: "project-1",
               revision: 4,
               status: "active",
+              threadMode: "normal",
               narrativeSummary: "Current active runtime recovery thread.",
               pendingApprovalCount: 1,
             },
@@ -703,6 +712,7 @@ describe("TUI App", () => {
               projectId: "project-1",
               revision: 2,
               status: "idle",
+              threadMode: "normal",
               activeRunStatus: "blocked",
               narrativeSummary: "Manual recovery pending for a risky patch.",
               blockingReasonKind: "human_recovery",
@@ -732,13 +742,13 @@ describe("TUI App", () => {
     const frame = lastFrame();
     expect(frame).toContain("sessions");
     expect(frame).toContain("esc to close");
-    expect(frame).toContain("thread-active (active) [active] approval:1 Current active runtime recovery thread.");
-    expect(frame).toContain("thread-blocked [blocked] human_recovery Manual recovery pending for a risky patch.");
+    expect(frame).toContain("thread-active (active) [active] mode:normal approval:1 Current active runtime recovery thread.");
+    expect(frame).toContain("thread-blocked [blocked] mode:normal human_recovery Manual recovery pending for a risky patch.");
     expect(receivedCommands).toHaveLength(0);
   });
 
   test("allows selecting a session from /sessions and switching to it", async () => {
-    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand> = [];
+    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -755,6 +765,7 @@ describe("TUI App", () => {
               projectId: "project-1",
               revision: 4,
               status: "active",
+              threadMode: "normal",
               activeRunStatus: "completed",
               narrativeSummary: "Current thread",
             },
@@ -764,6 +775,7 @@ describe("TUI App", () => {
               projectId: "project-1",
               revision: 3,
               status: "idle",
+              threadMode: "normal",
               activeRunStatus: "completed",
               narrativeSummary: "Target thread",
             },
@@ -817,6 +829,7 @@ describe("TUI App", () => {
                 projectId: "project-1",
                 revision: 4,
                 status: "idle",
+                threadMode: "normal",
                 activeRunStatus: "completed",
                 narrativeSummary: "Current thread",
               },
@@ -826,6 +839,7 @@ describe("TUI App", () => {
                 projectId: "project-1",
                 revision: 3,
                 status: "active",
+                threadMode: "normal",
                 activeRunStatus: "completed",
                 narrativeSummary: "Target thread",
               },
@@ -893,6 +907,7 @@ describe("TUI App", () => {
               projectId: "project-1",
               revision: 4,
               status: "active",
+              threadMode: "normal",
               activeRunStatus: "completed",
               narrativeSummary: "Current thread",
             },
@@ -902,6 +917,7 @@ describe("TUI App", () => {
               projectId: "project-1",
               revision: 3,
               status: "idle",
+              threadMode: "normal",
               activeRunStatus: "completed",
               narrativeSummary: "Middle thread",
             },
@@ -911,6 +927,7 @@ describe("TUI App", () => {
               projectId: "project-1",
               revision: 2,
               status: "idle",
+              threadMode: "normal",
               activeRunStatus: "completed",
               narrativeSummary: "Oldest thread",
             },
@@ -940,25 +957,25 @@ describe("TUI App", () => {
       120,
     );
 
-    expect(stripAnsi(lastFrame() ?? "")).toContain("❯ thread-active (active) [completed] Current thread");
+    expect(stripAnsi(lastFrame() ?? "")).toContain("❯ thread-active (active) [completed] mode:normal Current thread");
 
     await pressArrowUp(stdin);
     await waitFor(
-      () => stripAnsi(lastFrame() ?? "").includes("❯ thread-oldest [completed] Oldest thread"),
+      () => stripAnsi(lastFrame() ?? "").includes("❯ thread-oldest [completed] mode:normal Oldest thread"),
       "expected up arrow on the first item to wrap to the last thread",
       60,
     );
 
     stdin.write("k");
     await waitFor(
-      () => stripAnsi(lastFrame() ?? "").includes("❯ thread-middle [completed] Middle thread"),
+      () => stripAnsi(lastFrame() ?? "").includes("❯ thread-middle [completed] mode:normal Middle thread"),
       "expected vim-style k navigation to move upward in the sessions list",
       60,
     );
 
     stdin.write("j");
     await waitFor(
-      () => stripAnsi(lastFrame() ?? "").includes("❯ thread-oldest [completed] Oldest thread"),
+      () => stripAnsi(lastFrame() ?? "").includes("❯ thread-oldest [completed] mode:normal Oldest thread"),
       "expected vim-style j navigation to move downward in the sessions list",
       60,
     );
@@ -1016,6 +1033,65 @@ describe("TUI App", () => {
     expect(lastFrame()).toContain("OpenPX");
   });
 
+  test("renders a plan decision card and submits the selected option by number", async () => {
+    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
+    const kernel: TuiKernel = {
+      events: {
+        subscribe() {
+          return () => undefined;
+        },
+      },
+      async hydrateSession() {
+        return createCompletedSessionResult({
+threadId: "thread-plan-choice",
+           threadMode: "plan",
+           status: "completed" as const,
+          planDecision: {
+            question: "请选择登录界面的实现方案",
+            sourceInput: "我要开发一个登录界面",
+            options: [
+              {
+                id: "simple",
+                label: "简洁表单",
+                description: "只包含账号、密码和提交按钮。",
+                continuation: "按简洁表单方案实现登录界面。",
+              },
+              {
+                id: "brand",
+                label: "品牌化登录页",
+                description: "增加品牌区、辅助说明和更完整的视觉层次。",
+                continuation: "按品牌化登录页方案实现登录界面。",
+              },
+            ],
+          },
+        });
+      },
+      async handleCommand(command) {
+        receivedCommands.push(command);
+        return createCompletedSessionResult({
+          threadId: "thread-plan-choice",
+          finalResponse: "已选择品牌化登录页。",
+        });
+      },
+    };
+
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
+    await waitFor(
+      () => (lastFrame() ?? "").includes("品牌化登录页"),
+      "expected plan decision options to render",
+      120,
+    );
+
+    await typeAndSubmit(stdin, "2");
+
+    expect(receivedCommands).toHaveLength(1);
+    expect(receivedCommands[0]?.type).toBe("resolve_plan_decision");
+    expect((receivedCommands[0] as PlanDecisionCommand | undefined)?.payload.optionId).toBe("brand");
+    expect((receivedCommands[0] as PlanDecisionCommand | undefined)?.payload.input).toContain("我要开发一个登录界面");
+    expect((receivedCommands[0] as PlanDecisionCommand | undefined)?.payload.input).toContain("品牌化登录页");
+    expect((receivedCommands[0] as PlanDecisionCommand | undefined)?.payload.input).toContain("按品牌化登录页方案实现登录界面。");
+  });
+
   test("shows a scroll indicator when the interaction stream overflows the viewport", async () => {
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
     const messages: Array<{ messageId: string; threadId: string; role: "user" | "assistant"; content: string }> = [];
@@ -1053,9 +1129,10 @@ describe("TUI App", () => {
       });
       emit?.({
         type: "thread.view_updated",
-        payload: {
-          threadId: "thread-overflow",
-          status: "completed",
+      payload: {
+        threadId: "thread-overflow",
+        status: "completed",
+        threadMode: "normal",
             finalResponse: `response ${index + 1}`,
           messages: [...messages],
           answers: [
@@ -1067,7 +1144,7 @@ describe("TUI App", () => {
           ],
           approvals: [],
           tasks: [],
-          workers: [],
+          agentRuns: [],
         },
       });
       await tick(10);
@@ -1118,9 +1195,10 @@ describe("TUI App", () => {
       });
       emit?.({
         type: "thread.view_updated",
-        payload: {
-          threadId: "thread-scroll",
-          status: "completed",
+      payload: {
+        threadId: "thread-scroll",
+        status: "completed",
+        threadMode: "normal",
             finalResponse: `response ${index + 1}`,
           messages: [...messages],
           answers: [
@@ -1132,7 +1210,7 @@ describe("TUI App", () => {
           ],
           approvals: [],
           tasks: [],
-          workers: [],
+          agentRuns: [],
         },
       });
       await tick(10);
@@ -1406,7 +1484,7 @@ describe("TUI App", () => {
   });
 
   test("can execute immediate slash commands from the suggestion list", async () => {
-    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand> = [];
+    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
     const settingsStore = {
       async readResolved() {
         return {
@@ -1460,15 +1538,13 @@ describe("TUI App", () => {
       },
       async handleCommand() {
         return {
+          primaryAgent: "build",
+          threadMode: "normal",
           status: "waiting_approval",
             pauseSummary: "Approval required before deleting src/old.ts",
           threadId: "thread_1",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
-          blockingReason: {
-            kind: "waiting_approval",
-            message: "apply_patch delete_file src/old.ts",
-          },
           tasks: [
             {
               taskId: "task_1",
@@ -1495,7 +1571,7 @@ describe("TUI App", () => {
             },
           ],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -1519,7 +1595,7 @@ describe("TUI App", () => {
     expect(frame).toMatch(/Confirm work\?.*\[Y\/n\]/);
   });
 
-  test("renders worker state from protocol truth and clears it when the next thread view omits workers", async () => {
+  test("renders agent run state from protocol truth and clears it when the next thread view omits agentRuns", async () => {
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
 
     const kernel: TuiKernel = {
@@ -1531,32 +1607,36 @@ describe("TUI App", () => {
       },
       async handleCommand() {
         return createCompletedSessionResult({
-          threadId: "thread-worker-ui",
+          threadId: "thread-agent-run-ui",
         });
       },
     };
 
     const { lastFrame, stdin } = render(<App kernel={kernel} />);
-    await typeAndSubmit(stdin, "start workerized task");
+    await typeAndSubmit(stdin, "start agent-run task");
 
     emit?.({
       type: "thread.view_updated",
       payload: {
-        threadId: "thread-worker-ui",
+        threadId: "thread-agent-run-ui",
         status: "completed",
+        threadMode: "normal",
           finalResponse: "Workerized task in progress.",
         tasks: [],
         approvals: [],
         answers: [],
         messages: [],
-        workers: [
+        agentRuns: [
           {
-            workerId: "worker-ui-1",
-            threadId: "thread-worker-ui",
-            taskId: "task-worker-ui",
-            role: "planner",
+            agentRunId: "agent-run-ui-1",
+            threadId: "thread-agent-run-ui",
+            taskId: "task-agent-run-ui",
+            roleKind: "legacy_internal",
+            roleId: "planner",
             status: "running",
-            spawnReason: "hydrate worker block",
+            spawnReason: "hydrate agent run block",
+            goalSummary: "hydrate agent run block",
+            visibilityPolicy: "hidden",
           },
         ],
         workspaceRoot: "/tmp/workspace",
@@ -1565,15 +1645,16 @@ describe("TUI App", () => {
       },
     });
     await waitFor(
-      () => (lastFrame() ?? "").includes("hydrate worker block"),
-      "expected worker state to render from thread view protocol truth",
+      () => (lastFrame() ?? "").includes("hydrate agent run block"),
+      "expected agent run state to render from thread view protocol truth",
     );
 
     emit?.({
       type: "thread.view_updated",
       payload: {
-        threadId: "thread-worker-ui",
+        threadId: "thread-agent-run-ui",
         status: "completed",
+        threadMode: "normal",
           finalResponse: "Workerized task complete.",
         tasks: [],
         approvals: [],
@@ -1585,8 +1666,8 @@ describe("TUI App", () => {
       },
     });
     await waitFor(
-      () => !(lastFrame() ?? "").includes("hydrate worker block"),
-      "expected worker block to clear when protocol truth omits workers",
+      () => !(lastFrame() ?? "").includes("hydrate agent run block"),
+      "expected agent run block to clear when protocol truth omits agentRuns",
     );
   });
 
@@ -1613,6 +1694,8 @@ describe("TUI App", () => {
     emit?.({
       type: "session.updated",
       payload: {
+        primaryAgent: "build",
+        threadMode: "normal",
         status: "waiting_approval",
         threadId: "thread-hydrated-approval",
           pauseSummary: "Approval needed.",
@@ -1645,7 +1728,7 @@ describe("TUI App", () => {
         ],
         answers: [],
         messages: [],
-        workers: [],
+        agentRuns: [],
         threads: [],
       },
     });
@@ -1659,6 +1742,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-hydrated-approval",
         status: "completed",
+        threadMode: "normal",
           finalResponse: "Done.",
         tasks: [],
         approvals: [],
@@ -1671,7 +1755,7 @@ describe("TUI App", () => {
             content: "Done.",
           },
         ],
-        workers: [],
+        agentRuns: [],
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
         threads: [],
@@ -1697,15 +1781,13 @@ describe("TUI App", () => {
       },
       async hydrateSession() {
         return {
+          primaryAgent: "build",
+          threadMode: "normal",
           status: "waiting_approval",
             pauseSummary: "Approval required before deleting src/resume-me.ts",
           threadId: "thread_resume",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
-          blockingReason: {
-            kind: "waiting_approval",
-            message: "apply_patch delete_file src/resume-me.ts",
-          },
           tasks: [
             {
               taskId: "task_resume",
@@ -1732,7 +1814,7 @@ describe("TUI App", () => {
             },
           ],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -1741,7 +1823,7 @@ describe("TUI App", () => {
       },
     };
 
-    const { lastFrame } = render(<App kernel={kernel} />);
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
     await waitFor(
       () => (lastFrame() ?? "").includes("OpenPX"),
       "expected welcome shell to render before showing hydrated approval state",
@@ -1763,6 +1845,8 @@ describe("TUI App", () => {
       },
       async hydrateSession() {
         return {
+          primaryAgent: "build",
+          threadMode: "normal",
           status: "completed",
             finalResponse: "Awaiting answer",
           threadId: "thread-narrative",
@@ -1772,7 +1856,7 @@ describe("TUI App", () => {
           tasks: [],
           approvals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -1802,6 +1886,8 @@ describe("TUI App", () => {
       },
       async hydrateSession() {
         return {
+          primaryAgent: "build",
+          threadMode: "normal",
           status: "completed",
             finalResponse: "Awaiting answer",
           workspaceRoot: "/tmp/workspace",
@@ -1815,6 +1901,7 @@ describe("TUI App", () => {
               projectId: "project-1",
               revision: 4,
               status: "active",
+              threadMode: "normal",
               narrativeSummary: "Current active runtime recovery thread.",
               pendingApprovalCount: 1,
             },
@@ -1824,6 +1911,7 @@ describe("TUI App", () => {
               projectId: "project-1",
               revision: 2,
               status: "idle",
+              threadMode: "normal",
               activeRunStatus: "blocked",
               narrativeSummary: "Manual recovery pending for a risky patch.",
               blockingReasonKind: "human_recovery",
@@ -1832,7 +1920,7 @@ describe("TUI App", () => {
           tasks: [],
           approvals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
         };
       },
       async handleCommand() {
@@ -1862,15 +1950,13 @@ describe("TUI App", () => {
       },
       async hydrateSession() {
         return {
-          status: "blocked",
+          primaryAgent: "build",
+          threadMode: "normal",
+          status: "completed" as const,
             pauseSummary: "Awaiting answer",
           threadId: "thread_recovery",
           workspaceRoot: "/tmp/workspace",
           projectId: "project-1",
-          blockingReason: {
-            kind: "human_recovery",
-            message: "Manual recovery required for apply_patch; previous execution outcome is uncertain after a crash.",
-          },
           tasks: [
             {
               taskId: "task_recovery",
@@ -1886,7 +1972,7 @@ describe("TUI App", () => {
           ],
           approvals: [],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -1910,6 +1996,7 @@ describe("TUI App", () => {
 
   test("reacts to live blocked recovery events without a hydrate refresh", async () => {
     let emit: ((event: Parameters<NonNullable<TuiKernel["events"]["subscribe"]>>[0] extends (event: infer E) => void ? E : never) => void) | undefined;
+    const receivedCommands: unknown[] = [];
 
     const kernel: TuiKernel = {
       events: {
@@ -1918,20 +2005,22 @@ describe("TUI App", () => {
           return () => undefined;
         },
       },
-      async handleCommand() {
+      async handleCommand(command) {
+        receivedCommands.push(command);
         return createCompletedSessionResult({
           threadId: "thread_live_recovery",
         });
       },
     };
 
-    const { lastFrame } = render(<App kernel={kernel} />);
+    const { lastFrame, stdin } = render(<App kernel={kernel} />);
 
     emit?.({
       type: "thread.view_updated",
       payload: {
         status: "blocked",
         threadId: "thread_live_recovery",
+        threadMode: "normal",
           pauseSummary: "Manual recovery required from live event.",
         workspaceRoot: "/tmp/workspace",
         projectId: "project-1",
@@ -1964,25 +2053,33 @@ describe("TUI App", () => {
         approvals: [],
         answers: [],
         messages: [],
-        workers: [],
+        agentRuns: [],
         threads: [],
       },
     });
     await waitFor(
-      () => (lastFrame() ?? "").includes("stage:blocked"),
+      () => (lastFrame() ?? "").includes("stage:idle"),
       "expected live blocked event to update shell stage without a hydrate refresh",
     );
 
     const frame = lastFrame();
 
-    expect(frame).toMatch(/Session blocked: manual recovery required/i);
-    expect(frame).toMatch(/Input disabled for this thread/i);
-    expect(frame).toContain("stage:blocked");
+    expect(frame).toContain("stage:idle");
+
+    await typeAndSubmit(stdin, "继续基于当前状态执行");
+    await waitFor(
+      () => receivedCommands.length > 0,
+      "expected input to be submitted as a regular command",
+    );
+
+    expect(receivedCommands[0]).toEqual({
+      type: "thread_new",
+    });
   });
 
   test("shows the planning stage while a planning task is being submitted", async () => {
     const deferred = createDeferred<RuntimeSessionState>();
-    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand> = [];
+    const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
     const kernel: TuiKernel = {
       events: {
         subscribe() {
@@ -2059,10 +2156,6 @@ describe("TUI App", () => {
       status: "waiting_approval",
       threadId: "thread-executing",
         pauseSummary: "Need confirmation before applying the patch",
-      blockingReason: {
-        kind: "waiting_approval",
-        message: "apply_patch update_file src/surfaces/tui/app.tsx",
-      },
       tasks: [
         {
           taskId: "task-stage",
@@ -2089,7 +2182,7 @@ describe("TUI App", () => {
         },
       ],
       answers: [],
-      workers: [],
+      agentRuns: [],
       threads: [],
     }));
 
@@ -2218,6 +2311,7 @@ describe("TUI App", () => {
       payload: {
         threadId: "thread-active",
         status: "completed",
+        threadMode: "normal",
         finalResponse: "First answer.",
       },
     });
@@ -2283,6 +2377,7 @@ describe("TUI App", () => {
         payload: {
           threadId: "thread-collision",
           status: "completed",
+          threadMode: "normal",
             finalResponse: "First assistant summary",
         },
       });
@@ -2293,6 +2388,7 @@ describe("TUI App", () => {
         payload: {
           threadId: "thread-collision",
           status: "completed",
+          threadMode: "normal",
             finalResponse: "Second assistant summary",
         },
       });

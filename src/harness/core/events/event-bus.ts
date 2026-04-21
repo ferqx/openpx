@@ -8,7 +8,8 @@
  */
 import type { StreamEvent } from "../../../domain/stream-events";
 import type { Thread } from "../../../domain/thread";
-import type { WorkerView } from "../../protocol/views/worker-view";
+import type { ThreadMode } from "../../../control/agents/thread-mode";
+import type { AgentRunView } from "../../protocol/views/agent-run-view";
 import type { ProjectedSessionResult } from "../projection/session-view-projector";
 import type { ModelGatewayEvent, ModelStatus } from "../../../infra/model-gateway";
 
@@ -27,6 +28,18 @@ export type ThreadInterruptedKernelEvent = {
   };
 };
 
+/** 协作线模式切换事件。 */
+export type ThreadModeChangedKernelEvent = {
+  type: "thread.mode_changed";
+  payload: {
+    threadId: string;
+    fromMode: ThreadMode;
+    toMode: ThreadMode;
+    trigger: "slash_command" | "plain_input" | "runtime_command" | "compat_plan_task";
+    reason?: string;
+  };
+};
+
 /** 会话投影视图更新事件。 */
 export type ThreadViewUpdatedKernelEvent = {
   type: "thread.view_updated";
@@ -38,7 +51,7 @@ export type ThreadRecoveryResolvedKernelEvent = {
   type: "thread.recovery_resolved";
   payload: {
     threadId: string;
-    action: "restart_run" | "resubmit_intent" | "abandon_run";
+    action: "restart_run" | "abandon_run";
   };
 };
 
@@ -55,7 +68,7 @@ export type LoopKernelEvent = {
     threadId: string;
     runId: string;
     taskId: string;
-    step: "plan" | "execute" | "verify" | "respond" | "waiting_approval" | "done";
+    step: "plan" | "execute" | "verify" | "respond" | "waiting_approval" | "waiting_plan_decision" | "done";
     suspensionId?: string;
     continuationId?: string;
     approvalRequestId?: string;
@@ -75,17 +88,17 @@ export type TaskFailedKernelEvent = {
   };
 };
 
-/** worker 生命周期事件。 */
-export type WorkerKernelEvent = {
+/** agent run 生命周期事件。 */
+export type AgentRunKernelEvent = {
   type:
-    | "worker.spawned"
-    | "worker.inspected"
-    | "worker.resumed"
-    | "worker.cancelled"
-    | "worker.completed"
-    | "worker.failed";
+    | "agent_run.spawned"
+    | "agent_run.inspected"
+    | "agent_run.resumed"
+    | "agent_run.cancelled"
+    | "agent_run.completed"
+    | "agent_run.failed";
   payload: {
-    worker: WorkerView;
+    agentRun: AgentRunView;
   };
 };
 
@@ -101,11 +114,12 @@ export type ModelStatusKernelEvent = {
 export type KernelEvent =
   | ThreadStartedKernelEvent
   | ThreadInterruptedKernelEvent
+  | ThreadModeChangedKernelEvent
   | ThreadViewUpdatedKernelEvent
   | ThreadRecoveryResolvedKernelEvent
   | LoopKernelEvent
   | TaskFailedKernelEvent
-  | WorkerKernelEvent
+  | AgentRunKernelEvent
   | ModelStatusKernelEvent
   | ModelGatewayEvent;
 

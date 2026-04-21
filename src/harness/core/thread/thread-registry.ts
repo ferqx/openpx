@@ -6,6 +6,7 @@
  */
 import type { Thread } from "../../../domain/thread";
 import type { ThreadStorePort } from "../../../persistence/ports/thread-store-port";
+import { DEFAULT_THREAD_MODE } from "../../../control/agents/thread-mode";
 
 export type ThreadScope = {
   workspaceRoot: string;
@@ -33,6 +34,7 @@ export class ThreadRegistry {
       projectId: scope.projectId,
       revision: 1,
       status: "active",
+      threadMode: DEFAULT_THREAD_MODE,
     };
     await this.threadStore.save(thread);
     return thread;

@@ -38,6 +38,7 @@
 - [harness-protocol-code-map.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-protocol-code-map.md)
 - [harness-feedback-loop.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-feedback-loop.md)
 - [harness-surface-boundary.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/harness-surface-boundary.md)
+- [agent-mode-ontology.md](/Users/chenchao/Code/ai/openpx/docs/space/understanding/agent-mode-ontology.md)
 
 ### `execution/`
 

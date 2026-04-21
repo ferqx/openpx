@@ -1,4 +1,5 @@
 import { z } from "zod";
+export { agentRunViewSchema } from "../views/agent-run-view";
 export { answerViewSchema } from "../views/answer-view";
 export { approvalViewSchema } from "../views/approval-view";
 export { messageViewSchema } from "../views/message-view";
@@ -9,8 +10,8 @@ export { runtimeEventEnvelopeSchema, runtimeEventSchema } from "../events/runtim
 export { runtimeSnapshotSchema } from "../views/runtime-snapshot-schema";
 export { taskViewSchema } from "../views/task-view";
 export { threadViewSchema } from "../views/thread-view";
-export { workerViewSchema } from "../views/worker-view";
 
+import { agentRunViewSchema } from "../views/agent-run-view";
 import { answerViewSchema } from "../views/answer-view";
 import { approvalViewSchema } from "../views/approval-view";
 import { messageViewSchema } from "../views/message-view";
@@ -21,7 +22,6 @@ import { runtimeEventEnvelopeSchema, runtimeEventSchema } from "../events/runtim
 import { runtimeSnapshotSchema } from "../views/runtime-snapshot-schema";
 import { taskViewSchema } from "../views/task-view";
 import { threadViewSchema } from "../views/thread-view";
-import { workerViewSchema } from "../views/worker-view";
 
 /**
  * Metadata for the OpenPX Harness Protocol.
@@ -51,7 +51,7 @@ export const runtimePendingApprovalSchema = approvalViewSchema;
 
 export const runtimeAnswerSchema = answerViewSchema;
 export const runtimeMessageSchema = messageViewSchema;
-export const runtimeWorkerSchema = workerViewSchema;
+export const runtimeAgentRunSchema = agentRunViewSchema;
 
 export type RuntimeSnapshot = z.infer<typeof runtimeSnapshotSchema>;
 export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>;

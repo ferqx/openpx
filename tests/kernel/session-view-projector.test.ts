@@ -18,6 +18,7 @@ describe("projectSessionResult", () => {
         {
           threadId: "thread-1",
           status: "completed",
+          threadMode: "normal",
           narrativeSummary: "Completed repo scan",
           pendingApprovalCount: 0,
         },
@@ -31,7 +32,7 @@ describe("projectSessionResult", () => {
     expect(result.threads).toHaveLength(1);
   });
 
-  test("builds stable artifacts from thread recovery facts and worker records", () => {
+  test("builds stable artifacts from thread recovery facts and agent run records", () => {
     const artifacts = buildStableSessionArtifacts({
       thread: {
         threadId: "thread-1",
@@ -57,9 +58,9 @@ describe("projectSessionResult", () => {
           },
         },
       },
-      workers: [
+      agentRuns: [
         {
-          workerId: "worker-1",
+          agentRunId: "agent-run-1",
           threadId: "thread-1",
           taskId: "task-1",
           role: "planner",
@@ -86,10 +87,11 @@ describe("projectSessionResult", () => {
         content: "Inspect runtime truth",
       },
     ]);
-    expect(artifacts.workers).toEqual([
+    expect(artifacts.agentRuns).toEqual([
       expect.objectContaining({
-        workerId: "worker-1",
-        role: "planner",
+        agentRunId: "agent-run-1",
+        roleKind: "legacy_internal",
+        roleId: "planner",
         status: "running",
       }),
     ]);

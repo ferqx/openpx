@@ -1,16 +1,19 @@
 import { z } from "zod";
 import { runStatusSchema, sessionStatusSchema, threadStatusSchema, taskStatusSchema } from "../../../shared/schemas";
+import { threadModeSchema } from "../../../control/agents/thread-mode";
+import { planDecisionRequestSchema } from "../../../runtime/planning/planner-result";
 import { approvalViewSchema } from "../views/approval-view";
 import { answerViewSchema } from "../views/answer-view";
+import { agentRunViewSchema } from "../views/agent-run-view";
 import { messageViewSchema } from "../views/message-view";
 import { protocolVersionSchema } from "../schemas/protocol-version";
 import { taskBlockingReasonSchema, taskViewSchema } from "../views/task-view";
-import { workerViewSchema } from "../views/worker-view";
 
 /** runtime 事件类型白名单：客户端只应看到这里定义过的稳定事件 */
 export const runtimeEventTypes = [
   "thread.started",
   "thread.interrupted",
+  "thread.mode_changed",
   "thread.blocked",
   "thread.recovery_resolved",
   "thread.view_updated",
@@ -25,12 +28,12 @@ export const runtimeEventTypes = [
   "task.started",
   "task.completed",
   "task.failed",
-  "worker.spawned",
-  "worker.inspected",
-  "worker.resumed",
-  "worker.cancelled",
-  "worker.completed",
-  "worker.failed",
+  "agent_run.spawned",
+  "agent_run.inspected",
+  "agent_run.resumed",
+  "agent_run.cancelled",
+  "agent_run.completed",
+  "agent_run.failed",
   "tool.executed",
   "tool.failed",
   "model.status",
@@ -57,11 +60,12 @@ const runtimeEventTypeSchema = z.enum(runtimeEventTypes);
 const sessionThreadSummarySchema = z.object({
   threadId: z.string().min(1),
   status: z.string().min(1),
+  threadMode: threadModeSchema,
   activeRunId: z.string().min(1).optional(),
   activeRunStatus: runStatusSchema.optional(),
   narrativeSummary: z.string().optional(),
   pendingApprovalCount: z.number().int().nonnegative().optional(),
-  blockingReasonKind: z.enum(["waiting_approval", "human_recovery"]).optional(),
+  blockingReasonKind: z.enum(["waiting_approval", "plan_decision", "human_recovery"]).optional(),
 });
 
 const recoveryFactsSchema = z.object({
@@ -92,7 +96,7 @@ const recoveryFactsSchema = z.object({
   }).optional(),
   blocking: z.object({
     sourceTaskId: z.string().min(1),
-    kind: z.enum(["waiting_approval", "human_recovery"]),
+    kind: z.enum(["waiting_approval", "plan_decision", "human_recovery"]),
     message: z.string(),
   }).optional(),
   pendingApprovals: z.array(z.object({
@@ -145,6 +149,7 @@ const threadViewUpdatedPayloadSchema = z.object({
   workingSetWindow: workingSetWindowSchema.optional(),
   status: sessionStatusSchema,
   threadId: z.string().min(1),
+  threadMode: threadModeSchema,
   finalResponse: z.string().optional(),
   resumeDisposition: z.enum(["resumed", "already_resolved", "already_consumed", "invalidated", "not_resumable"]).optional(),
   executionSummary: z.string().optional(),
@@ -152,11 +157,12 @@ const threadViewUpdatedPayloadSchema = z.object({
   pauseSummary: z.string().optional(),
   latestExecutionStatus: z.enum(["running", "waiting_approval", "blocked", "completed"]).optional(),
   recommendationReason: z.string().optional(),
+  planDecision: planDecisionRequestSchema.optional(),
   approvals: z.array(approvalViewSchema).optional(),
   tasks: z.array(taskViewSchema).optional(),
   answers: z.array(answerViewSchema).optional(),
   messages: z.array(messageViewSchema).optional(),
-  workers: z.array(workerViewSchema).optional(),
+  agentRuns: z.array(agentRunViewSchema).optional(),
   workspaceRoot: z.string().optional(),
   projectId: z.string().optional(),
   threads: z.array(sessionThreadSummarySchema).optional(),
@@ -172,8 +178,8 @@ const taskLifecyclePayloadSchema = z.object({
   error: z.string().optional(),
 }).strict();
 
-const workerLifecyclePayloadSchema = z.object({
-  worker: workerViewSchema,
+const agentRunLifecyclePayloadSchema = z.object({
+  agentRun: agentRunViewSchema,
 }).strict();
 
 const threadStartedPayloadSchema = z.object({
@@ -182,6 +188,7 @@ const threadStartedPayloadSchema = z.object({
   projectId: z.string(),
   revision: z.number().int().nonnegative(),
   status: threadStatusSchema,
+  threadMode: threadModeSchema,
   recommendationReason: z.string().optional(),
   narrativeSummary: z.string().optional(),
   narrativeRevision: z.number().int().nonnegative().optional(),
@@ -189,6 +196,14 @@ const threadStartedPayloadSchema = z.object({
 
 const threadInterruptedPayloadSchema = z.object({
   threadId: z.string().min(1),
+  reason: z.string().optional(),
+}).strict();
+
+const threadModeChangedPayloadSchema = z.object({
+  threadId: z.string().min(1),
+  fromMode: threadModeSchema,
+  toMode: threadModeSchema,
+  trigger: z.enum(["slash_command", "plain_input", "runtime_command", "compat_plan_task"]),
   reason: z.string().optional(),
 }).strict();
 
@@ -200,14 +215,14 @@ const threadBlockedPayloadSchema = z.object({
 
 const threadRecoveryResolvedPayloadSchema = z.object({
   threadId: z.string().min(1),
-  action: z.enum(["restart_run", "resubmit_intent", "abandon_run"]),
+  action: z.enum(["restart_run", "abandon_run"]),
 }).strict();
 
 const loopEventPayloadSchema = z.object({
   threadId: z.string().min(1),
   runId: z.string().min(1),
   taskId: z.string().min(1),
-  step: z.enum(["plan", "execute", "verify", "respond", "waiting_approval", "done"]),
+  step: z.enum(["plan", "execute", "verify", "respond", "waiting_approval", "waiting_plan_decision", "done"]),
   suspensionId: z.string().min(1).optional(),
   continuationId: z.string().min(1).optional(),
   approvalRequestId: z.string().min(1).optional(),
@@ -304,6 +319,7 @@ const streamDonePayloadSchema = z.object({
 export const runtimeEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("thread.started"), payload: threadStartedPayloadSchema }),
   z.object({ type: z.literal("thread.interrupted"), payload: threadInterruptedPayloadSchema }),
+  z.object({ type: z.literal("thread.mode_changed"), payload: threadModeChangedPayloadSchema }),
   z.object({ type: z.literal("thread.blocked"), payload: threadBlockedPayloadSchema }),
   z.object({ type: z.literal("thread.recovery_resolved"), payload: threadRecoveryResolvedPayloadSchema }),
   z.object({ type: z.literal("thread.view_updated"), payload: threadViewUpdatedPayloadSchema }),
@@ -318,12 +334,12 @@ export const runtimeEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("task.started"), payload: taskLifecyclePayloadSchema }),
   z.object({ type: z.literal("task.completed"), payload: taskLifecyclePayloadSchema }),
   z.object({ type: z.literal("task.failed"), payload: taskLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.spawned"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.inspected"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.resumed"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.cancelled"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.completed"), payload: workerLifecyclePayloadSchema }),
-  z.object({ type: z.literal("worker.failed"), payload: workerLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.spawned"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.inspected"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.resumed"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.cancelled"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.completed"), payload: agentRunLifecyclePayloadSchema }),
+  z.object({ type: z.literal("agent_run.failed"), payload: agentRunLifecyclePayloadSchema }),
   z.object({ type: z.literal("tool.executed"), payload: toolEventPayloadSchema }),
   z.object({ type: z.literal("tool.failed"), payload: toolEventPayloadSchema }),
   z.object({ type: z.literal("model.status"), payload: modelStatusPayloadSchema }),

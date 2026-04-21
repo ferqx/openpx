@@ -44,6 +44,52 @@ describe("planner result schema", () => {
     expect(parsed.requiresApproval).toBe(true);
   });
 
+  test("parses implementation work as a first-class capability marker", () => {
+    const parsed = workPackageSchema.parse({
+      id: "pkg_login_ui",
+      objective: "实现登录界面",
+      capabilityMarker: "implementation_work",
+      capabilityFamily: "feature_implementation",
+      requiresApproval: false,
+      allowedTools: ["read_file", "apply_patch"],
+      inputRefs: ["thread:goal"],
+      expectedArtifacts: ["patch:workspace"],
+    });
+
+    expect(parsed.capabilityMarker).toBe("implementation_work");
+    expect(parsed.capabilityFamily).toBe("feature_implementation");
+  });
+
+  test("parses plan decision requests with selectable options", () => {
+    const parsed = plannerResultSchema.parse({
+      workPackages: [],
+      acceptanceCriteria: ["用户选择一个登录界面方案后再执行"],
+      riskFlags: [],
+      approvalRequiredActions: [],
+      verificationScope: ["选择后继续执行"],
+      decisionRequest: {
+        question: "请选择登录界面的实现方案",
+        options: [
+          {
+            id: "simple",
+            label: "简洁表单",
+            description: "只包含账号、密码和提交按钮。",
+            continuation: "按简洁表单方案实现登录界面。",
+          },
+          {
+            id: "brand",
+            label: "品牌化登录页",
+            description: "增加品牌区、辅助说明和更完整的视觉层次。",
+            continuation: "按品牌化登录页方案实现登录界面。",
+          },
+        ],
+      },
+    });
+
+    expect(parsed.decisionRequest?.options).toHaveLength(2);
+    expect(parsed.decisionRequest?.options[1]?.label).toBe("品牌化登录页");
+  });
+
   test("parses reject-driven replan normalization fields", () => {
     const parsed = workPackageSchema.parse({
       id: "pkg_safe_replan",

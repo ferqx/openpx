@@ -4,6 +4,12 @@ import { createThread, transitionThread, type Thread, type ThreadStatus } from "
 import { threadId as sharedThreadId } from "../../src/shared/ids";
 
 describe("thread transitions", () => {
+  test("creates threads in normal mode by default", () => {
+    const thread = createThread("thread-mode-default");
+
+    expect(thread.threadMode).toBe("normal");
+  });
+
   test("allows the declared transition matrix", () => {
     const cases: Array<[string, Parameters<typeof transitionThread>[1]]> = [
       ["active", "idle"],
@@ -20,6 +26,7 @@ describe("thread transitions", () => {
         projectId: "",
         revision: 1,
         status: from as Parameters<typeof transitionThread>[0]["status"],
+        threadMode: "normal" as const,
       };
       const next = transitionThread(thread, to);
 

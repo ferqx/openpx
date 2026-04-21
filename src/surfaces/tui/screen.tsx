@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text, useStdout } from "ink";
 import { InteractionStream } from "./components/interaction-stream";
+import { AgentModeHeader } from "./components/agent-mode-header";
 import { Composer } from "./components/composer";
 import { StatusBar } from "./components/status-bar";
 import { ThreadPanel, type ThreadSummary } from "./components/thread-panel";
@@ -11,11 +12,12 @@ import { theme } from "./theme";
 import { computeScreenLayout } from "./screen-layout";
 import type { TaskSummary } from "./components/task-panel";
 import type { ApprovalSummary } from "./components/approval-panel";
-import type { WorkerSummary } from "./components/worker-panel";
+import type { AgentRunSummary } from "./components/agent-run-panel";
 import type { UtilityPaneMode } from "./view-state";
 import type { SessionStage } from "./runtime/runtime-session";
 import type { ResolvedSettingsConfig } from "./settings/config-resolver";
 import type { PartialSettingsConfig, SettingsConfigScope } from "./settings/config-types";
+import type { PlanDecisionRequest } from "../../runtime/planning/planner-result";
 
 /** Screen 会话区消息模型 */
 type Message = {
@@ -30,7 +32,8 @@ export type ScreenConversationView = {
   messages: Message[];
   tasks: TaskSummary[];
   approvals: ApprovalSummary[];
-  workers: WorkerSummary[];
+  agentRuns: AgentRunSummary[];
+  planDecision?: PlanDecisionRequest;
   modelStatus?: string;
   performance?: { waitMs: number; genMs: number };
   narrativeSummary?: string;
@@ -50,16 +53,14 @@ export type ScreenUtilityView = {
 export type ScreenChromeView = {
   workspaceRoot?: string;
   projectId?: string;
+  primaryAgent?: "build";
+  threadMode?: "normal" | "plan";
   threadId?: string;
   runtimeStatus?: string;
   stage?: SessionStage;
   modelName?: string;
   thinkingLevel?: string;
   recommendationReason?: string;
-  blockingReason?: {
-    kind: "waiting_approval" | "human_recovery";
-    message: string;
-  };
   threads?: ThreadSummary[];
   showThreadPanel?: boolean;
   exitConfirmText?: string;
@@ -67,7 +68,7 @@ export type ScreenChromeView = {
 
 /** Screen composer 区视图 */
 export type ScreenComposerView = {
-  composerMode?: "input" | "confirm" | "blocked";
+  composerMode?: "input" | "confirm";
   onSubmit?: (text: string) => Promise<void> | void;
   onCommandMenuOpenChange?: (isOpen: boolean) => void;
   onComposerEscape?: () => Promise<void> | void;
@@ -91,17 +92,24 @@ type ScreenUtilityRegionProps = {
 };
 
 const ScreenThreadRegion = React.memo(function ScreenThreadRegion(input: {
+  primaryAgent?: "build";
+  threadMode?: "normal" | "plan";
   showThreadPanel?: boolean;
   threads?: ThreadSummary[];
   activeThreadId?: string;
 }) {
-  if (!input.showThreadPanel) {
+  if (!input.showThreadPanel && !input.primaryAgent && !input.threadMode) {
     return null;
   }
 
   return (
-    <Box key="thread-panel" marginBottom={1}>
-      <ThreadPanel threads={input.threads ?? []} activeThreadId={input.activeThreadId} />
+    <Box key="thread-panel" flexDirection="column" marginBottom={1}>
+      {input.primaryAgent && input.threadMode ? (
+        <AgentModeHeader primaryAgent={input.primaryAgent} threadMode={input.threadMode} />
+      ) : null}
+      {input.showThreadPanel ? (
+        <ThreadPanel threads={input.threads ?? []} activeThreadId={input.activeThreadId} />
+      ) : null}
     </Box>
   );
 });
@@ -176,7 +184,7 @@ const ScreenUtilityRegion = React.memo(
 
 const ScreenFooterRegion = React.memo(function ScreenFooterRegion(input: {
   activeUtilityPane?: UtilityPaneMode;
-  composerMode?: "input" | "confirm" | "blocked";
+  composerMode?: "input" | "confirm";
   onSubmit?: (text: string) => Promise<void> | void;
   onCommandMenuOpenChange?: (isOpen: boolean) => void;
   onComposerEscape?: () => Promise<void> | void;
@@ -226,7 +234,6 @@ export function Screen(input: {
     activeUtilityPane: input.utilityView.activeUtilityPane,
     composerMode: input.composerView.composerMode,
     recommendationReason: input.chromeView.recommendationReason,
-    blockingReason: input.chromeView.blockingReason,
     stage: input.chromeView.stage,
     showWelcome: input.conversationView.showWelcome,
   });
@@ -234,6 +241,8 @@ export function Screen(input: {
   return (
     <Box flexDirection="column">
       <ScreenThreadRegion
+        primaryAgent={input.chromeView.primaryAgent}
+        threadMode={input.chromeView.threadMode}
         showThreadPanel={input.chromeView.showThreadPanel}
         threads={input.chromeView.threads}
         activeThreadId={input.chromeView.threadId}
@@ -253,17 +262,18 @@ export function Screen(input: {
             />
           </Box>
         ) : (
-            <InteractionStream 
-              messages={input.conversationView.messages}
-              tasks={input.conversationView.tasks}
-              approvals={input.conversationView.approvals}
-              workers={input.conversationView.workers}
-              modelStatus={input.conversationView.modelStatus}
-              performance={input.conversationView.performance}
-              narrativeSummary={input.conversationView.narrativeSummary}
-              viewportWidth={stdout?.columns ?? 80}
-              scrollOffset={input.conversationView.streamScrollOffset}
-            />
+          <InteractionStream
+            messages={input.conversationView.messages}
+            tasks={input.conversationView.tasks}
+            approvals={input.conversationView.approvals}
+            agentRuns={input.conversationView.agentRuns}
+            planDecision={input.conversationView.planDecision}
+            modelStatus={input.conversationView.modelStatus}
+            performance={input.conversationView.performance}
+            narrativeSummary={input.conversationView.narrativeSummary}
+            viewportWidth={stdout?.columns ?? 80}
+            scrollOffset={input.conversationView.streamScrollOffset}
+          />
         )}
       </Box>
 
@@ -286,14 +296,6 @@ export function Screen(input: {
       {input.composerView.composerMode === "confirm" && input.chromeView.recommendationReason && (
         <Box key="recommendation" paddingX={1} marginBottom={1} borderStyle="round" borderColor="yellow">
           <Text color="yellow">{theme.symbols.warning} {input.chromeView.recommendationReason}</Text>
-        </Box>
-      )}
-
-      {input.composerView.composerMode === "blocked" && (
-        <Box key="blocked" paddingX={1} marginBottom={1} borderStyle="round" borderColor="yellow" flexDirection="column">
-          <Text color="yellow">{theme.symbols.warning} Session blocked: manual recovery required.</Text>
-          {input.chromeView.blockingReason?.message ? <Text>{input.chromeView.blockingReason.message}</Text> : null}
-          <Text color={theme.colors.dim}>Inspect the workspace state before continuing.</Text>
         </Box>
       )}
 

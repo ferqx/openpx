@@ -1,11 +1,16 @@
 import type { Database } from "bun:sqlite";
-import { resolveSuspensionAfterApproval } from "../../harness/core/run-loop/approval-suspension";
+import {
+  resolveSuspensionAfterApproval,
+  resolveSuspensionAfterPlanDecision,
+} from "../../harness/core/run-loop/approval-suspension";
 import {
   isApprovalResolutionContinuation,
+  isPlanDecisionContinuation,
   type ApprovalResolutionContinuation,
   type ContinuationEnvelope,
+  type PlanDecisionContinuation,
 } from "../../harness/core/run-loop/continuation";
-import type { ApprovalSuspension } from "../../harness/core/run-loop/approval-suspension";
+import type { RunSuspension } from "../../harness/core/run-loop/approval-suspension";
 import {
   RUN_LOOP_ENGINE_VERSION,
   RUN_LOOP_STATE_VERSION,
@@ -13,6 +18,7 @@ import {
 } from "../../harness/core/run-loop/step-types";
 import type {
   ApprovalContinuationTransactionResult,
+  PlanDecisionContinuationTransactionResult,
   RunStateStorePort,
 } from "../ports/run-state-store";
 import { closeSqliteHandle, resolveSqlite } from "./sqlite-client";
@@ -32,7 +38,7 @@ type RunSuspensionRow = {
   thread_id: string;
   task_id: string;
   approval_request_id: string | null;
-  status: ApprovalSuspension["status"];
+  status: RunSuspension["status"];
   payload_json: string;
 };
 
@@ -77,21 +83,23 @@ export class SqliteRunStateStore implements RunStateStorePort {
     } as RunLoopState;
   }
 
-  private normalizeSuspension(row: RunSuspensionRow | undefined): ApprovalSuspension | undefined {
+  private normalizeSuspension(row: RunSuspensionRow | undefined): RunSuspension | undefined {
     if (!row) {
       return undefined;
     }
 
-    const parsed = JSON.parse(row.payload_json) as ApprovalSuspension;
+    const parsed = JSON.parse(row.payload_json) as RunSuspension;
     return {
       ...parsed,
       suspensionId: parsed.suspensionId ?? row.suspension_id,
       runId: parsed.runId ?? row.run_id,
       threadId: parsed.threadId ?? row.thread_id,
       taskId: parsed.taskId ?? row.task_id,
-      approvalRequestId: parsed.approvalRequestId ?? row.approval_request_id ?? undefined,
+      ...(parsed.reasonKind === "waiting_approval"
+        ? { approvalRequestId: parsed.approvalRequestId ?? row.approval_request_id ?? "" }
+        : {}),
       status: parsed.status ?? row.status ?? "active",
-    };
+    } as RunSuspension;
   }
 
   private normalizeContinuation(row: RunContinuationRow | undefined): ContinuationEnvelope | undefined {
@@ -100,6 +108,10 @@ export class SqliteRunStateStore implements RunStateStorePort {
     }
 
     const parsed = JSON.parse(row.payload_json) as Partial<ContinuationEnvelope>;
+    const parsedOwnership = parsed as Partial<ContinuationEnvelope> & {
+      reason?: string;
+      approvalRequestId?: string;
+    };
     const kind = (parsed.kind ?? row.kind) as ContinuationEnvelope["kind"];
     const base = {
       continuationId: parsed.continuationId ?? row.continuation_id,
@@ -108,13 +120,13 @@ export class SqliteRunStateStore implements RunStateStorePort {
       taskId: parsed.taskId ?? row.task_id ?? undefined,
       kind,
       input: parsed.input,
-      reason: parsed.reason,
+      reason: parsedOwnership.reason,
       step: parsed.step,
       status: parsed.status ?? row.status ?? "created",
       consumedAt: parsed.consumedAt,
       invalidatedAt: parsed.invalidatedAt,
       invalidationReason: parsed.invalidationReason,
-      approvalRequestId: parsed.approvalRequestId ?? row.approval_request_id ?? undefined,
+      approvalRequestId: parsedOwnership.approvalRequestId ?? row.approval_request_id ?? undefined,
     };
 
     if (kind === "approval_resolution") {
@@ -125,6 +137,19 @@ export class SqliteRunStateStore implements RunStateStorePort {
         taskId: base.taskId ?? "",
         approvalRequestId: base.approvalRequestId ?? "",
         decision: parsedApproval.decision ?? "approved",
+      };
+    }
+
+    if (kind === "plan_decision") {
+      const parsedDecision = parsed as Partial<PlanDecisionContinuation>;
+      return {
+        ...base,
+        kind,
+        taskId: base.taskId ?? "",
+        optionId: parsedDecision.optionId ?? "",
+        optionLabel: parsedDecision.optionLabel ?? "",
+        input: parsedDecision.input ?? base.input ?? "",
+        step: parsedDecision.step,
       };
     }
 
@@ -140,6 +165,9 @@ export class SqliteRunStateStore implements RunStateStorePort {
     }
     if (isApprovalResolutionContinuation(continuation) && (!continuation.taskId || !continuation.approvalRequestId)) {
       throw new Error("approval_resolution continuation requires taskId and approvalRequestId");
+    }
+    if (isPlanDecisionContinuation(continuation) && (!continuation.taskId || !continuation.optionId || !continuation.input)) {
+      throw new Error("plan_decision continuation requires taskId, optionId and input");
     }
 
     return {
@@ -232,11 +260,15 @@ export class SqliteRunStateStore implements RunStateStorePort {
     );
   }
 
-  private writeSuspension(suspension: ApprovalSuspension): void {
-    const normalizedSuspension: ApprovalSuspension = {
+  private writeSuspension(suspension: RunSuspension): void {
+    const normalizedSuspension: RunSuspension = {
       ...suspension,
       status: suspension.status ?? "active",
     };
+    const approvalRequestId =
+      normalizedSuspension.reasonKind === "waiting_approval"
+        ? normalizedSuspension.approvalRequestId
+        : null;
 
     this.db.run(
       `INSERT INTO run_suspensions (
@@ -263,7 +295,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
         normalizedSuspension.runId,
         normalizedSuspension.threadId,
         normalizedSuspension.taskId,
-        normalizedSuspension.approvalRequestId ?? null,
+        approvalRequestId,
         normalizedSuspension.reasonKind,
         normalizedSuspension.resumeStep,
         normalizedSuspension.status,
@@ -280,6 +312,9 @@ export class SqliteRunStateStore implements RunStateStorePort {
 
   private writeContinuation(continuation: ContinuationEnvelope): void {
     const normalizedContinuation = this.normalizeContinuationForStorage(continuation);
+    const approvalRequestId = isApprovalResolutionContinuation(normalizedContinuation)
+      ? normalizedContinuation.approvalRequestId
+      : null;
 
     this.db.run(
       `INSERT INTO run_continuations (
@@ -303,7 +338,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
         normalizedContinuation.threadId,
         normalizedContinuation.runId,
         normalizedContinuation.taskId ?? null,
-        normalizedContinuation.approvalRequestId ?? null,
+        approvalRequestId,
         normalizedContinuation.kind,
         normalizedContinuation.status ?? "created",
         JSON.stringify(normalizedContinuation),
@@ -349,7 +384,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
     return next;
   }
 
-  private resolveSuspensionSync(input: { suspensionId: string; continuationId: string }): ApprovalSuspension | undefined {
+  private resolveSuspensionSync(input: { suspensionId: string; continuationId: string }): RunSuspension | undefined {
     const suspension = this.normalizeSuspension(
       this.db
         .query<RunSuspensionRow, [string]>(
@@ -364,7 +399,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
     }
 
     const resolvedAt = new Date().toISOString();
-    const next: ApprovalSuspension = {
+    const next: RunSuspension = {
       ...suspension,
       status: "resolved",
       resolvedAt,
@@ -388,7 +423,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
     return result.changes > 0 ? next : undefined;
   }
 
-  private invalidateSuspensionSync(input: { suspensionId: string; reason: string }): ApprovalSuspension | undefined {
+  private invalidateSuspensionSync(input: { suspensionId: string; reason: string }): RunSuspension | undefined {
     const suspension = this.normalizeSuspension(
       this.db
         .query<RunSuspensionRow, [string]>(
@@ -403,7 +438,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
     }
 
     const invalidatedAt = new Date().toISOString();
-    const next: ApprovalSuspension = {
+    const next: RunSuspension = {
       ...suspension,
       status: "invalidated",
       invalidatedAt,
@@ -457,15 +492,17 @@ export class SqliteRunStateStore implements RunStateStorePort {
   }
 
   private buildSyntheticState(input: {
-    continuation: ApprovalResolutionContinuation;
+    continuation: ApprovalResolutionContinuation | PlanDecisionContinuation;
     existingContinuation?: ContinuationEnvelope;
-    existingSuspension?: ApprovalSuspension;
+    existingSuspension?: RunSuspension;
   }): RunLoopState {
     const terminalStep =
       input.existingContinuation?.status === "consumed"
       || input.existingSuspension?.status === "resolved"
         ? "done"
-        : "waiting_approval";
+        : input.continuation.kind === "plan_decision"
+          ? "waiting_plan_decision"
+          : "waiting_approval";
 
     return {
       stateVersion: RUN_LOOP_STATE_VERSION,
@@ -473,7 +510,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
       threadId: input.continuation.threadId,
       runId: input.continuation.runId,
       taskId: input.continuation.taskId,
-      input: input.continuation.reason ?? "",
+      input: input.continuation.input ?? (input.continuation.kind === "approval_resolution" ? input.continuation.reason : undefined) ?? "",
       nextStep: terminalStep,
       artifacts: [],
       latestArtifacts: [],
@@ -523,7 +560,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
     return this.normalizeState(this.loadStateRow(runId));
   }
 
-  async loadActiveSuspensionByRun(runId: string): Promise<ApprovalSuspension | undefined> {
+  async loadActiveSuspensionByRun(runId: string): Promise<RunSuspension | undefined> {
     return this.normalizeSuspension(this.loadActiveSuspensionRow(runId));
   }
 
@@ -535,7 +572,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
     this.writeState(state);
   }
 
-  async saveSuspension(suspension: ApprovalSuspension): Promise<void> {
+  async saveSuspension(suspension: RunSuspension): Promise<void> {
     this.writeSuspension(suspension);
   }
 
@@ -641,7 +678,8 @@ export class SqliteRunStateStore implements RunStateStorePort {
       }
 
       if (
-        activeSuspension.threadId !== payload.continuation.threadId
+        activeSuspension.reasonKind !== "waiting_approval"
+        || activeSuspension.threadId !== payload.continuation.threadId
         || activeSuspension.runId !== payload.continuation.runId
         || activeSuspension.approvalRequestId !== payload.continuation.approvalRequestId
       ) {
@@ -810,6 +848,170 @@ export class SqliteRunStateStore implements RunStateStorePort {
     })(input);
   }
 
+  async applyPlanDecisionContinuation(input: {
+    continuation: PlanDecisionContinuation;
+    expectedStateVersion: number;
+    expectedEngineVersion: string;
+  }): Promise<PlanDecisionContinuationTransactionResult> {
+    return this.db.transaction((payload: typeof input): PlanDecisionContinuationTransactionResult => {
+      const existingContinuation = this.normalizeContinuation(this.loadContinuationRow(payload.continuation.continuationId));
+      const latestSuspension = this.normalizeSuspension(this.loadLatestSuspensionRow(payload.continuation.runId));
+      const state =
+        this.normalizeState(this.loadStateRow(payload.continuation.runId))
+        ?? this.buildSyntheticState({
+          continuation: payload.continuation,
+          existingContinuation,
+          existingSuspension: latestSuspension,
+        });
+
+      if (existingContinuation?.status === "consumed") {
+        return {
+          disposition: "already_consumed",
+          state,
+          continuation: existingContinuation,
+          suspension: latestSuspension,
+        };
+      }
+      if (existingContinuation?.status === "invalidated") {
+        return {
+          disposition: "invalidated",
+          state,
+          continuation: existingContinuation,
+          suspension: latestSuspension,
+        };
+      }
+
+      if (!existingContinuation) {
+        this.writeContinuation({
+          ...payload.continuation,
+          status: "created",
+        });
+      }
+
+      const activeSuspension = this.normalizeSuspension(this.loadActiveSuspensionRow(payload.continuation.runId));
+      if (
+        state.stateVersion !== payload.expectedStateVersion
+        || state.engineVersion !== payload.expectedEngineVersion
+      ) {
+        const invalidatedContinuation = this.invalidateContinuationSync({
+          continuationId: payload.continuation.continuationId,
+          reason: "run-loop state version mismatch",
+        });
+        const invalidatedSuspension = activeSuspension
+          ? this.invalidateSuspensionSync({
+              suspensionId: activeSuspension.suspensionId,
+              reason: "run-loop state version mismatch",
+            })
+          : latestSuspension;
+
+        return {
+          disposition: "not_resumable",
+          state,
+          continuation: invalidatedContinuation ?? existingContinuation,
+          suspension: invalidatedSuspension,
+        };
+      }
+
+      if (!activeSuspension) {
+        const invalidatedContinuation = this.invalidateContinuationSync({
+          continuationId: payload.continuation.continuationId,
+          reason:
+            latestSuspension?.status === "resolved"
+              ? "plan decision already resolved"
+              : latestSuspension?.invalidationReason ?? "plan decision no longer resumable",
+        });
+
+        return {
+          disposition: latestSuspension?.status === "resolved" ? "already_resolved" : "invalidated",
+          state,
+          continuation: invalidatedContinuation ?? this.normalizeContinuation(this.loadContinuationRow(payload.continuation.continuationId)),
+          suspension: latestSuspension,
+        };
+      }
+
+      if (
+        activeSuspension.reasonKind !== "waiting_plan_decision"
+        || activeSuspension.threadId !== payload.continuation.threadId
+        || activeSuspension.runId !== payload.continuation.runId
+        || activeSuspension.taskId !== payload.continuation.taskId
+      ) {
+        const invalidatedContinuation = this.invalidateContinuationSync({
+          continuationId: payload.continuation.continuationId,
+          reason: "continuation ownership does not match active plan decision suspension",
+        });
+        return {
+          disposition: "invalidated",
+          state,
+          continuation: invalidatedContinuation ?? this.normalizeContinuation(this.loadContinuationRow(payload.continuation.continuationId)),
+          suspension: activeSuspension,
+        };
+      }
+
+      const selectedOption = activeSuspension.planDecision.options.find(
+        (option) => option.id === payload.continuation.optionId,
+      );
+      if (!selectedOption) {
+        const invalidatedContinuation = this.invalidateContinuationSync({
+          continuationId: payload.continuation.continuationId,
+          reason: "selected plan decision option is not part of the active suspension",
+        });
+        return {
+          disposition: "invalidated",
+          state,
+          continuation: invalidatedContinuation ?? this.normalizeContinuation(this.loadContinuationRow(payload.continuation.continuationId)),
+          suspension: activeSuspension,
+        };
+      }
+
+      const consumedContinuation = this.consumeContinuationSync(payload.continuation.continuationId) as PlanDecisionContinuation | undefined;
+      if (!consumedContinuation) {
+        const currentContinuation = this.normalizeContinuation(this.loadContinuationRow(payload.continuation.continuationId));
+        return {
+          disposition: currentContinuation?.status === "invalidated" ? "invalidated" : "already_consumed",
+          state,
+          continuation: currentContinuation,
+          suspension: activeSuspension,
+        };
+      }
+
+      const transitionedSuspension = this.resolveSuspensionSync({
+        suspensionId: activeSuspension.suspensionId,
+        continuationId: consumedContinuation.continuationId,
+      });
+      if (!transitionedSuspension) {
+        const currentSuspension = this.normalizeSuspension(this.loadLatestSuspensionRow(payload.continuation.runId));
+        return {
+          disposition: currentSuspension?.status === "resolved" ? "already_resolved" : "invalidated",
+          state,
+          continuation: consumedContinuation,
+          suspension: currentSuspension,
+        };
+      }
+
+      const resumed = resolveSuspensionAfterPlanDecision({
+        suspension: activeSuspension,
+        continuation: consumedContinuation,
+      });
+      const resumedState: RunLoopState = {
+        ...state,
+        input: resumed.input,
+        nextStep: resumed.nextStep,
+        planDecision: resumed.planDecision,
+        pendingApproval: undefined,
+        pauseSummary: undefined,
+        recommendationReason: undefined,
+      };
+      this.writeState(resumedState);
+
+      return {
+        disposition: "resumed",
+        state: resumedState,
+        continuation: consumedContinuation,
+        suspension: transitionedSuspension,
+      };
+    })(input);
+  }
+
   async invalidateRunRecoveryArtifacts(input: {
     runId: string;
     reason: string;
@@ -848,7 +1050,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
     })(input);
   }
 
-  async listSuspensionsByThread(threadId: string): Promise<ApprovalSuspension[]> {
+  async listSuspensionsByThread(threadId: string): Promise<RunSuspension[]> {
     const rows = this.db
       .query<RunSuspensionRow, [string]>(
         `SELECT suspension_id, run_id, thread_id, task_id, approval_request_id, status, payload_json
@@ -860,7 +1062,7 @@ export class SqliteRunStateStore implements RunStateStorePort {
 
     return rows
       .map((row) => this.normalizeSuspension(row))
-      .filter((value): value is ApprovalSuspension => value !== undefined);
+      .filter((value): value is RunSuspension => value !== undefined);
   }
 
   async resetThreadState(threadId: string): Promise<void> {

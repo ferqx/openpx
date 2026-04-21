@@ -20,12 +20,13 @@ describe("Stable Control API Compliance", () => {
         projectId: "test-project",
         lastEventSeq: 0,
         activeRunId: undefined,
+        threadMode: "normal",
         threads: [],
         runs: [],
         tasks: [],
         pendingApprovals: [],
         answers: [],
-        workers: [],
+        agentRuns: [],
       })),
       handleCommand: mock(async (_command: RuntimeCommand) => {}),
       subscribeEvents: mock(() => {
@@ -39,6 +40,7 @@ describe("Stable Control API Compliance", () => {
               type: "thread.view_updated",
               payload: {
                 threadId: "thread-1",
+                threadMode: "normal",
                 status: "active",
               },
             },
@@ -111,10 +113,29 @@ describe("Stable Control API Compliance", () => {
     ).toBe(true);
   });
 
-  test("runtime command schema accepts worker lifecycle commands", () => {
+  test("runtime command schema accepts thread mode toggle commands", () => {
     expect(
       schemas.RuntimeCommand.safeParse({
-        kind: "worker_spawn",
+        kind: "set_thread_mode",
+        threadId: "thread-1",
+        mode: "plan",
+        trigger: "slash_command",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      schemas.RuntimeCommand.safeParse({
+        kind: "clear_thread_mode",
+        threadId: "thread-1",
+        trigger: "plain_input",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("runtime command schema accepts agent run lifecycle commands", () => {
+    expect(
+      schemas.RuntimeCommand.safeParse({
+        kind: "agent_run_spawn",
         taskId: "task-1",
         role: "planner",
         spawnReason: "hydrate runtime truth",
@@ -122,8 +143,8 @@ describe("Stable Control API Compliance", () => {
     ).toBe(true);
     expect(
       schemas.RuntimeCommand.safeParse({
-        kind: "worker_resume",
-        workerId: "worker-1",
+        kind: "agent_run_resume",
+        agentRunId: "agent-run-1",
       }).success,
     ).toBe(true);
   });
@@ -201,19 +222,36 @@ describe("Stable Control API Compliance", () => {
     ).toBe(false);
   });
 
-  test("runtime event schema accepts worker lifecycle events", () => {
+  test("runtime event schema accepts agent run lifecycle events", () => {
     expect(
       schemas.RuntimeEvent.safeParse({
-        type: "worker.spawned",
+        type: "agent_run.spawned",
         payload: {
-          worker: {
-            workerId: "worker-1",
+          agentRun: {
+            agentRunId: "agent-run-1",
             threadId: "thread-1",
             taskId: "task-1",
-            role: "planner",
+            roleKind: "legacy_internal",
+            roleId: "planner",
             status: "running",
             spawnReason: "hydrate runtime truth",
+            goalSummary: "hydrate runtime truth",
+            visibilityPolicy: "hidden",
           },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  test("runtime event schema accepts thread mode change events", () => {
+    expect(
+      schemas.RuntimeEvent.safeParse({
+        type: "thread.mode_changed",
+        payload: {
+          threadId: "thread-1",
+          fromMode: "normal",
+          toMode: "plan",
+          trigger: "slash_command",
         },
       }).success,
     ).toBe(true);

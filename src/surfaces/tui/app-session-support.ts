@@ -2,6 +2,7 @@ import { deriveBaseSessionStage, type RuntimeSessionState } from "./runtime/runt
 import type { TuiKernelEvent, TuiSessionResult } from "./hooks/use-kernel";
 import {
   findActiveThreadIndex,
+  mergeThreadModeChangeIntoSession,
   mergeThreadViewIntoSession,
   type SessionUpdateSource,
 } from "./session-sync";
@@ -109,6 +110,19 @@ export function applyKernelEventToApp(event: TuiKernelEvent, deps: KernelEventDe
     });
     deps.onUpdateThinking(null);
     deps.onClearActiveTaskIntent();
+    return;
+  }
+
+  if (event.type === "thread.mode_changed") {
+    const nextSession = mergeThreadModeChangeIntoSession(deps.session, event.payload);
+    if (!nextSession) {
+      return;
+    }
+    syncSessionStateIntoApp({
+      ...deps,
+      result: nextSession,
+      source: "event",
+    });
     return;
   }
 

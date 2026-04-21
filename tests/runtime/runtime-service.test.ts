@@ -339,23 +339,23 @@ describe("HarnessSessionRegistry", () => {
     expect(snapshot.threads).toEqual([]);
   });
 
-  test("controls worker lifecycle through runtime commands and reflects it in snapshot truth", async () => {
+  test("controls agent run lifecycle through runtime commands and reflects it in snapshot truth", async () => {
     await fs.mkdir(testDir, { recursive: true });
-    const dataDir = path.join(testDir, "runtime-service-worker-control.sqlite");
-    const projectId = "worker-control-project";
+    const dataDir = path.join(testDir, "runtime-service-agent-run-control.sqlite");
+    const projectId = "agent-run-control-project";
     const app = await createAppContext({ dataDir, workspaceRoot: testDir, projectId });
 
-    const thread = createThread("thread-worker-control-1", testDir, projectId);
+    const thread = createThread("thread-agent-run-control-1", testDir, projectId);
     await app.stores.threadStore.save({ ...thread, status: "active" });
-    await app.stores.taskStore.save(createTask("task-worker-control-1", thread.threadId, "run-1", "Hydrate worker truth"));
+    await app.stores.taskStore.save(createTask("task-agent-run-control-1", thread.threadId, "run-1", "Hydrate agent run truth"));
 
     const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot: testDir, projectId });
 
     await runtime.handleCommand(
       {
-        kind: "worker_spawn",
+        kind: "agent_run_spawn",
         threadId: thread.threadId,
-        taskId: "task-worker-control-1",
+        taskId: "task-agent-run-control-1",
         role: "planner",
         spawnReason: "hydrate runtime truth",
       },
@@ -363,20 +363,20 @@ describe("HarnessSessionRegistry", () => {
     );
 
     let snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
-    expect(snapshot.workers).toHaveLength(1);
-    expect(snapshot.workers[0]?.status).toBe("running");
-    expect(snapshot.workers[0]?.spawnReason).toBe("hydrate runtime truth");
+    expect(snapshot.agentRuns).toHaveLength(1);
+    expect(snapshot.agentRuns[0]?.status).toBe("running");
+    expect(snapshot.agentRuns[0]?.spawnReason).toBe("hydrate runtime truth");
 
-    const workerId = snapshot.workers[0]!.workerId;
+    const agentRunId = snapshot.agentRuns[0]!.agentRunId;
 
     await runtime.handleCommand(
-      { kind: "worker_join", workerId },
+      { kind: "agent_run_join", agentRunId },
       { workspaceRoot: testDir, projectId },
     );
 
     snapshot = await runtime.getSnapshot({ workspaceRoot: testDir, projectId });
-    expect(snapshot.workers[0]?.workerId).toBe(workerId);
-    expect(snapshot.workers[0]?.status).toBe("completed");
-    expect(snapshot.workers[0]?.endedAt).toBeString();
+    expect(snapshot.agentRuns[0]?.agentRunId).toBe(agentRunId);
+    expect(snapshot.agentRuns[0]?.status).toBe("completed");
+    expect(snapshot.agentRuns[0]?.endedAt).toBeString();
   });
 });

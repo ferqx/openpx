@@ -3,6 +3,7 @@ import { z } from "zod";
 /** 能力标记：标识某个工作包依赖的具体能力或危险动作 */
 export const workPackageCapabilityMarkerSchema = z.enum([
   "apply_patch.delete_file",
+  "implementation_work",
   "respond_only",
 ]);
 export type WorkPackageCapabilityMarker = z.infer<typeof workPackageCapabilityMarkerSchema>;
@@ -11,6 +12,7 @@ export type WorkPackageCapabilityMarker = z.infer<typeof workPackageCapabilityMa
 export const workPackageCapabilityFamilySchema = z.enum([
   "approval_gated_delete",
   "reject_replan_delete",
+  "feature_implementation",
   "artifact_current_package",
   "interrupt_resume_recovery",
 ]);

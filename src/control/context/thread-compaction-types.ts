@@ -40,7 +40,7 @@ export type RecoveryFacts = {
   };
   blocking?: {
     sourceTaskId: string;
-    kind: "waiting_approval" | "human_recovery";
+    kind: "waiting_approval" | "plan_decision" | "human_recovery";
     message: string;
   };
   pendingApprovals: Array<{

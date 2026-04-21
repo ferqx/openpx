@@ -54,7 +54,7 @@ describe("Runtime Restart Recovery", () => {
 
     const scopedThreads = await secondBoot.stores.threadStore.listByScope({ workspaceRoot, projectId });
     expect(blockedResult.threadId).toBe(thread.threadId);
-    expect(blockedResult.status).toBe("blocked");
+    expect(blockedResult.status).toBe("active");
     expect(scopedThreads).toHaveLength(1);
 
     const runtime = await createHarnessSessionRegistry({ dataDir, workspaceRoot, projectId });

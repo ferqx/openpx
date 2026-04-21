@@ -3,7 +3,7 @@ import { runStatusSchema, runTriggerSchema } from "../../../shared/schemas";
 
 /** RunView 中允许暴露给客户端的阻塞原因 */
 export const runBlockingReasonSchema = z.object({
-  kind: z.enum(["waiting_approval", "human_recovery", "environment_block"]),
+  kind: z.enum(["waiting_approval", "plan_decision", "human_recovery", "environment_block"]),
   message: z.string(),
 });
 

@@ -13,12 +13,8 @@ export function computeScreenLayout(input: {
   terminalRows: number;
   showThreadPanel?: boolean;
   activeUtilityPane?: UtilityPaneMode;
-  composerMode?: "input" | "confirm" | "blocked";
+  composerMode?: "input" | "confirm";
   recommendationReason?: string;
-  blockingReason?: {
-    kind: "waiting_approval" | "human_recovery";
-    message: string;
-  };
   stage?: SessionStage;
   showWelcome?: boolean;
 }): ScreenLayout {

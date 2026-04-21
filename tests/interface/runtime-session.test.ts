@@ -10,7 +10,9 @@ describe("Runtime session contract", () => {
       lastEventSeq: 12,
       activeThreadId: "thread-1",
       activeRunId: "run-1",
+      threadMode: "plan",
       narrativeSummary: "Completed repo scan and narrowed work to runtime recovery.",
+      pauseSummary: "Manual recovery required from snapshot.",
       blockingReason: {
         kind: "human_recovery",
         message: "Manual recovery required from snapshot.",
@@ -22,6 +24,7 @@ describe("Runtime session contract", () => {
           projectId: "project-1",
           revision: 2,
           status: "active",
+          threadMode: "plan",
           activeRunId: "run-1",
           activeRunStatus: "blocked",
         },
@@ -74,14 +77,17 @@ describe("Runtime session contract", () => {
           content: "Completed repo scan and narrowed work to runtime recovery.",
         },
       ],
-      workers: [
+      agentRuns: [
         {
-          workerId: "worker-1",
+          agentRunId: "agent-run-1",
           threadId: "thread-1",
           taskId: "task-1",
-          role: "planner",
+          roleKind: "legacy_internal",
+          roleId: "planner",
           status: "running",
           spawnReason: "initial planning",
+          goalSummary: "initial planning",
+          visibilityPolicy: "hidden",
           startedAt: "2026-04-06T00:00:00.000Z",
           resumeToken: "resume-1",
         },
@@ -89,8 +95,10 @@ describe("Runtime session contract", () => {
     });
 
     expect(session).toEqual({
-      status: "blocked",
-      stage: "blocked",
+      status: "completed",
+      stage: "idle",
+      primaryAgent: "build",
+      threadMode: "plan",
       threadId: "thread-1",
       finalResponse: "Completed repo scan and narrowed work to runtime recovery.",
       executionSummary: undefined,
@@ -131,25 +139,25 @@ describe("Runtime session contract", () => {
           content: "Completed repo scan and narrowed work to runtime recovery.",
         },
       ],
-      workers: [
+      agentRuns: [
         {
-          workerId: "worker-1",
+          agentRunId: "agent-run-1",
           threadId: "thread-1",
           taskId: "task-1",
-          role: "planner",
+          roleKind: "legacy_internal",
+          roleId: "planner",
           status: "running",
           spawnReason: "initial planning",
+          goalSummary: "initial planning",
+          visibilityPolicy: "hidden",
           startedAt: "2026-04-06T00:00:00.000Z",
           resumeToken: "resume-1",
         },
       ],
       workspaceRoot: "/tmp/workspace",
       projectId: "project-1",
-      blockingReason: {
-        kind: "human_recovery",
-        message: "Manual recovery required from snapshot.",
-      },
       recommendationReason: undefined,
+      planDecision: undefined,
       narrativeSummary: "Completed repo scan and narrowed work to runtime recovery.",
       threads: [
         {
@@ -158,6 +166,7 @@ describe("Runtime session contract", () => {
           projectId: "project-1",
           revision: 2,
           status: "active",
+          threadMode: "plan",
           activeRunId: "run-1",
           activeRunStatus: "blocked",
         },
@@ -173,6 +182,7 @@ describe("Runtime session contract", () => {
       lastEventSeq: 2,
       activeThreadId: "thread-2",
       activeRunId: "run-2",
+      threadMode: "normal",
       threads: [
         {
           threadId: "thread-2",
@@ -180,6 +190,7 @@ describe("Runtime session contract", () => {
           projectId: "project-1",
           revision: 1,
           status: "active",
+          threadMode: "normal",
           activeRunId: "run-2",
           activeRunStatus: "waiting_approval",
         },
@@ -201,16 +212,73 @@ describe("Runtime session contract", () => {
       pendingApprovals: [],
       answers: [],
       messages: [],
-      workers: [],
+      agentRuns: [],
     });
 
     expect(session.status).toBe("waiting_approval");
     expect(session.stage).toBe("awaiting_confirmation");
-    expect(session.blockingReason).toEqual({
-      kind: "waiting_approval",
-      message: "Need approval",
+    expect(session.primaryAgent).toBe("build");
+    expect(session.threadMode).toBe("normal");
+    expect(session.pauseSummary).toBeUndefined();
+  });
+
+  test("ignores stale blocking reasons while the active run is running", () => {
+    const session = deriveRuntimeSession({
+      protocolVersion: "1.0.0",
+      workspaceRoot: "/tmp/workspace",
+      projectId: "project-1",
+      lastEventSeq: 3,
+      activeThreadId: "thread-running",
+      activeRunId: "run-running",
+      threadMode: "plan",
+      blockingReason: {
+        kind: "plan_decision",
+        message: "旧方案选择问题",
+      },
+      threads: [
+        {
+          threadId: "thread-running",
+          workspaceRoot: "/tmp/workspace",
+          projectId: "project-1",
+          revision: 3,
+          status: "active",
+          threadMode: "plan",
+          activeRunId: "run-running",
+          activeRunStatus: "running",
+          blockingReasonKind: "plan_decision",
+        },
+      ],
+      runs: [
+        {
+          runId: "run-running",
+          threadId: "thread-running",
+          status: "running",
+          trigger: "user_input",
+          startedAt: "2026-04-06T00:00:00.000Z",
+          blockingReason: {
+            kind: "plan_decision",
+            message: "旧方案选择问题",
+          },
+        },
+      ],
+      tasks: [
+        {
+          taskId: "task-running",
+          threadId: "thread-running",
+          runId: "run-running",
+          status: "running",
+          summary: "继续执行登录页方案",
+        },
+      ],
+      pendingApprovals: [],
+      answers: [],
+      messages: [],
+      agentRuns: [],
     });
-    expect(session.pauseSummary).toBe("Need approval");
+
+    expect(session.status).toBe("completed");
+    expect(session.stage).toBe("idle");
+    expect(session.pauseSummary).toBeUndefined();
   });
 
   test("formats thread list summaries from stable session views", () => {
@@ -222,26 +290,28 @@ describe("Runtime session contract", () => {
             threadId: "thread-2",
             workspaceRoot: "/tmp/workspace",
             projectId: "project-1",
-          revision: 4,
-          status: "active",
-          activeRunStatus: "waiting_approval",
-          narrativeSummary: "Current active thread summary.",
-          pendingApprovalCount: 1,
+            revision: 4,
+            status: "active",
+            threadMode: "plan",
+            activeRunStatus: "waiting_approval",
+            narrativeSummary: "Current active thread summary.",
+            pendingApprovalCount: 1,
           },
           {
             threadId: "thread-1",
             workspaceRoot: "/tmp/workspace",
             projectId: "project-1",
-          revision: 2,
-          status: "idle",
-          activeRunStatus: "completed",
-          narrativeSummary: "Completed repo scan and isolated runtime recovery work.",
-          blockingReasonKind: "human_recovery",
+            revision: 2,
+            status: "idle",
+            threadMode: "normal",
+            activeRunStatus: "completed",
+            narrativeSummary: "Completed repo scan and isolated runtime recovery work.",
+            blockingReasonKind: "human_recovery",
           },
         ],
       }),
     ).toBe(
-      "thread-2 (active) [waiting_approval] approval:1 Current active thread summary.\nthread-1 [completed] human_recovery Completed repo scan and isolated runtime recovery work.",
+      "thread-2 (active) [waiting_approval] mode:plan approval:1 Current active thread summary.\nthread-1 [completed] mode:normal human_recovery Completed repo scan and isolated runtime recovery work.",
     );
   });
 });

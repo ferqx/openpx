@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { App } from "../../src/surfaces/tui/app";
 import type { TuiKernel } from "../../src/surfaces/tui/hooks/use-kernel";
-import type { ApprovalCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../../src/surfaces/tui/commands";
+import type { ApprovalCommand, PlanDecisionCommand, PlanInputCommand, SubmitInputCommand, ThreadCommand } from "../../src/surfaces/tui/commands";
 
 describe("Confirmation Flow", () => {
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -38,6 +38,8 @@ describe("Confirmation Flow", () => {
       handleCommand: async () => {
         commandCalled = true;
         return {
+          primaryAgent: "build",
+          threadMode: "normal",
           status: "waiting_approval",
           threadId: "thread-1",
           workspaceRoot: "/tmp/workspace",
@@ -73,7 +75,7 @@ describe("Confirmation Flow", () => {
             },
           ],
           answers: [],
-          workers: [],
+          agentRuns: [],
           threads: [],
         };
       },
@@ -105,7 +107,7 @@ describe("Confirmation Flow", () => {
 
   for (const variant of variants) {
     test(`maps approval input '${variant.text}' to ${variant.expected}`, async () => {
-      const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | ApprovalCommand | ThreadCommand> = [];
+      const receivedCommands: Array<SubmitInputCommand | PlanInputCommand | PlanDecisionCommand | ApprovalCommand | ThreadCommand> = [];
       const kernel: TuiKernel = {
         events: {
           subscribe() {
@@ -115,6 +117,8 @@ describe("Confirmation Flow", () => {
         async handleCommand(command) {
           receivedCommands.push(command);
           return {
+            primaryAgent: "build",
+            threadMode: "normal",
             status: "waiting_approval",
             threadId: "thread-1",
             workspaceRoot: "/tmp/workspace",
@@ -138,12 +142,14 @@ describe("Confirmation Flow", () => {
               },
             ],
             answers: [],
-            workers: [],
+            agentRuns: [],
             threads: [],
           };
         },
         async hydrateSession() {
           return {
+            primaryAgent: "build",
+            threadMode: "normal",
             status: "waiting_approval",
             threadId: "thread-1",
             workspaceRoot: "/tmp/workspace",
@@ -167,7 +173,7 @@ describe("Confirmation Flow", () => {
               },
             ],
             answers: [],
-            workers: [],
+            agentRuns: [],
             threads: [],
           };
         },

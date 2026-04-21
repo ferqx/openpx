@@ -34,7 +34,7 @@ export type Task = {
   status: TaskStatus;
   /** blockingReason——阻塞原因，与 run 共享 kind 语义（可选） */
   blockingReason?: {
-    kind: "waiting_approval" | "human_recovery";
+    kind: "waiting_approval" | "plan_decision" | "human_recovery";
     message: string;
   };
 };

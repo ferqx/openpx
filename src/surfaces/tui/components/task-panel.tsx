@@ -15,7 +15,6 @@ export function TaskPanel(input: { tasks: TaskSummary[] }) {
         return <Text color="green">✔</Text>;
       case "failed":
         return <Text color="red">✖</Text>;
-      case "blocked":
       case "waiting_approval":
         return <Text color="yellow">⏸</Text>;
       default:

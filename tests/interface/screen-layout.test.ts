@@ -17,12 +17,11 @@ describe("screen layout", () => {
     });
   });
 
-  test("reserves overlay rows for settings and blocked states", () => {
+  test("reserves overlay rows for settings", () => {
     const layout = computeScreenLayout({
       terminalRows: 30,
       activeUtilityPane: "settings",
-      composerMode: "blocked",
-      blockingReason: { kind: "human_recovery", message: "Inspect workspace" },
+      composerMode: "input",
       showThreadPanel: true,
       showWelcome: false,
     });

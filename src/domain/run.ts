@@ -24,11 +24,12 @@ export type RunTrigger = z.infer<typeof runTriggerSchema>;
 /**
  * Run 阻塞原因——描述 run 为何暂停执行。
  * - waiting_approval：等待审批（approval）通过
+ * - plan_decision：等待用户选择 planner（规划器）提供的实现方案
  * - human_recovery：需要人工恢复继续执行（resume）
  * - environment_block：环境阻塞（如外部依赖不可用）
  */
 export type RunBlockingReason = {
-  kind: "waiting_approval" | "human_recovery" | "environment_block";
+  kind: "waiting_approval" | "plan_decision" | "human_recovery" | "environment_block";
   message: string;
 };
 

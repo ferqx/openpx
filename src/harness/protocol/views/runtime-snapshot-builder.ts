@@ -1,20 +1,23 @@
 import type { ApprovalRequest } from "../../../domain/approval";
+import type { AgentRunRecord } from "../../../domain/agent-run";
 import type { Run } from "../../../domain/run";
 import type { Task } from "../../../domain/task";
 import type { Thread } from "../../../domain/thread";
 import type { Event } from "../../../domain/event";
-import type { WorkerRecord } from "../../../control/workers/worker-types";
+import { DEFAULT_THREAD_MODE } from "../../../control/agents/thread-mode";
 import type { HarnessSessionScope } from "../../server/harness-session-scope";
 import type { RuntimeSnapshot } from "../schemas/api-schema";
+import type { PlanDecisionRequest } from "../../../runtime/planning/planner-result";
 import { CURRENT_PROTOCOL_VERSION as PROTOCOL_VERSION } from "../schemas/protocol-version";
 import { getStoredEventSequence } from "../events/runtime-event-envelope";
+import { toAgentRunView } from "./agent-run-view";
 
 /** thread 列表项的内部扩展视图：补充 active run 与阻塞摘要 */
 type RuntimeThreadView = Thread & {
   activeRunId?: string;
   activeRunStatus?: Run["status"];
   pendingApprovalCount?: number;
-  blockingReasonKind?: "waiting_approval" | "human_recovery";
+  blockingReasonKind?: "waiting_approval" | "plan_decision" | "human_recovery";
 };
 
 /** 组装 runtime snapshot：把 thread/run/task/approval 等 durable 状态裁成协议视图 */
@@ -26,23 +29,33 @@ export function buildRuntimeSnapshot(input: {
   runs: Run[];
   tasks: Task[];
   pendingApprovals: ApprovalRequest[];
-  workers: WorkerRecord[];
+  agentRuns: AgentRunRecord[];
   events: Event[];
   fallbackLastEventSeq: number;
   narrativeSummary?: string;
+  planDecision?: PlanDecisionRequest;
 }): RuntimeSnapshot {
+  const latestRun = input.runs.find((run) => run.runId === input.activeRunId);
+  const canExposeBlockingReason =
+    !latestRun
+    || latestRun.status === "waiting_approval"
+    || latestRun.status === "blocked"
+    || latestRun.status === "failed"
+    || latestRun.status === "interrupted";
   // 优先使用 thread recoveryFacts 中的阻塞原因；
   // 没有时再退回当前 blocked task 上的 blockingReason。
-  const activeBlockingReason = input.activeThread?.recoveryFacts?.blocking
-    ? {
-        kind: input.activeThread.recoveryFacts.blocking.kind,
-        message: input.activeThread.recoveryFacts.blocking.message,
-      }
-    : input.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason;
+  // running run 上残留的 blockingReason 只代表旧暂停点，不能继续投影成当前阻塞。
+  const activeBlockingReason = canExposeBlockingReason
+    ? input.activeThread?.recoveryFacts?.blocking
+      ? {
+          kind: input.activeThread.recoveryFacts.blocking.kind,
+          message: input.activeThread.recoveryFacts.blocking.message,
+        }
+      : input.tasks.find((task) => task.status === "blocked" && task.blockingReason)?.blockingReason
+    : undefined;
 
   const narrativeSummary = input.activeThread?.narrativeState?.threadSummary || input.narrativeSummary;
   const latestAnswer = input.activeThread?.recoveryFacts?.latestDurableAnswer;
-  const latestRun = input.runs.find((run) => run.runId === input.activeRunId);
   const latestExecutionStatus =
     latestRun?.status === "completed"
       ? "completed" as const
@@ -65,7 +78,9 @@ export function buildRuntimeSnapshot(input: {
     lastEventSeq,
     activeThreadId: input.activeThread?.threadId,
     activeRunId: input.activeRunId,
+    threadMode: input.activeThread?.threadMode ?? DEFAULT_THREAD_MODE,
     recommendationReason: input.activeThread?.recommendationReason,
+    planDecision: input.planDecision,
     finalResponse: latestAnswer?.summary,
     pauseSummary,
     latestExecutionStatus,
@@ -81,6 +96,7 @@ export function buildRuntimeSnapshot(input: {
         projectId: thread.projectId,
         revision: thread.revision,
         status: thread.status,
+        threadMode: thread.threadMode,
         activeRunId: thread.activeRunId ?? latestRun?.runId,
         activeRunStatus: thread.activeRunStatus ?? latestRun?.status,
         narrativeSummary: thread.narrativeSummary,
@@ -138,16 +154,6 @@ export function buildRuntimeSnapshot(input: {
       role: message.role,
       content: message.content,
     })),
-    workers: input.workers.map((worker) => ({
-      workerId: worker.workerId,
-      threadId: worker.threadId,
-      taskId: worker.taskId,
-      role: worker.role,
-      status: worker.status,
-      spawnReason: worker.spawnReason,
-      startedAt: worker.startedAt,
-      endedAt: worker.endedAt,
-      resumeToken: worker.resumeToken,
-    })),
+    agentRuns: input.agentRuns.map((agentRun) => toAgentRunView(agentRun)),
   };
 }

@@ -48,3 +48,10 @@
 - 执行方法仍应沉淀到 `execution/` 的 workflow 文档
 
 `completed/` 只保留“这次计划怎么完成的”这一层事实。
+
+## 当前已完成计划
+
+- [agent-mode-agentrun-refactor.md](/Users/chenchao/Code/ai/openpx/docs/space/execution/completed/agent-mode-agentrun-refactor.md)
+  收束 `Build / threadMode / AgentRun` 的第一阶段重构，完成协议、UI 与生命周期命名分层。
+- [agent-mode-agentrun-followup.md](/Users/chenchao/Code/ai/openpx/docs/space/execution/completed/agent-mode-agentrun-followup.md)
+  完成运行实例、subagent 合同、Verify 实例化规则与稳定文档回写的第二阶段收尾。

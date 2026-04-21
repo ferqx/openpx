@@ -11,7 +11,6 @@ function getStatusIndicator(status: string) {
   switch (status) {
     case "active":
       return <Text color="green">{theme.symbols.activeStep}</Text>;
-    case "blocked":
     case "waiting_approval":
       return <Text color="yellow">{theme.symbols.warning}</Text>;
     case "completed":
@@ -38,8 +37,8 @@ export const ThreadPanel = React.memo(function ThreadPanel(input: { threads: Thr
             {getStatusIndicator(displayStatus)}
             <Text>{thread.threadId}</Text>
             <Text color={theme.colors.dim}>{thread.threadId === input.activeThreadId ? "active" : displayStatus}</Text>
+            <Text color={theme.colors.dim}>{`mode:${thread.threadMode}`}</Text>
             {thread.pendingApprovalCount ? <Text color="yellow">{thread.pendingApprovalCount} approval</Text> : null}
-            {thread.blockingReasonKind ? <Text color="yellow">{thread.blockingReasonKind === "human_recovery" ? "recovery" : thread.blockingReasonKind}</Text> : null}
           </Box>
             );
           })()}

@@ -1,11 +1,13 @@
 import { createAppContext } from "../../../app/bootstrap";
+import { createEvent } from "../../../domain/event";
 import type { Run } from "../../../domain/run";
 import { createThread, type Thread } from "../../../domain/thread";
 import { transitionThread } from "../../../domain/thread";
+import { DEFAULT_THREAD_MODE, type ThreadMode } from "../../../control/agents/thread-mode";
 import type { HarnessSessionScope } from "../../server/harness-session-scope";
 import type { RuntimeCommand } from "../../protocol/schemas/api-schema";
 import type { SessionCommandResult } from "./session-kernel";
-import type { WorkerView } from "../../protocol/views/worker-view";
+import { toAgentRunView, type AgentRunView } from "../../protocol/views/agent-run-view";
 
 type AppContext = Awaited<ReturnType<typeof createAppContext>>;
 
@@ -27,6 +29,7 @@ function scopeKey(scope: HarnessSessionScope): string {
 function createEmptySessionResult(scope: HarnessSessionScope): SessionCommandResult {
   return {
     threadId: "",
+    threadMode: DEFAULT_THREAD_MODE,
     status: "completed",
     finalResponse: undefined,
     executionSummary: undefined,
@@ -41,29 +44,29 @@ function createEmptySessionResult(scope: HarnessSessionScope): SessionCommandRes
   };
 }
 
-/** 把内部 worker 记录裁成 protocol 层允许暴露的 WorkerView */
-function toWorkerView(worker: {
-  workerId: string;
+/** 把底层 AgentRunRecord 裁成 protocol 层允许暴露的 AgentRunView。 */
+function toAgentRunProtocolView(agentRun: {
+  agentRunId: string;
   threadId: string;
   taskId: string;
-  role: WorkerView["role"];
-  status: WorkerView["status"];
+  role: "planner" | "executor" | "verifier" | "memory_maintainer";
+  status: AgentRunView["status"];
   spawnReason: string;
   startedAt?: string;
   endedAt?: string;
   resumeToken?: string;
-}): WorkerView {
-  return {
-    workerId: worker.workerId,
-    threadId: worker.threadId,
-    taskId: worker.taskId,
-    role: worker.role,
-    status: worker.status,
-    spawnReason: worker.spawnReason,
-    startedAt: worker.startedAt,
-    endedAt: worker.endedAt,
-    resumeToken: worker.resumeToken,
-  };
+}): AgentRunView {
+  return toAgentRunView({
+    agentRunId: agentRun.agentRunId,
+    threadId: agentRun.threadId,
+    taskId: agentRun.taskId,
+    role: agentRun.role,
+    status: agentRun.status,
+    spawnReason: agentRun.spawnReason,
+    startedAt: agentRun.startedAt,
+    endedAt: agentRun.endedAt,
+    resumeToken: agentRun.resumeToken,
+  });
 }
 
 /** 只有 blocked / interrupted 的 run 才具备“继续执行”语义 */
@@ -87,35 +90,93 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
     return (await deps.context.kernel.hydrateSession()) ?? createEmptySessionResult(deps.scope);
   }
 
-  /** workerManager 是可选装配项；进入 worker 命令路径时再强校验 */
-  function getWorkerManager() {
-    const workerManager = deps.context.workerManager;
-    if (!workerManager) {
-      throw new Error("worker manager is not configured for this runtime");
+  /** agentRunManager 是可选装配项；进入 agent_run 命令路径时再强校验。 */
+  function getAgentRunManager() {
+    const agentRunManager = deps.context.agentRunManager;
+    if (!agentRunManager) {
+      throw new Error("agent run manager is not configured for this runtime");
     }
-    return workerManager;
+    return agentRunManager;
   }
 
-  async function getWorkerThread(workerId: string): Promise<Thread | undefined> {
-    const worker = await deps.context.stores.workerStore.get(workerId);
-    if (!worker) {
+  async function getAgentRunThread(agentRunId: string): Promise<Thread | undefined> {
+    const agentRun = await deps.context.stores.agentRunStore.get(agentRunId);
+    if (!agentRun) {
       return undefined;
     }
-    const thread = await deps.context.stores.threadStore.get(worker.threadId);
+    const thread = await deps.context.stores.threadStore.get(agentRun.threadId);
     if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
       return undefined;
     }
     return thread;
   }
 
-  function publishWorkerEvent(
-    type: "worker.spawned" | "worker.inspected" | "worker.resumed" | "worker.cancelled" | "worker.completed" | "worker.failed",
-    worker: ReturnType<typeof toWorkerView>,
+  async function appendRuntimeEvent(input: {
+    threadId: string;
+    type: string;
+    payload: Record<string, unknown>;
+  }) {
+    if (!deps.context.stores.eventLog) {
+      return;
+    }
+
+    await deps.context.stores.eventLog.append({
+      ...createEvent({
+        eventId: `event_${crypto.randomUUID()}`,
+        threadId: input.threadId,
+        type: input.type,
+        payload: input.payload,
+        createdAt: new Date().toISOString(),
+      }),
+    });
+  }
+
+  async function updateThreadMode(input: {
+    thread: Thread;
+    nextMode: ThreadMode;
+    trigger: "slash_command" | "plain_input" | "runtime_command" | "compat_plan_task";
+    reason?: string;
+  }) {
+    const fromMode = input.thread.threadMode;
+    if (fromMode === input.nextMode) {
+      return input.thread;
+    }
+
+    const nextThread: Thread = {
+      ...input.thread,
+      threadMode: input.nextMode,
+      revision: (input.thread.revision ?? 1) + 1,
+    };
+    await deps.context.stores.threadStore.save(nextThread);
+
+    const payload = {
+      threadId: input.thread.threadId,
+      fromMode,
+      toMode: input.nextMode,
+      trigger: input.trigger,
+      reason: input.reason,
+    };
+    deps.context.kernel.events.publish({
+      type: "thread.mode_changed",
+      payload,
+    });
+    await appendRuntimeEvent({
+      threadId: input.thread.threadId,
+      type: "thread.mode_changed",
+      payload,
+    });
+
+    return nextThread;
+  }
+
+  function publishAgentRunEvent(
+    type: "agent_run.spawned" | "agent_run.inspected" | "agent_run.resumed" | "agent_run.cancelled" | "agent_run.completed" | "agent_run.failed",
+    agentRun: AgentRunView,
   ) {
     deps.context.kernel.events.publish({
       type,
       payload: {
-        worker,
+        agentRun,
       },
     });
   }
@@ -159,7 +220,6 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
 
     if (
       command.kind === "restart_run"
-      || command.kind === "resubmit_intent"
       || command.kind === "abandon_run"
     ) {
       const thread = await deps.context.stores.threadStore.get(command.threadId);
@@ -174,12 +234,6 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
         return deps.context.kernel.handleCommand({
           type: "restart_run",
           payload: { threadId: thread.threadId },
-        });
-      }
-      if (command.kind === "resubmit_intent") {
-        return deps.context.kernel.handleCommand({
-          type: "resubmit_intent",
-          payload: { threadId: thread.threadId, content: command.content },
         });
       }
       return deps.context.kernel.handleCommand({
@@ -223,6 +277,23 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       return result;
     }
 
+    if (command.kind === "set_thread_mode" || command.kind === "clear_thread_mode") {
+      const thread = await deps.context.stores.threadStore.get(command.threadId);
+      if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
+        throw new Error(`thread ${command.threadId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+
+      await updateThreadMode({
+        thread,
+        nextMode: command.kind === "set_thread_mode" ? command.mode : DEFAULT_THREAD_MODE,
+        trigger: command.trigger,
+        reason: command.reason,
+      });
+
+      const result = await deps.context.kernel.hydrateSession();
+      return result ?? createEmptySessionResult(deps.scope);
+    }
+
     if (command.kind === "add_task") {
       // add_task 是 runtime protocol 到 kernel submit_input 的直接映射。
       await deps.ensureActiveThread();
@@ -238,20 +309,24 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
     }
 
     if (command.kind === "plan_task") {
-      // 当前通过 plan: 前缀把“规划请求”编码进普通 submit_input，
-      // 具体如何路由由 root graph / planner normalization 决定。
-      await deps.ensureActiveThread();
+      // 兼容旧 plan_task：先把 thread truth 切到 plan，再沿普通提交路径进入 kernel。
+      const thread = await deps.ensureActiveThread();
+      await updateThreadMode({
+        thread,
+        nextMode: "plan",
+        trigger: "compat_plan_task",
+      });
       const result = await deps.context.kernel.handleCommand({
         type: "submit_input",
         payload: {
-          text: `plan: ${command.content}`,
+          text: command.content,
         },
       });
       deps.setActiveThreadId(result.threadId);
       return result;
     }
 
-    if (command.kind === "worker_spawn") {
+    if (command.kind === "agent_run_spawn") {
       const thread = command.threadId
         ? await deps.context.stores.threadStore.get(command.threadId)
         : await deps.ensureActiveThread();
@@ -260,14 +335,14 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
         throw new Error(`thread ${command.threadId ?? "<active>"} not found in scope ${scopeKey(deps.scope)}`);
       }
 
-      const workerManager = getWorkerManager();
+      const agentRunManager = getAgentRunManager();
       if (thread.status !== "active") {
         await deps.touchThread(transitionThread(thread, "active"));
       } else {
         await deps.touchThread(thread, "active");
       }
 
-      const worker = await workerManager.spawn({
+      const agentRun = await agentRunManager.spawn({
         threadId: thread.threadId,
         taskId: command.taskId,
         role: command.role,
@@ -275,69 +350,75 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
         resumeToken: command.resumeToken,
       });
       deps.setActiveThreadId(thread.threadId);
-      publishWorkerEvent("worker.spawned", toWorkerView(worker));
+      publishAgentRunEvent("agent_run.spawned", toAgentRunProtocolView(agentRun));
 
       return hydrateOrEmpty();
     }
 
-    if (command.kind === "worker_inspect") {
-      const thread = await getWorkerThread(command.workerId);
+    if (command.kind === "agent_run_inspect") {
+      const thread = await getAgentRunThread(command.agentRunId);
       if (!thread) {
-        throw new Error(`worker ${command.workerId} not found in scope ${scopeKey(deps.scope)}`);
+        throw new Error(`agent run ${command.agentRunId} not found in scope ${scopeKey(deps.scope)}`);
       }
 
-      const workerManager = getWorkerManager();
+      const agentRunManager = getAgentRunManager();
       await deps.touchThread(thread, "active");
       deps.setActiveThreadId(thread.threadId);
-      const worker = await workerManager.inspect(command.workerId);
-      if (!worker) {
-        throw new Error(`worker ${command.workerId} not found`);
+      const agentRun = await agentRunManager.inspect(command.agentRunId);
+      if (!agentRun) {
+        throw new Error(`agent run ${command.agentRunId} not found`);
       }
-      publishWorkerEvent("worker.inspected", toWorkerView(worker));
+      publishAgentRunEvent("agent_run.inspected", toAgentRunProtocolView(agentRun));
 
       return hydrateOrEmpty();
     }
 
-    if (command.kind === "worker_resume") {
-      const thread = await getWorkerThread(command.workerId);
+    if (command.kind === "agent_run_resume") {
+      const thread = await getAgentRunThread(command.agentRunId);
       if (!thread) {
-        throw new Error(`worker ${command.workerId} not found in scope ${scopeKey(deps.scope)}`);
+        throw new Error(`agent run ${command.agentRunId} not found in scope ${scopeKey(deps.scope)}`);
       }
 
-      const workerManager = getWorkerManager();
+      const agentRunManager = getAgentRunManager();
       await deps.touchThread(thread, "active");
       deps.setActiveThreadId(thread.threadId);
-      const worker = await workerManager.resume(command.workerId);
-      publishWorkerEvent("worker.resumed", toWorkerView(worker));
+      const agentRun = await agentRunManager.resume(command.agentRunId);
+      publishAgentRunEvent("agent_run.resumed", toAgentRunProtocolView(agentRun));
 
       return hydrateOrEmpty();
     }
 
-    if (command.kind === "worker_cancel") {
-      const thread = await getWorkerThread(command.workerId);
+    if (command.kind === "agent_run_cancel") {
+      const thread = await getAgentRunThread(command.agentRunId);
       if (!thread) {
-        throw new Error(`worker ${command.workerId} not found in scope ${scopeKey(deps.scope)}`);
+        throw new Error(`agent run ${command.agentRunId} not found in scope ${scopeKey(deps.scope)}`);
       }
 
-      const workerManager = getWorkerManager();
+      const agentRunManager = getAgentRunManager();
       await deps.touchThread(thread, "active");
       deps.setActiveThreadId(thread.threadId);
-      const worker = await workerManager.cancel(command.workerId);
-      publishWorkerEvent(worker.status === "failed" ? "worker.failed" : "worker.cancelled", toWorkerView(worker));
+      const agentRun = await agentRunManager.cancel(command.agentRunId);
+      publishAgentRunEvent(
+        agentRun.status === "failed" ? "agent_run.failed" : "agent_run.cancelled",
+        toAgentRunProtocolView(agentRun),
+      );
 
       return hydrateOrEmpty();
     }
 
-    if (command.kind === "worker_join") {
-      const thread = await getWorkerThread(command.workerId);
+    if (command.kind === "agent_run_join") {
+      const thread = await getAgentRunThread(command.agentRunId);
       if (!thread) {
-        throw new Error(`worker ${command.workerId} not found in scope ${scopeKey(deps.scope)}`);
+        throw new Error(`agent run ${command.agentRunId} not found in scope ${scopeKey(deps.scope)}`);
       }
 
       await deps.touchThread(thread, "active");
       deps.setActiveThreadId(thread.threadId);
-      const worker = await getWorkerManager().join(command.workerId);
-      publishWorkerEvent(worker.status === "failed" ? "worker.failed" : "worker.completed", toWorkerView(worker));
+      const agentRun = await getAgentRunManager().join(command.agentRunId);
+      publishAgentRunEvent(
+        agentRun.status === "failed" ? "agent_run.failed" : "agent_run.completed",
+        toAgentRunProtocolView(agentRun),
+      );
       return hydrateOrEmpty();
     }
 
@@ -366,6 +447,26 @@ export function createRuntimeCommandHandler(deps: RuntimeCommandHandlerDeps) {
       return deps.context.kernel.handleCommand({
         type: "reject_request",
         payload: { approvalRequestId: command.approvalRequestId },
+      });
+    }
+
+    if (command.kind === "resolve_plan_decision") {
+      const thread = await deps.context.stores.threadStore.get(command.threadId);
+      if (!thread || thread.workspaceRoot !== deps.scope.workspaceRoot || thread.projectId !== deps.scope.projectId) {
+        throw new Error(`thread ${command.threadId} not found in scope ${scopeKey(deps.scope)}`);
+      }
+
+      await deps.touchThread(thread, "active");
+      deps.setActiveThreadId(thread.threadId);
+      return deps.context.kernel.handleCommand({
+        type: "resolve_plan_decision",
+        payload: {
+          threadId: thread.threadId,
+          runId: command.runId,
+          optionId: command.optionId,
+          optionLabel: command.optionLabel,
+          input: command.input,
+        },
       });
     }
 

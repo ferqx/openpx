@@ -30,6 +30,13 @@ snapshot 是 harness 返回给 surface 的 projection（投影视图）。
 
 snapshot 必须被当作 projection，而不是 durable truth。
 
+当前 `RuntimeSnapshot` 的运行实例边界是：
+
+- `agentRuns` 是正式字段，对应 `AgentRunView`。
+- snapshot 不再并行暴露 `workers`。
+- 底层持久化和 runtime manager 也已直接使用 `AgentRunRecord`，进入 snapshot 前只做 `AgentRunView` 投影。
+- snapshot 里的 `agentRuns` 仍是 projection，不是新的 durable truth。
+
 ## event stream
 
 event stream 是 harness 向外发布过程变化的连续通道。
@@ -54,6 +61,25 @@ approval action 是 protocol 中必须稳定暴露的一组动作。
 - 在恢复语义下继续推进当前 run
 
 approval action 的意义在于把“人工确认”纳入 harness 真相流程，而不是把它下放成某个 surface 的局部按钮逻辑。
+
+## plan decision action
+
+plan decision action 是 `plan` mode 下的方案选择恢复动作。
+
+它不同于 approval action：
+
+- approval action 处理风险控制与操作许可
+- plan decision action 处理方案选择与执行路径决定
+
+当前稳定流转是：
+
+- planner 产出 `planDecision`
+- run-loop 持久化 `waiting_plan_decision` suspension
+- surface 展示方案选择
+- 用户选择后发送 `resolve_plan_decision`
+- harness 生成 `plan_decision` continuation 并恢复同一个 run
+
+surface 不应把方案选择当作普通新输入提交，也不应把它折叠成 approval。
 
 ## recovery / replay
 

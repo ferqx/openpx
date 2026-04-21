@@ -6,7 +6,11 @@ import { createTaskManager } from "../control/tasks/task-manager";
 import { createControlTask, type ControlTask } from "../control/tasks/task-types";
 import { createToolRegistry } from "../control/tools/tool-registry";
 import type { ContinuationEnvelope } from "../harness/core/run-loop/continuation";
-import { isApprovalResolutionContinuation } from "../harness/core/run-loop/continuation";
+import {
+  isApprovalResolutionContinuation,
+  isPlanDecisionContinuation,
+} from "../harness/core/run-loop/continuation";
+import { buildPlanDecisionContinuation } from "../harness/core/run-loop/approval-suspension";
 import { createRunLoopEngine } from "../harness/core/run-loop/run-loop-engine";
 import type { RunLoopState } from "../harness/core/run-loop/step-types";
 import { createSessionKernel, type SessionControlPlaneResult } from "../harness/core/session/session-kernel";
@@ -20,26 +24,27 @@ import { SqliteRunStateStore } from "../persistence/sqlite/sqlite-run-state-stor
 import { SqliteTaskStore } from "../persistence/sqlite/sqlite-task-store";
 import { SqliteThreadStore } from "../persistence/sqlite/sqlite-thread-store";
 import { SqliteExecutionLedger } from "../persistence/sqlite/sqlite-execution-ledger";
-import { SqliteWorkerStore } from "../persistence/sqlite/sqlite-worker-store";
+import { SqliteAgentRunStore } from "../persistence/sqlite/sqlite-agent-run-store";
 import { createModelGateway, type ModelGateway } from "../infra/model-gateway";
 import { resolveConfig } from "../shared/config";
 import { createThreadNarrativeService } from "../control/context/thread-narrative-service";
-import { createWorkerScratchPolicy } from "../control/context/worker-scratch-policy";
-import { createWorkerManager } from "../control/workers/worker-manager";
-import { createPassiveWorkerRuntimeFactory } from "../control/workers/worker-runtime";
+import { createAgentRunScratchPolicy } from "../control/context/agent-run-scratch-policy";
+import { createAgentRunManager } from "../control/agent-runs/agent-run-manager";
+import { createPassiveAgentRunRuntimeFactory } from "../control/agent-runs/agent-run-runtime";
 import { MemoryConsolidator } from "../control/context/memory-consolidator";
 import { transitionThread } from "../domain/thread";
 import { createEvent } from "../domain/event";
 import { createRun, transitionRun, type Run } from "../domain/run";
 import { prefixedUuid } from "../shared/id-generators";
 import { normalizePlannerOutput } from "../runtime/planning/planner-normalization";
+import type { PlanDecisionRequest } from "../runtime/planning/planner-result";
 import type { WorkPackage } from "../runtime/planning/work-package";
 import {
   buildApprovedExecutionArtifacts,
   buildExecutionArtifacts,
   buildExecutionInput,
   buildVerifierPrompt,
-} from "./worker-inputs";
+} from "./agent-run-inputs";
 import {
   buildFinalResponderPrompt,
   buildPlannerPrompt,
@@ -70,10 +75,16 @@ type AppStores = ReturnType<typeof createStores>;
 
 type ControlPlane = {
   startRootTask(threadId: string, input: string | ContinuationEnvelope): Promise<SessionControlPlaneResult>;
+  resolvePlanDecision(input: {
+    threadId: string;
+    runId: string;
+    optionId: string;
+    optionLabel: string;
+    continuationInput: string;
+  }): Promise<SessionControlPlaneResult>;
   approveRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   rejectRequest(approvalRequestId: string): Promise<SessionControlPlaneResult>;
   restartRun(threadId: string): Promise<SessionControlPlaneResult>;
-  resubmitIntent(threadId: string, content: string): Promise<SessionControlPlaneResult>;
   abandonRun(threadId: string): Promise<SessionControlPlaneResult>;
   cancelThread(threadId: string, reason?: string): Promise<boolean>;
   attachKernelEventPublisher(
@@ -92,6 +103,17 @@ type ControlPlane = {
 
 const LEGACY_CHECKPOINT_INVALIDATION_MIGRATION = "legacy_checkpoint_invalidation_v1";
 
+function attachPlanDecisionSource(
+  decision: PlanDecisionRequest,
+  sourceInput: string,
+): PlanDecisionRequest {
+  return {
+    ...decision,
+    sourceInput: decision.sourceInput ?? sourceInput,
+  };
+}
+
+
 function createStores(path: string | ReturnType<typeof createSqlite>) {
   return {
     threadStore: new SqliteThreadStore(path),
@@ -102,7 +124,7 @@ function createStores(path: string | ReturnType<typeof createSqlite>) {
     memoryStore: new SqliteMemoryStore(path),
     runStateStore: new SqliteRunStateStore(path),
     executionLedger: new SqliteExecutionLedger(path),
-    workerStore: new SqliteWorkerStore(path),
+    agentRunStore: new SqliteAgentRunStore(path),
   };
 }
 
@@ -474,7 +496,9 @@ async function createControlPlane(input: {
     const tasks = await input.stores.taskStore.listByThread(args.threadId);
     const currentTask = tasks.at(-1);
     const fallbackBlockingReason =
-      args.run.blockingReason?.kind === "waiting_approval" || args.run.blockingReason?.kind === "human_recovery"
+      args.run.blockingReason?.kind === "waiting_approval"
+      || args.run.blockingReason?.kind === "plan_decision"
+      || args.run.blockingReason?.kind === "human_recovery"
         ? {
             kind: args.run.blockingReason.kind,
             message: args.run.blockingReason.message,
@@ -496,9 +520,7 @@ async function createControlPlane(input: {
       status:
         args.run.status === "waiting_approval"
           ? "waiting_approval"
-          : args.run.status === "blocked" || args.run.status === "interrupted"
-            ? "blocked"
-            : "completed",
+          : "completed",
       task,
       approvals,
       resumeDisposition: args.resumeDisposition,
@@ -615,6 +637,19 @@ async function createControlPlane(input: {
         summary: result.summary,
         plannerResult: result.plannerResult,
       });
+      const planDecision = normalized.plannerResult.decisionRequest
+        ? attachPlanDecisionSource(normalized.plannerResult.decisionRequest, text)
+        : undefined;
+
+      if (planDecision) {
+        return {
+          plannerResult: normalized.plannerResult,
+          workPackages: normalized.plannerResult.workPackages,
+          currentWorkPackageId: normalized.plannerResult.workPackages[0]?.id,
+          planDecision,
+          nextStep: "waiting_plan_decision" as const,
+        };
+      }
 
       return {
         plannerResult: normalized.plannerResult,
@@ -818,7 +853,7 @@ async function createControlPlane(input: {
   });
 
   const controlPlane: ControlPlane = {
-    async startRootTask(threadId: string, inputValue: string | ContinuationEnvelope) {
+    async startRootTask(threadId: string, inputValue: string | ContinuationEnvelope): Promise<SessionControlPlaneResult> {
       const thread = await input.stores.threadStore.get(threadId);
       if (!thread) {
         throw new Error(`thread ${threadId} not found`);
@@ -844,7 +879,7 @@ async function createControlPlane(input: {
 
       try {
         if (typeof inputValue !== "string") {
-          if (!isApprovalResolutionContinuation(inputValue)) {
+          if (!isApprovalResolutionContinuation(inputValue) && !isPlanDecisionContinuation(inputValue)) {
             throw new Error(`unsupported continuation kind for run-loop resume: ${inputValue.kind}`);
           }
           engineResult = await runLoopEngine.resume({
@@ -872,7 +907,7 @@ async function createControlPlane(input: {
         }
       }
 
-      return finalizeRootTaskExecution(
+      const finalizationResult = await finalizeRootTaskExecution(
         {
           listPendingApprovals: (targetThreadId) => input.stores.approvalStore.listPendingByThread(targetThreadId),
           saveTaskStatus: (nextTask, status) => saveTaskStatus(input.stores, nextTask, status),
@@ -883,6 +918,34 @@ async function createControlPlane(input: {
         run,
         task,
         engineResult,
+      );
+
+      return finalizationResult.status === "blocked"
+        ? { ...finalizationResult, status: "completed" as const }
+        : { ...finalizationResult, status: finalizationResult.status === "waiting_approval" ? "waiting_approval" as const : "completed" as const };
+    },
+
+    async resolvePlanDecision(decisionInput) {
+      const run = await input.stores.runStore.get(decisionInput.runId);
+      if (!run || run.threadId !== decisionInput.threadId) {
+        throw new Error(`run ${decisionInput.runId} not found for thread ${decisionInput.threadId}`);
+      }
+
+      const suspension = await input.stores.runStateStore.loadActiveSuspensionByRun(run.runId);
+      if (!suspension || suspension.reasonKind !== "waiting_plan_decision") {
+        throw new Error(`run ${run.runId} is not waiting for a plan decision`);
+      }
+
+      return controlPlane.startRootTask(
+        decisionInput.threadId,
+        buildPlanDecisionContinuation({
+          threadId: decisionInput.threadId,
+          runId: run.runId,
+          taskId: run.activeTaskId ?? suspension.taskId,
+          optionId: decisionInput.optionId,
+          optionLabel: decisionInput.optionLabel,
+          input: decisionInput.continuationInput,
+        }),
       );
     },
 
@@ -963,25 +1026,6 @@ async function createControlPlane(input: {
       return controlPlane.startRootTask(threadId, run.inputText ?? task.summary);
     },
 
-    async resubmitIntent(threadId: string, content: string) {
-      const { run, task } = await resolveBlockedRecoveryRun(threadId);
-      await cancelPendingApprovalsForRun(threadId, run.runId);
-      await input.stores.runStateStore.invalidateRunRecoveryArtifacts({
-        runId: run.runId,
-        reason: "resubmit_intent replaced this recovery chain",
-      });
-      await input.stores.runStateStore.deleteActiveRunState(run.runId);
-      await saveTaskStatus(input.stores, task, "cancelled");
-      await updateRunStatus(run, "interrupted", {
-        activeTaskId: task.taskId,
-        blockingReason: undefined,
-        endedAt: new Date().toISOString(),
-        resultSummary: "Manual recovery resolved by resubmit_intent",
-      });
-
-      return controlPlane.startRootTask(threadId, content);
-    },
-
     async abandonRun(threadId: string) {
       const { run, task } = await resolveBlockedRecoveryRun(threadId);
       await cancelPendingApprovalsForRun(threadId, run.runId);
@@ -1048,7 +1092,7 @@ export async function createAppContext(input: {
     scratchPolicy,
     memoryConsolidator,
     controlPlane,
-    workerManager,
+    agentRunManager,
     kernel,
   } = await createAppServiceLayer({
     config,
@@ -1058,14 +1102,14 @@ export async function createAppContext(input: {
       createThreadNarrativeService({
         threadStore: currentStores.threadStore,
       }),
-    createScratchPolicy: createWorkerScratchPolicy,
+    createScratchPolicy: createAgentRunScratchPolicy,
     createMemoryConsolidator: (currentStores, currentModelGateway) =>
       new MemoryConsolidator(currentStores.memoryStore, currentModelGateway),
     createControlPlane,
-    createWorkerManager: (currentStores) =>
-      createWorkerManager({
-        runtimeFactory: createPassiveWorkerRuntimeFactory(),
-        workerStore: currentStores.workerStore,
+    createAgentRunManager: (currentStores) =>
+      createAgentRunManager({
+        runtimeFactory: createPassiveAgentRunRuntimeFactory(),
+        agentRunStore: currentStores.agentRunStore,
       }),
     // kernel 是 runtime service 和 TUI 使用的稳定命令边界。
     // 它把更重的 control-plane 细节藏在简洁命令之后。
@@ -1097,7 +1141,7 @@ export async function createAppContext(input: {
     scratchPolicy,
     memoryConsolidator,
     modelGateway,
-    workerManager,
+    agentRunManager,
     close,
   };
 }

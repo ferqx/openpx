@@ -97,13 +97,92 @@ describe("sqlite run state store", () => {
     });
     const activeAfterResolve = await store.loadActiveSuspensionByRun("run_1");
 
-    expect(suspension?.approvalRequestId).toBe("approval_1");
+    expect(suspension?.reasonKind).toBe("waiting_approval");
+    expect(suspension?.reasonKind === "waiting_approval" ? suspension.approvalRequestId : undefined).toBe("approval_1");
     expect(continuation?.kind).toBe("approval_resolution");
     expect(consumed?.status).toBe("consumed");
     expect(consumedAgain).toBeUndefined();
     expect(resolved).toBe(true);
     expect(resolvedAgain).toBe(false);
     expect(activeAfterResolve).toBeUndefined();
+  });
+
+  test("保存 plan decision suspension，并通过 continuation 恢复原 run-loop", async () => {
+    const store = await createStore();
+    await store.saveState({
+      stateVersion: 1,
+      engineVersion: "run-loop-v1",
+      threadId: "thread_plan_decision",
+      runId: "run_plan_decision",
+      taskId: "task_plan_decision",
+      input: "我要开发一个登录界面",
+      nextStep: "waiting_plan_decision",
+      planDecision: {
+        question: "请选择登录界面的实现方案",
+        sourceInput: "我要开发一个登录界面",
+        options: [
+          {
+            id: "simple",
+            label: "简洁表单",
+            description: "只包含账号、密码和提交按钮。",
+            continuation: "按简洁表单方案实现登录界面。",
+          },
+        ],
+      },
+      artifacts: [],
+      latestArtifacts: [],
+    });
+    await store.saveSuspension({
+      suspensionId: "suspension_plan_decision",
+      threadId: "thread_plan_decision",
+      runId: "run_plan_decision",
+      taskId: "task_plan_decision",
+      reasonKind: "waiting_plan_decision",
+      summary: "请选择登录界面的实现方案",
+      planDecision: {
+        question: "请选择登录界面的实现方案",
+        sourceInput: "我要开发一个登录界面",
+        options: [
+          {
+            id: "simple",
+            label: "简洁表单",
+            description: "只包含账号、密码和提交按钮。",
+            continuation: "按简洁表单方案实现登录界面。",
+          },
+        ],
+      },
+      resumeStep: "plan",
+      createdAt: new Date().toISOString(),
+      status: "active",
+    });
+
+    const result = await store.applyPlanDecisionContinuation({
+      continuation: {
+        continuationId: "continuation_plan_decision",
+        threadId: "thread_plan_decision",
+        runId: "run_plan_decision",
+        taskId: "task_plan_decision",
+        kind: "plan_decision",
+        optionId: "simple",
+        optionLabel: "简洁表单",
+        input: "我要开发一个登录界面\n\n已选择方案：简洁表单\n按简洁表单方案实现登录界面。",
+        status: "created",
+      },
+      expectedStateVersion: 1,
+      expectedEngineVersion: "run-loop-v1",
+    });
+
+    const activeAfterResolve = await store.loadActiveSuspensionByRun("run_plan_decision");
+    const continuation = await store.loadContinuation("continuation_plan_decision");
+    const state = await store.loadByRun("run_plan_decision");
+
+    expect(result.disposition).toBe("resumed");
+    expect(result.suspension?.status).toBe("resolved");
+    expect(activeAfterResolve).toBeUndefined();
+    expect(continuation?.status).toBe("consumed");
+    expect(state?.nextStep).toBe("plan");
+    expect(state?.planDecision).toBeUndefined();
+    expect(state?.input).toContain("已选择方案：简洁表单");
   });
 
   test("拒绝匿名 continuation 落盘，并允许失效挂起与 continuation", async () => {

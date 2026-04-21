@@ -92,7 +92,7 @@ function isForwardDeleteKey(keyValue: string, key: { delete?: boolean }) {
 export function Composer(input: { 
   onSubmit?: (text: string) => Promise<void> | void;
   prompt?: string;
-  mode?: "input" | "confirm" | "blocked";
+  mode?: "input" | "confirm";
   onCommandMenuOpenChange?: (isOpen: boolean) => void;
   onEscape?: () => Promise<void> | void;
   isActive?: boolean;
@@ -106,7 +106,7 @@ export function Composer(input: {
   const selectedSuggestionIndexRef = useRef(0);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const mode = input.mode ?? "input";
-  const slashQuery = mode === "input" ? getSlashCommandQuery(value) : null;
+  const slashQuery = mode !== "confirm" ? getSlashCommandQuery(value) : null;
   const suggestions =
     slashQuery !== null && !suggestionsDismissed ? getSlashCommandDefinitions(slashQuery) : [];
   const isSuggestionOpen = suggestions.length > 0;
@@ -161,10 +161,6 @@ export function Composer(input: {
     const activeMode = modeRef.current;
     const activeSuggestions = suggestionsRef.current;
     const suggestionMenuOpen = isSuggestionOpenRef.current;
-
-    if (activeMode === "blocked") {
-      return;
-    }
 
     if (activeMode === "confirm") {
       if (key.return) {
@@ -302,14 +298,6 @@ export function Composer(input: {
         ) : (
           <Text color="yellow">[Y/n]</Text>
         )}
-      </Box>
-    );
-  }
-
-  if (mode === "blocked") {
-    return (
-      <Box paddingX={0}>
-        <Text color="yellow" bold>{theme.symbols.warning} Input disabled for this thread</Text>
       </Box>
     );
   }

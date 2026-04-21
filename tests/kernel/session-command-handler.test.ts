@@ -142,7 +142,7 @@ describe("resolveSubmitTargetThread", () => {
     ).toBe(true);
   });
 
-  test("short-circuits submit while blocked by latest run or durable thread state", () => {
+  test("does not short-circuit submit even when latest run is blocked", () => {
     const latestRun = transitionRun(
       transitionRun(createRun({ runId: "run-blocked", threadId: "thread-blocked", trigger: "user_input" }), "running"),
       "blocked",
@@ -154,7 +154,7 @@ describe("resolveSubmitTargetThread", () => {
         thread: {},
         tasks: [],
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test("resolves approval command context to the owning thread and latest run", async () => {
@@ -192,7 +192,7 @@ describe("resolveSubmitTargetThread", () => {
     expect(result.latestRun?.runId).toBe(latestRun.runId);
   });
 
-  test("builds submit command context with thread activity and blocked state", async () => {
+  test("builds submit command context with thread activity", async () => {
     const thread = createThread("thread-submit", "/workspace", "project-1");
     const task = {
       ...createTask("task-blocked", thread.threadId, "run-1", "Wait for recovery"),
@@ -237,7 +237,6 @@ describe("resolveSubmitTargetThread", () => {
     expect(result.thread.threadId).toBe(thread.threadId);
     expect(result.tasks).toEqual([task]);
     expect(result.approvals).toEqual([approval]);
-    expect(result.blocked).toBe(true);
   });
 
   test("builds approval command context with current tasks and approvals", async () => {

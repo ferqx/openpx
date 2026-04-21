@@ -108,6 +108,7 @@ export const UtilityPane = React.memo(function UtilityPane(input: {
                   {thread.threadId}
                   {active ? " (active)" : ""}
                   {` [${displayStatus}]`}
+                  {` mode:${thread.threadMode}`}
                   {thread.pendingApprovalCount ? ` approval:${thread.pendingApprovalCount}` : ""}
                   {thread.blockingReasonKind ? ` ${thread.blockingReasonKind}` : ""}
                   {thread.narrativeSummary ? ` ${thread.narrativeSummary}` : ""}

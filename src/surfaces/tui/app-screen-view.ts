@@ -5,7 +5,7 @@ import type { PartialSettingsConfig, SettingsConfigScope } from "./settings/conf
 import type { UtilityPaneSessionSnapshot } from "./components/utility-pane";
 import type { TaskSummary } from "./components/task-panel";
 import type { ApprovalSummary } from "./components/approval-panel";
-import type { WorkerSummary } from "./components/worker-panel";
+import type { AgentRunSummary } from "./components/agent-run-panel";
 import type { ConversationDisplayState } from "./app-state-support";
 
 /** 组装会话区视图：把 runtime truth 与本地 conversation 显示态拼成渲染模型 */
@@ -23,11 +23,12 @@ export function buildConversationView(input: {
     messages: input.conversationState.messages,
     tasks: (input.session?.tasks ?? []) as TaskSummary[],
     approvals: (input.session?.approvals ?? []) as ApprovalSummary[],
-    workers: (input.session?.workers ?? []) as WorkerSummary[],
+    agentRuns: (input.session?.agentRuns ?? []) as AgentRunSummary[],
     modelStatus: input.conversationState.modelStatus,
     performance: input.conversationState.performance,
     narrativeSummary: input.session?.narrativeSummary,
-    showWelcome: !input.hasCreatedThreadThisLaunch,
+    planDecision: input.session?.planDecision,
+    showWelcome: !input.hasCreatedThreadThisLaunch && !input.session?.planDecision,
     streamScrollOffset: input.conversationState.streamScrollOffset,
   };
 }
@@ -47,7 +48,7 @@ export function buildUtilityView(input: {
   };
 }
 
-/** 组装 chrome 视图：顶部状态、线程面板与阻塞提示都从这里喂给 Screen */
+/** 组装 chrome 视图：顶部状态与线程面板 */
 export function buildChromeView(input: {
   session?: RuntimeSessionState;
   runtimeStatus: "connected" | "disconnected";
@@ -60,13 +61,14 @@ export function buildChromeView(input: {
   return {
     workspaceRoot: input.session?.workspaceRoot,
     projectId: input.session?.projectId,
+    primaryAgent: input.session?.primaryAgent,
+    threadMode: input.session?.threadMode,
     threadId: input.session?.threadId,
     runtimeStatus: input.runtimeStatus,
     stage: input.stage,
     modelName: input.modelName,
     thinkingLevel: input.thinkingLevel,
     recommendationReason: input.session?.recommendationReason,
-    blockingReason: input.session?.blockingReason,
     threads: input.session?.threads,
     showThreadPanel: input.showThreadPanel,
     exitConfirmText: input.exitConfirmText,
@@ -75,7 +77,7 @@ export function buildChromeView(input: {
 
 /** 组装 composer 视图：只暴露 Screen 需要的交互句柄 */
 export function buildComposerView(input: {
-  composerMode: "input" | "confirm" | "blocked";
+  composerMode: "input" | "confirm";
   submit: (text: string) => Promise<void> | void;
   onCommandMenuOpenChange: (isOpen: boolean) => void;
   onComposerEscape: () => Promise<void> | void;

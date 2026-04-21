@@ -15,6 +15,7 @@ describe("Runtime snapshot", () => {
         projectId: "project-1",
         revision: 2,
         status: "active",
+        threadMode: "plan",
       },
       threads: [
         {
@@ -23,6 +24,7 @@ describe("Runtime snapshot", () => {
           projectId: "project-1",
           revision: 2,
           status: "active",
+          threadMode: "plan",
           activeRunId: "run-1",
           activeRunStatus: "completed",
           narrativeSummary: "Completed repo scan and isolated the runtime recovery path.",
@@ -43,20 +45,22 @@ describe("Runtime snapshot", () => {
       ],
       tasks: [],
       pendingApprovals: [],
-      workers: [],
+      agentRuns: [],
       events: [],
       fallbackLastEventSeq: 0,
       narrativeSummary: "Completed repo scan and isolated the runtime recovery path.",
     });
 
     expect(snapshot.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
+    expect(snapshot.threadMode).toBe("plan");
     expect(snapshot.activeRunId).toBe("run-1");
     expect(snapshot.runs[0]?.resultSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
     expect(snapshot.threads[0]?.activeRunId).toBe("run-1");
+    expect(snapshot.threads[0]?.threadMode).toBe("plan");
     expect(snapshot.threads[0]?.narrativeSummary).toBe("Completed repo scan and isolated the runtime recovery path.");
     expect(snapshot.threads[0]?.pendingApprovalCount).toBe(1);
     expect(snapshot.threads[0]?.blockingReasonKind).toBe("human_recovery");
-    expect(snapshot.workers).toEqual([]);
+    expect(snapshot.agentRuns).toEqual([]);
   });
 
   test("prefers recovery facts and narrative state over loose event reconstruction", () => {
@@ -82,7 +86,7 @@ describe("Runtime snapshot", () => {
       ],
       tasks: [],
       pendingApprovals: [],
-      workers: [],
+      agentRuns: [],
       events: [],
       fallbackLastEventSeq: 0,
       activeThread: {
@@ -91,6 +95,7 @@ describe("Runtime snapshot", () => {
         projectId: "project-1",
         revision: 2,
         status: "active",
+        threadMode: "normal",
         recoveryFacts: {
           threadId: "thread-1",
           revision: 2,
@@ -135,6 +140,7 @@ describe("Runtime snapshot", () => {
     });
 
     expect(snapshot.blockingReason?.kind).toBe("human_recovery");
+    expect(snapshot.threadMode).toBe("normal");
     expect(snapshot.activeRunId).toBe("run-2");
     expect(snapshot.runs[0]?.status).toBe("blocked");
     expect(snapshot.narrativeSummary).toBe("Runtime snapshot migration is paused.");
@@ -159,5 +165,72 @@ describe("Runtime snapshot", () => {
         content: "Runtime snapshot migration is paused.",
       },
     ]);
+  });
+
+  test("does not expose stale blocking reason while the active run is running", () => {
+    const snapshot = buildRuntimeSnapshot({
+      scope: {
+        workspaceRoot: "/tmp/workspace",
+        projectId: "project-1",
+      },
+      activeRunId: "run-running",
+      activeThread: {
+        threadId: "thread-running",
+        workspaceRoot: "/tmp/workspace",
+        projectId: "project-1",
+        revision: 3,
+        status: "active",
+        threadMode: "plan",
+        recoveryFacts: {
+          threadId: "thread-running",
+          revision: 3,
+          schemaVersion: 1,
+          status: "active",
+          updatedAt: new Date().toISOString(),
+          pendingApprovals: [],
+          conversationHistory: [],
+          blocking: {
+            sourceTaskId: "task-running",
+            kind: "plan_decision",
+            message: "旧方案选择问题",
+          },
+        },
+      },
+      threads: [],
+      runs: [
+        {
+          runId: "run-running",
+          threadId: "thread-running",
+          status: "running",
+          trigger: "user_input",
+          startedAt: new Date().toISOString(),
+          blockingReason: {
+            kind: "plan_decision",
+            message: "旧方案选择问题",
+          },
+        },
+      ],
+      tasks: [
+        {
+          taskId: "task-running",
+          threadId: "thread-running",
+          runId: "run-running",
+          status: "running",
+          summary: "继续执行登录页方案",
+          blockingReason: {
+            kind: "plan_decision",
+            message: "旧方案选择问题",
+          },
+        },
+      ],
+      pendingApprovals: [],
+      agentRuns: [],
+      events: [],
+      fallbackLastEventSeq: 0,
+    });
+
+    expect(snapshot.latestExecutionStatus).toBe("running");
+    expect(snapshot.blockingReason).toBeUndefined();
+    expect(snapshot.pauseSummary).toBeUndefined();
   });
 });
